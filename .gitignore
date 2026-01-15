@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+
+# Vector Database (Local)
+# Removed from git to force regeneration on new machine (avoid binary conflicts/large files)
+chroma_db/
+
+# Streamlit
+.streamlit/
