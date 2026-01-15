@@ -1,9 +1,8 @@
 import os
 from typing import List
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_openai import OpenAIEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain.docstore.document import Document
 from dotenv import load_dotenv
@@ -12,7 +11,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Diretório para persistência do banco vetorial
-PERSIST_DIRECTORY = os.getenv("CHROMA_DB_PATH", "./chroma_db")
+# Diretório para persistência do banco vetorial e documentos raw
+PERSIST_DIRECTORY = "./chroma_db"
+RAW_DOCS_DIRECTORY = "./raw_documents_db"
+
+if not os.path.exists(RAW_DOCS_DIRECTORY):
+    os.makedirs(RAW_DOCS_DIRECTORY)
 
 def load_document(file_path: str) -> List[Document]:
     """Carrega um documento baseado na extensão do arquivo."""
@@ -30,37 +34,32 @@ def load_document(file_path: str) -> List[Document]:
         
     return loader.load()
 
-def get_embedding_function(api_key=None):
-    """
-    Retorna a função de embedding.
-    Se api_key for fornecida, usa OpenAI (melhor qualidade).
-    Se não, usa o modelo local (gratuito/privado).
-    """
-    if api_key:
-        return OpenAIEmbeddings(openai_api_key=api_key, model="text-embedding-3-large")
-    
-    # Modelo leve e eficiente para português: paraphrase-multilingual-MiniLM-L12-v2
-    return HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+def get_embedding_function():
+    """Retorna a função de embedding do Google."""
+    return GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
-def process_documents(file_paths: List[str], api_key=None) -> Chroma:
+def process_documents(file_paths: List[str]):
     """
     Carrega arquivos, divide em chunks e salva no ChromaDB.
-    Retorna o objeto vectorstore.
+    Retorna o objeto vectorstore e uma lista de erros.
     """
     all_docs = []
+    errors = []
     
     for path in file_paths:
         try:
             docs = load_document(path)
-            # Debug log
-            for i, doc in enumerate(docs):
-                print(f"📄 Arquivo: {path} | Pág {i+1} | Caracteres: {len(doc.page_content)}")
-                print(f"🔍 Trecho inicial: {doc.page_content[:100]}...")
-            
-            all_docs.extend(docs)
+            if not docs:
+                errors.append(f"Aviso: Nenhum texto encontrado em {os.path.basename(path)}")
+            else:
+                all_docs.extend(docs)
         except Exception as e:
-            print(f"Erro ao carregar {path}: {e}")
+            errors.append(f"Erro ao carregar {os.path.basename(path)}: {str(e)}")
             
+    if not all_docs:
+        # Se não houver documentos, retornamos None e os erros
+        return None, errors
+
     # Divisão de texto (Chunking)
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
@@ -83,7 +82,7 @@ def process_documents(file_paths: List[str], api_key=None) -> Chroma:
         persist_directory=PERSIST_DIRECTORY
     )
     
-    return vectorstore
+    return vectorstore, errors
 
 def get_vector_store(api_key=None):
     """Carrega o banco vetorial existente."""
@@ -94,3 +93,19 @@ def get_vector_store(api_key=None):
         embedding_function=embedding_function
     )
     return vectorstore
+
+def list_documents() -> List[str]:
+    """Lista os arquivos salvos no diretório raw."""
+    if not os.path.exists(RAW_DOCS_DIRECTORY):
+        return []
+    return [f for f in os.listdir(RAW_DOCS_DIRECTORY) if os.path.isfile(os.path.join(RAW_DOCS_DIRECTORY, f)) and not f.startswith(".")]
+
+def process_all_documents():
+    """Processa todos os documentos do diretório raw."""
+    files = list_documents()
+    file_paths = [os.path.join(RAW_DOCS_DIRECTORY, f) for f in files]
+    
+    if not file_paths:
+        raise ValueError("Nenhum documento para processar.")
+        
+    return process_documents(file_paths)

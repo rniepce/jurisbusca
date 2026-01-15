@@ -9,3 +9,4 @@ pypdf
 python-docx
 tiktoken
 pysqlite3-binary
+docx2txt

@@ -5,13 +5,13 @@ sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import streamlit as st
 import os
 import tempfile
-from backend import process_documents, get_vector_store
+from backend import process_documents, get_vector_store, RAW_DOCS_DIRECTORY, list_documents, process_all_documents
 from dotenv import load_dotenv
 
 # Carrega variáveis
 load_dotenv()
 
-st.set_page_config(page_title="JurisBusca (Local) - Seu Segundo Cérebro", page_icon="⚖️", layout="wide")
+st.set_page_config(page_title="JurisBusca - Seu Segundo Cérebro", page_icon="⚖️", layout="wide")
 
 # Custom CSS para estética
 st.markdown("""
@@ -39,14 +39,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("⚖️ JurisBusca (Modo Local)")
+st.title("⚖️ JurisBusca (Nuvem)")
 st.markdown("### Busca Semântica Privada em Modelos de Decisão")
-st.markdown("Runing on: **MacBook M3 Max** 🚀")
+# st.markdown("Runing on: **MacBook M3 Max** 🚀")
 
 # Sidebar para configurações e Upload
 with st.sidebar:
     st.header("🔑 Configuração")
-    openai_api_key = st.text_input("OpenAI API Key (Opcional)", type="password", help="Se não preencher, usa modelo local (gratuito).")
+    api_key = st.text_input("Google API Key", type="password")
+    if api_key:
+        os.environ["GOOGLE_API_KEY"] = api_key
     
     st.header("📚 Ingestão de Documentos")
     uploaded_files = st.file_uploader(
@@ -54,57 +56,84 @@ with st.sidebar:
         type=["pdf", "docx", "txt"], 
         accept_multiple_files=True
     )
+
     
-    if st.button("Processar Documentos"):
+    if st.button("Salvar na Base (Staging)"):
         if not uploaded_files:
             st.warning("Por favor, carregue arquivos primeiro.")
         else:
-            with st.spinner("Processando e vetorizando localmente... Isso pode levar um momento."):
-                # Salva arquivos temporariamente para o backend processar
-                temp_paths = []
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    for uploaded_file in uploaded_files:
-                        temp_path = os.path.join(temp_dir, uploaded_file.name)
-                        with open(temp_path, "wb") as f:
-                            f.write(uploaded_file.getbuffer())
-                        temp_paths.append(temp_path)
-                    
-                    # Chama o backend
+            saved_count = 0
+            for uploaded_file in uploaded_files:
+                save_path = os.path.join(RAW_DOCS_DIRECTORY, uploaded_file.name)
+                with open(save_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                saved_count += 1
+            st.success(f"✅ {saved_count} arquivos salvos na base de conhecimento!")
+
+    st.markdown("---")
+    st.header("⚙️ Gerenciar Base")
+    
+    existing_docs = list_documents()
+    if existing_docs:
+        st.info(f"📚 {len(existing_docs)} documentos na base.")
+        with st.expander("Ver arquivos"):
+            for doc in existing_docs:
+                st.text(doc)
+        
+        if st.button("Vetorizar Base Completa"):
+            if not api_key:
+                st.error("Precisa da API Key para vetorizar.")
+            else:
+                with st.spinner("Processando todos os documentos..."):
                     try:
-                        vectorstore = process_documents(temp_paths, api_key=openai_api_key)
-                        st.success(f"✅ {len(temp_paths)} documentos processados com sucesso no banco local!")
+                        vectorstore, errors = process_all_documents()
+                        
+                        if errors:
+                            st.warning("Alguns arquivos tiveram problemas:")
+                            for err in errors:
+                                st.error(err)
+                        
+                        if vectorstore:
+                            st.success("✅ Base vetorizada com sucesso!")
+                        else:
+                            st.error("❌ Nenhum documento pôde ser processado.")
                     except Exception as e:
-                        st.error(f"Erro ao processar: {e}")
+                        st.error(f"Erro crítico ao vetorizar: {e}")
+    else:
+        st.info("Nenhum documento na base.")
 
 # Área Principal de Busca
 query = st.text_input("🔍 O que você procura? (Ex: 'dano moral atraso voo', 'tutela antecipada saúde')")
 search_button = st.button("Buscar")
 
 if query:  # Busca automágica ao digitar ou clicar
-    with st.spinner("Pesquisando na base neural..."):
-        try:
-            vectorstore = get_vector_store(api_key=openai_api_key)
-            # Busca por similaridade
-            results = vectorstore.similarity_search_with_score(query, k=5)
-            
-            if not results:
-                st.info("Nenhum resultado encontrado.")
-            else:
-                for doc, score in results:
-                    # Score do Chroma é distância (menor é melhor).
-                    # Para visualização, vamos apenas mostrar o score cru ou inverter se necessário.
-                    # Modelos de sentence-transformers geralmente usam cosine distance.
-                    
-                    source = doc.metadata.get("source", "Desconhecido")
-                    filename = os.path.basename(source)
-                    page = doc.metadata.get("page", 0) + 1 # PyPDF é 0-indexed
-                    
-                    st.markdown(f"""
-                    <div class="result-card">
-                        <div class="metadata">📂 Arquivo: {filename} | 📄 Pág: {page} | 🎯 Distância: {score:.4f}</div>
-                        <p>{doc.page_content}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-        except Exception as e:
-            st.error(f"Erro na busca. O banco de dados existe? Detalhes: {e}")
+    if not api_key:
+        st.error("Por favor, insira a Google API Key na barra lateral.")
+    else:
+        with st.spinner("Pesquisando na base neural..."):
+            try:
+                vectorstore = get_vector_store()
+                # Busca por similaridade
+                results = vectorstore.similarity_search_with_score(query, k=5)
+                
+                if not results:
+                    st.info("Nenhum resultado encontrado.")
+                else:
+                    for doc, score in results:
+                        # Score do Chroma é distância (menor é melhor).
+                        # Para visualização, vamos apenas mostrar o score cru ou inverter se necessário.
+                        # Modelos de sentence-transformers geralmente usam cosine distance.
+                        
+                        source = doc.metadata.get("source", "Desconhecido")
+                        filename = os.path.basename(source)
+                        page = doc.metadata.get("page", 0) + 1 # PyPDF é 0-indexed
+                        
+                        st.markdown(f"""
+                        <div class="result-card">
+                            <div class="metadata">📂 Arquivo: {filename} | 📄 Pág: {page} | 🎯 Distância: {score:.4f}</div>
+                            <p>{doc.page_content}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+            except Exception as e:
+                st.error(f"Erro na busca. O banco de dados existe? Detalhes: {e}")
