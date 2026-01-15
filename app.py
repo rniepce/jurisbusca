@@ -41,32 +41,10 @@ st.markdown("""
 
 st.title("⚖️ JurisBusca (Nuvem)")
 st.markdown("### Busca Semântica Privada em Modelos de Decisão")
-# st.markdown("Runing on: **MacBook M3 Max** 🚀")
-
-# Inicializa session_state para API Key se não existir
-# Inicializa session_state para API Key se não existir
-if "api_key" not in st.session_state:
-    # Tenta pegar do ambiente ou deixa vazio
-    st.session_state.api_key = os.environ.get("OPENAI_API_KEY", "")
-
-# Define api_key no escopo global
-api_key = st.session_state.api_key
-if api_key:
-    os.environ["OPENAI_API_KEY"] = api_key
+st.markdown("Running on: **Local Model (HuggingFace)** 🧠")
 
 # Sidebar para configurações e Upload
 with st.sidebar:
-    st.header("🔑 Configuração")
-    # Atualiza o input com o valor do session_state
-    new_api_key = st.text_input("OpenAI API Key", type="password", value=st.session_state.api_key)
-    
-    if new_api_key != st.session_state.api_key:
-        st.session_state.api_key = new_api_key
-        os.environ["OPENAI_API_KEY"] = new_api_key
-        api_key = new_api_key
-        st.rerun() # Recarrega para aplicar a nova chave em todo o script
-
-    
     st.header("📚 Ingestão de Documentos")
     uploaded_files = st.file_uploader(
         "Carregar novos modelos (PDF, DOCX, TXT)", 
@@ -98,13 +76,7 @@ with st.sidebar:
                 st.text(doc)
         
         if st.button("Vetorizar Base Completa"):
-            # Garante que temos a chave mais atual
-            current_api_key = st.session_state.get("api_key")
-            if not current_api_key:
-                st.error("Precisa da API Key para vetorizar.")
-            else:
-                os.environ["OPENAI_API_KEY"] = current_api_key # Garante env var
-                with st.spinner("Processando todos os documentos..."):
+            with st.spinner("Processando todos os documentos (isso pode demorar, rodando localmente)..."):
                     try:
                         vectorstore, errors = process_all_documents()
                         
@@ -127,12 +99,7 @@ query = st.text_input("🔍 O que você procura? (Ex: 'dano moral atraso voo', '
 search_button = st.button("Buscar")
 
 if query:  # Busca automágica ao digitar ou clicar
-    current_api_key = st.session_state.get("api_key")
-    if not current_api_key:
-        st.error("Por favor, insira a OpenAI API Key na barra lateral.")
-    else:
-        os.environ["OPENAI_API_KEY"] = current_api_key # Garante env var
-        with st.spinner("Pesquisando na base neural..."):
+    with st.spinner("Pesquisando na base neural..."):
             try:
                 vectorstore = get_vector_store()
                 # Busca por similaridade

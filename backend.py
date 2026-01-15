@@ -1,6 +1,6 @@
 import os
 from typing import List
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
@@ -35,8 +35,9 @@ def load_document(file_path: str) -> List[Document]:
     return loader.load()
 
 def get_embedding_function():
-    """Retorna a função de embedding do Google."""
-    return GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    """Retorna a função de embedding local (HuggingFace)."""
+    # Modelo leve e eficiente para português
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
 def process_documents(file_paths: List[str]):
     """

@@ -1,7 +1,5 @@
 streamlit
 langchain==0.3.27
-langchain-openai
-langchain-community
 langchain-huggingface
 sentence-transformers
 chromadb
@@ -10,4 +8,3 @@ python-docx
 tiktoken
 pysqlite3-binary
 docx2txt
-langchain-google-genai
