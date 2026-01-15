@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Diretório para persistência do banco vetorial
-PERSIST_DIRECTORY = "./chroma_db"
+PERSIST_DIRECTORY = os.getenv("CHROMA_DB_PATH", "./chroma_db")
 
 def load_document(file_path: str) -> List[Document]:
     """Carrega um documento baseado na extensão do arquivo."""
