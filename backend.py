@@ -57,6 +57,9 @@ def process_documents(file_paths: List[str]) -> Chroma:
     )
     
     splits = text_splitter.split_documents(all_docs)
+
+    if not splits:
+        raise ValueError("Nenhum texto pôde ser extraído dos arquivos carregados. Verifique se não são imagens escaneadas sem OCR.")
     
     # Criação/Atualização do Banco Vetorial
     embedding_function = get_embedding_function()
