@@ -44,9 +44,10 @@ st.markdown("### Busca Semântica Privada em Modelos de Decisão")
 # st.markdown("Runing on: **MacBook M3 Max** 🚀")
 
 # Inicializa session_state para API Key se não existir
+# Inicializa session_state para API Key se não existir
 if "api_key" not in st.session_state:
-    # Chave hardcoded conforme solicitação do usuário
-    st.session_state.api_key = os.environ.get("GOOGLE_API_KEY", "AIzaSyDS2ujhvDWfI5COv0g1n2X8elXJTCejwgg")
+    # Tenta pegar do ambiente (Railway service variable) ou deixa vazio
+    st.session_state.api_key = os.environ.get("GOOGLE_API_KEY", "")
 
 # Define api_key no escopo global
 api_key = st.session_state.api_key
