@@ -46,23 +46,23 @@ st.markdown("### Busca Semântica Privada em Modelos de Decisão")
 # Inicializa session_state para API Key se não existir
 # Inicializa session_state para API Key se não existir
 if "api_key" not in st.session_state:
-    # Tenta pegar do ambiente (Railway service variable) ou deixa vazio
-    st.session_state.api_key = os.environ.get("GOOGLE_API_KEY", "")
+    # Tenta pegar do ambiente ou deixa vazio
+    st.session_state.api_key = os.environ.get("OPENAI_API_KEY", "")
 
 # Define api_key no escopo global
 api_key = st.session_state.api_key
 if api_key:
-    os.environ["GOOGLE_API_KEY"] = api_key
+    os.environ["OPENAI_API_KEY"] = api_key
 
 # Sidebar para configurações e Upload
 with st.sidebar:
     st.header("🔑 Configuração")
     # Atualiza o input com o valor do session_state
-    new_api_key = st.text_input("Google API Key", type="password", value=st.session_state.api_key)
+    new_api_key = st.text_input("OpenAI API Key", type="password", value=st.session_state.api_key)
     
     if new_api_key != st.session_state.api_key:
         st.session_state.api_key = new_api_key
-        os.environ["GOOGLE_API_KEY"] = new_api_key
+        os.environ["OPENAI_API_KEY"] = new_api_key
         api_key = new_api_key
         st.rerun() # Recarrega para aplicar a nova chave em todo o script
 
@@ -103,7 +103,7 @@ with st.sidebar:
             if not current_api_key:
                 st.error("Precisa da API Key para vetorizar.")
             else:
-                os.environ["GOOGLE_API_KEY"] = current_api_key # Garante env var
+                os.environ["OPENAI_API_KEY"] = current_api_key # Garante env var
                 with st.spinner("Processando todos os documentos..."):
                     try:
                         vectorstore, errors = process_all_documents()
@@ -129,9 +129,9 @@ search_button = st.button("Buscar")
 if query:  # Busca automágica ao digitar ou clicar
     current_api_key = st.session_state.get("api_key")
     if not current_api_key:
-        st.error("Por favor, insira a Google API Key na barra lateral.")
+        st.error("Por favor, insira a OpenAI API Key na barra lateral.")
     else:
-        os.environ["GOOGLE_API_KEY"] = current_api_key # Garante env var
+        os.environ["OPENAI_API_KEY"] = current_api_key # Garante env var
         with st.spinner("Pesquisando na base neural..."):
             try:
                 vectorstore = get_vector_store()
