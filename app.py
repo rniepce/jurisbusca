@@ -45,7 +45,8 @@ st.markdown("### Busca Semântica Privada em Modelos de Decisão")
 
 # Inicializa session_state para API Key se não existir
 if "api_key" not in st.session_state:
-    st.session_state.api_key = os.environ.get("GOOGLE_API_KEY", "")
+    # Chave hardcoded conforme solicitação do usuário
+    st.session_state.api_key = os.environ.get("GOOGLE_API_KEY", "AIzaSyDS2ujhvDWfI5COv0g1n2X8elXJTCejwgg")
 
 # Define api_key no escopo global
 api_key = st.session_state.api_key
@@ -96,9 +97,12 @@ with st.sidebar:
                 st.text(doc)
         
         if st.button("Vetorizar Base Completa"):
-            if not api_key:
+            # Garante que temos a chave mais atual
+            current_api_key = st.session_state.get("api_key")
+            if not current_api_key:
                 st.error("Precisa da API Key para vetorizar.")
             else:
+                os.environ["GOOGLE_API_KEY"] = current_api_key # Garante env var
                 with st.spinner("Processando todos os documentos..."):
                     try:
                         vectorstore, errors = process_all_documents()
@@ -122,9 +126,11 @@ query = st.text_input("🔍 O que você procura? (Ex: 'dano moral atraso voo', '
 search_button = st.button("Buscar")
 
 if query:  # Busca automágica ao digitar ou clicar
-    if not api_key:
+    current_api_key = st.session_state.get("api_key")
+    if not current_api_key:
         st.error("Por favor, insira a Google API Key na barra lateral.")
     else:
+        os.environ["GOOGLE_API_KEY"] = current_api_key # Garante env var
         with st.spinner("Pesquisando na base neural..."):
             try:
                 vectorstore = get_vector_store()
