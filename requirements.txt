@@ -10,3 +10,4 @@ python-docx
 tiktoken
 pysqlite3-binary
 docx2txt
+langchain-google-genai
