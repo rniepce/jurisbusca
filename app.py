@@ -44,11 +44,13 @@ st.markdown("### Busca Semântica Privada em Modelos de Decisão")
 # st.markdown("Runing on: **MacBook M3 Max** 🚀")
 
 # Sidebar para configurações e Upload
+api_key = None
 with st.sidebar:
     st.header("🔑 Configuração")
-    api_key = st.text_input("Google API Key", type="password")
-    if api_key:
-        os.environ["GOOGLE_API_KEY"] = api_key
+    api_key_input = st.text_input("Google API Key", type="password")
+    if api_key_input:
+        os.environ["GOOGLE_API_KEY"] = api_key_input
+        api_key = api_key_input
     
     st.header("📚 Ingestão de Documentos")
     uploaded_files = st.file_uploader(
