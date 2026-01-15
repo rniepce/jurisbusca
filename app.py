@@ -41,7 +41,7 @@ st.markdown("""
 
 st.title("⚖️ JurisBusca (Nuvem)")
 st.markdown("### Busca Semântica Privada em Modelos de Decisão")
-st.markdown("Running on: **Local Model (HuggingFace)** 🧠")
+st.markdown("Running on: **Local Llama-3 (8B) + MiniLM** 🧠")
 
 # Sidebar para configurações e Upload
 with st.sidebar:
@@ -108,11 +108,24 @@ if query:  # Busca automágica ao digitar ou clicar
                 if not results:
                     st.info("Nenhum resultado encontrado.")
                 else:
+                    # GERAÇÃO DA RESPOSTA (RAG)
+                    with st.spinner("🤖 Lendo documentos e gerando resposta... (primeira vez pode demorar para baixar o modelo)"):
+                        try:
+                            from backend import answer_question
+                            # Pega apenas os documentos (sem score) para o contexto
+                            docs_content = [doc for doc, _ in results]
+                            answer = answer_question(query, docs_content)
+                            
+                            st.markdown("### 🤖 Resposta da IA (Llama 3)")
+                            st.success(answer)
+                        except Exception as e_gen:
+                            st.warning(f"Erro ao gerar resposta: {e_gen}")
+                            st.info("Mostrando apenas as referências abaixo.")
+
+                    st.markdown("---")
+                    st.subheader("📚 Referências Encontradas")
+                    
                     for doc, score in results:
-                        # Score do Chroma é distância (menor é melhor).
-                        # Para visualização, vamos apenas mostrar o score cru ou inverter se necessário.
-                        # Modelos de sentence-transformers geralmente usam cosine distance.
-                        
                         source = doc.metadata.get("source", "Desconhecido")
                         filename = os.path.basename(source)
                         page = doc.metadata.get("page", 0) + 1 # PyPDF é 0-indexed

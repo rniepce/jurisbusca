@@ -110,3 +110,38 @@ def process_all_documents():
         raise ValueError("Nenhum documento para processar.")
         
     return process_documents(file_paths)
+
+# Nova função para carregar LLM Local (Llama 3 8B)
+def get_llm_function():
+    from langchain_community.llms import CTransformers
+    
+    # Tenta carregar Llama 3. Se houver erro de compatibilidade, fallback para um modelo mais simples é possível,
+    # mas Llama-3-8B-Instruct-GGUF é o state-of-the-art para esse tamanho.
+    llm = CTransformers(
+        model="TheBloke/Llama-3-8B-Instruct-GGUF",
+        model_file="llama-3-8b-instruct.Q4_K_M.gguf", 
+        model_type="llama",
+        config={'max_new_tokens': 1024, 'temperature': 0.1, 'context_length': 8192}
+    )
+    return llm
+
+def answer_question(query, docs):
+    """Gera uma resposta baseada nos documentos encontrados usando LLM Local."""
+    llm = get_llm_function()
+    
+    # Prepara o contexto
+    context_text = "\n\n".join([d.page_content for d in docs])
+    
+    # Prompt Template para Llama 3 (formato chat instruct)
+    prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+Você é um assistente jurídico útil. Use o contexto abaixo para responder à pergunta do usuário. 
+Se a resposta não estiver no contexto, diga que não encontrou informações suficientes.<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Contexto:
+{context_text}
+
+Pergunta: {query}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
+    
+    response = llm.invoke(prompt)
+    return response
