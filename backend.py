@@ -3,6 +3,7 @@ from typing import List
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.docstore.document import Document
 from dotenv import load_dotenv
@@ -29,12 +30,19 @@ def load_document(file_path: str) -> List[Document]:
         
     return loader.load()
 
-def get_embedding_function():
-    """Retorna a função de embedding local (multilíngue)."""
+def get_embedding_function(api_key=None):
+    """
+    Retorna a função de embedding.
+    Se api_key for fornecida, usa OpenAI (melhor qualidade).
+    Se não, usa o modelo local (gratuito/privado).
+    """
+    if api_key:
+        return OpenAIEmbeddings(openai_api_key=api_key, model="text-embedding-3-large")
+    
     # Modelo leve e eficiente para português: paraphrase-multilingual-MiniLM-L12-v2
     return HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
-def process_documents(file_paths: List[str]) -> Chroma:
+def process_documents(file_paths: List[str], api_key=None) -> Chroma:
     """
     Carrega arquivos, divide em chunks e salva no ChromaDB.
     Retorna o objeto vectorstore.
@@ -67,7 +75,7 @@ def process_documents(file_paths: List[str]) -> Chroma:
         raise ValueError("Nenhum texto pôde ser extraído dos arquivos carregados. Verifique se não são imagens escaneadas sem OCR.")
     
     # Criação/Atualização do Banco Vetorial
-    embedding_function = get_embedding_function()
+    embedding_function = get_embedding_function(api_key=api_key)
     
     vectorstore = Chroma.from_documents(
         documents=splits,
@@ -77,9 +85,9 @@ def process_documents(file_paths: List[str]) -> Chroma:
     
     return vectorstore
 
-def get_vector_store():
+def get_vector_store(api_key=None):
     """Carrega o banco vetorial existente."""
-    embedding_function = get_embedding_function()
+    embedding_function = get_embedding_function(api_key=api_key)
     
     vectorstore = Chroma(
         persist_directory=PERSIST_DIRECTORY,

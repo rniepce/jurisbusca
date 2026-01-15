@@ -45,6 +45,9 @@ st.markdown("Runing on: **MacBook M3 Max** 🚀")
 
 # Sidebar para configurações e Upload
 with st.sidebar:
+    st.header("🔑 Configuração")
+    openai_api_key = st.text_input("OpenAI API Key (Opcional)", type="password", help="Se não preencher, usa modelo local (gratuito).")
+    
     st.header("📚 Ingestão de Documentos")
     uploaded_files = st.file_uploader(
         "Carregar novos modelos (PDF, DOCX, TXT)", 
@@ -68,7 +71,7 @@ with st.sidebar:
                     
                     # Chama o backend
                     try:
-                        vectorstore = process_documents(temp_paths)
+                        vectorstore = process_documents(temp_paths, api_key=openai_api_key)
                         st.success(f"✅ {len(temp_paths)} documentos processados com sucesso no banco local!")
                     except Exception as e:
                         st.error(f"Erro ao processar: {e}")
@@ -78,9 +81,9 @@ query = st.text_input("🔍 O que você procura? (Ex: 'dano moral atraso voo', '
 search_button = st.button("Buscar")
 
 if query:  # Busca automágica ao digitar ou clicar
-    with st.spinner("Pesquisando na base neural local..."):
+    with st.spinner("Pesquisando na base neural..."):
         try:
-            vectorstore = get_vector_store()
+            vectorstore = get_vector_store(api_key=openai_api_key)
             # Busca por similaridade
             results = vectorstore.similarity_search_with_score(query, k=5)
             
