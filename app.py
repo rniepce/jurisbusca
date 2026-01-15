@@ -43,14 +43,20 @@ st.title("⚖️ JurisBusca (Nuvem)")
 st.markdown("### Busca Semântica Privada em Modelos de Decisão")
 # st.markdown("Runing on: **MacBook M3 Max** 🚀")
 
+# Inicializa session_state para API Key se não existir
+if "api_key" not in st.session_state:
+    st.session_state.api_key = os.environ.get("GOOGLE_API_KEY", "")
+
 # Sidebar para configurações e Upload
-api_key = None
 with st.sidebar:
     st.header("🔑 Configuração")
-    api_key_input = st.text_input("Google API Key", type="password")
+    api_key_input = st.text_input("Google API Key", type="password", value=st.session_state.api_key)
+    
     if api_key_input:
+        st.session_state.api_key = api_key_input
         os.environ["GOOGLE_API_KEY"] = api_key_input
-        api_key = api_key_input
+    
+    api_key = st.session_state.api_key
     
     st.header("📚 Ingestão de Documentos")
     uploaded_files = st.file_uploader(
