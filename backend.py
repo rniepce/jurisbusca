@@ -44,6 +44,11 @@ def process_documents(file_paths: List[str]) -> Chroma:
     for path in file_paths:
         try:
             docs = load_document(path)
+            # Debug log
+            for i, doc in enumerate(docs):
+                print(f"📄 Arquivo: {path} | Pág {i+1} | Caracteres: {len(doc.page_content)}")
+                print(f"🔍 Trecho inicial: {doc.page_content[:100]}...")
+            
             all_docs.extend(docs)
         except Exception as e:
             print(f"Erro ao carregar {path}: {e}")
