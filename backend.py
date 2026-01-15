@@ -74,7 +74,7 @@ def process_documents(file_paths: List[str]):
         raise ValueError("Nenhum texto pôde ser extraído dos arquivos carregados. Verifique se não são imagens escaneadas sem OCR.")
     
     # Criação/Atualização do Banco Vetorial
-    embedding_function = get_embedding_function(api_key=api_key)
+    embedding_function = get_embedding_function()
     
     vectorstore = Chroma.from_documents(
         documents=splits,
@@ -84,9 +84,9 @@ def process_documents(file_paths: List[str]):
     
     return vectorstore, errors
 
-def get_vector_store(api_key=None):
+def get_vector_store():
     """Carrega o banco vetorial existente."""
-    embedding_function = get_embedding_function(api_key=api_key)
+    embedding_function = get_embedding_function()
     
     vectorstore = Chroma(
         persist_directory=PERSIST_DIRECTORY,
