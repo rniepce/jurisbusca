@@ -111,17 +111,17 @@ def process_all_documents():
         
     return process_documents(file_paths)
 
-# Nova função para carregar LLM Local (Llama 3 8B)
+# Nova função para carregar LLM Local (Mistral NeMo 12B)
 def get_llm_function():
     from langchain_community.llms import CTransformers
     
-    # Tenta carregar Llama 3. Se houver erro de compatibilidade, fallback para um modelo mais simples é possível,
-    # mas Llama-3-8B-Instruct-GGUF é o state-of-the-art para esse tamanho.
+    # Mistral NeMo 12B (NVIDIA + Mistral)
+    # Usando quantização Q4_K_M que balanceia bem qualidade/tamanho (aprox 8GB).
     llm = CTransformers(
-        model="TheBloke/Llama-3-8B-Instruct-GGUF",
-        model_file="llama-3-8b-instruct.Q4_K_M.gguf", 
-        model_type="llama",
-        config={'max_new_tokens': 1024, 'temperature': 0.1, 'context_length': 8192}
+        model="bartowski/Mistral-Nemo-Instruct-2407-GGUF",
+        model_file="Mistral-Nemo-Instruct-2407-Q4_K_M.gguf", 
+        model_type="mistral",
+        config={'max_new_tokens': 2048, 'temperature': 0.1, 'context_length': 16384}
     )
     return llm
 
@@ -132,16 +132,14 @@ def answer_question(query, docs):
     # Prepara o contexto
     context_text = "\n\n".join([d.page_content for d in docs])
     
-    # Prompt Template para Llama 3 (formato chat instruct)
-    prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-
-Você é um assistente jurídico útil. Use o contexto abaixo para responder à pergunta do usuário. 
-Se a resposta não estiver no contexto, diga que não encontrou informações suficientes.<|eot_id|><|start_header_id|>user<|end_header_id|>
+    # Prompt Template para Mistral (ChatML style é comum, mas o simples [INST] funciona bem)
+    prompt = f"""[INST] Você é um assistente jurídico especialista. Baseie-se APENAS no contexto fornecido abaixo para responder à pergunta do usuário.
+Se a resposta não estiver no contexto, diga claramente que não encontrou a informação.
 
 Contexto:
 {context_text}
 
-Pergunta: {query}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
+Pergunta: {query} [/INST]"""
     
     response = llm.invoke(prompt)
     return response

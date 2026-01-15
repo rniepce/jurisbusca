@@ -41,7 +41,7 @@ st.markdown("""
 
 st.title("⚖️ JurisBusca (Nuvem)")
 st.markdown("### Busca Semântica Privada em Modelos de Decisão")
-st.markdown("Running on: **Local Llama-3 (8B) + MiniLM** 🧠")
+st.markdown("Running on: **Local Mistral NeMo (12B)** 🧠")
 
 # Sidebar para configurações e Upload
 with st.sidebar:
@@ -109,14 +109,14 @@ if query:  # Busca automágica ao digitar ou clicar
                     st.info("Nenhum resultado encontrado.")
                 else:
                     # GERAÇÃO DA RESPOSTA (RAG)
-                    with st.spinner("🤖 Lendo documentos e gerando resposta... (primeira vez pode demorar para baixar o modelo)"):
+                    with st.spinner("🤖 Mistral NeMo lendo documentos... (aguarde o download se for a 1ª vez)"):
                         try:
                             from backend import answer_question
                             # Pega apenas os documentos (sem score) para o contexto
                             docs_content = [doc for doc, _ in results]
                             answer = answer_question(query, docs_content)
                             
-                            st.markdown("### 🤖 Resposta da IA (Llama 3)")
+                            st.markdown("### 🤖 Resposta da IA (Mistral NeMo)")
                             st.success(answer)
                         except Exception as e_gen:
                             st.warning(f"Erro ao gerar resposta: {e_gen}")
