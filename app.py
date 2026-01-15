@@ -47,16 +47,23 @@ st.markdown("### Busca Semântica Privada em Modelos de Decisão")
 if "api_key" not in st.session_state:
     st.session_state.api_key = os.environ.get("GOOGLE_API_KEY", "")
 
+# Define api_key no escopo global
+api_key = st.session_state.api_key
+if api_key:
+    os.environ["GOOGLE_API_KEY"] = api_key
+
 # Sidebar para configurações e Upload
 with st.sidebar:
     st.header("🔑 Configuração")
-    api_key_input = st.text_input("Google API Key", type="password", value=st.session_state.api_key)
+    # Atualiza o input com o valor do session_state
+    new_api_key = st.text_input("Google API Key", type="password", value=st.session_state.api_key)
     
-    if api_key_input:
-        st.session_state.api_key = api_key_input
-        os.environ["GOOGLE_API_KEY"] = api_key_input
-    
-    api_key = st.session_state.api_key
+    if new_api_key != st.session_state.api_key:
+        st.session_state.api_key = new_api_key
+        os.environ["GOOGLE_API_KEY"] = new_api_key
+        api_key = new_api_key
+        st.rerun() # Recarrega para aplicar a nova chave em todo o script
+
     
     st.header("📚 Ingestão de Documentos")
     uploaded_files = st.file_uploader(
