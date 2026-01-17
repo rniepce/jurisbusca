@@ -1,0 +1,50 @@
+# The path to the local model directory or Hugging Face repo.
+model: "mistralai/Mistral-Nemo-Instruct-2407"
+
+# Whether or not to train (boolean)
+train: true
+
+# Directory with {train, valid, test}.jsonl files
+data: "data"
+
+# The PRNG seed
+seed: 42
+
+# Number of layers to fine-tune
+lora_layers: 16
+
+# Minibatch size.
+batch_size: 1
+
+# Iterations to train for.
+iters: 600
+
+# Number of validation batches, -1 uses the entire validation set.
+val_batches: 25
+
+# Adam learning rate.
+learning_rate: 1e-5
+
+# Number of training steps between loss reporting.
+steps_per_report: 10
+
+# Number of training steps between validations.
+steps_per_eval: 200
+
+# Load path to resume training with the given adapter weights.
+resume_adapter_file: null
+
+# Save the adapter weights to this file.
+adapter_path: "adapters"
+
+# Save the model every N steps.
+save_every: 100
+
+# LoRA parameters:
+# - rank: The rank of the LoRA adapter.
+# - alpha: The alpha parameter for LoRA scaling.
+# - dropout: The dropout probability for LoRA layers.
+lora_parameters:
+  rank: 16
+  alpha: 32
+  dropout: 0.05

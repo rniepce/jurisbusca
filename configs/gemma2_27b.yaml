@@ -1,0 +1,22 @@
+# Config for Gemma 2 27B (4-bit Quantized) - Optimized
+model: "mlx-community/gemma-2-27b-it-4bit"
+train: true
+data: "data"
+seed: 42
+lora_layers: 2
+# Lower batch size for 27B model to save memory
+batch_size: 1
+iters: 600
+val_batches: 2
+learning_rate: 2e-6
+steps_per_report: 10
+steps_per_eval: 200
+adapter_path: "adapters/gemma2_27b_adapter"
+save_every: 200
+grad_checkpoint: true
+max_seq_length: 1024
+# LoRA config for larger model
+lora_parameters:
+  rank: 2
+  scale: 4.0
+  dropout: 0.05

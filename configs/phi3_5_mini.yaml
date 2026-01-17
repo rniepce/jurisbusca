@@ -1,0 +1,21 @@
+# Config for Phi-3.5 Mini Instruct (4-bit Quantized)
+# Microsoft's high-performance small model (3.8B)
+model: "mlx-community/Phi-3.5-mini-instruct-4bit"
+train: true
+data: "data"
+seed: 42
+lora_layers: 4
+batch_size: 1
+iters: 600
+val_batches: 5
+learning_rate: 1e-4 # Phi often handles higher LR well due to size
+steps_per_report: 10
+steps_per_eval: 200
+adapter_path: "adapters/phi3_5_mini_adapter"
+save_every: 200
+grad_checkpoint: true
+max_seq_length: 2048 # Phi-3 supports long context (128k), 2048 is safe/fast
+lora_parameters:
+  rank: 8
+  scale: 16.0
+  dropout: 0.05

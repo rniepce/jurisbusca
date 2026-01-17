@@ -1,4 +1,4 @@
-# ⚖️ JurisBusca
+# 🤖 Assistente Rafa
 
 Ferramenta de busca semântica para documentos jurídicos (sentenças, modelos), permitindo encontrar conceitos por similaridade (vetorização) em vez de palavras-chave exatas.
 

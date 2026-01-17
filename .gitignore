@@ -12,3 +12,8 @@ chroma_db/
 
 # Streamlit
 .streamlit/
+
+venv/
+adapters/
+data/
+*.txt
