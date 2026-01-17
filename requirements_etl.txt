@@ -1,0 +1,17 @@
+# Dependências para ETL Local (Mac M3)
+# Instalar com: pip install -r requirements_etl.txt
+
+# Banco de Dados
+sqlmodel==0.0.14
+psycopg2-binary==2.9.9
+pgvector==0.2.4
+
+# IA e Vetorização (GPU Support)
+sentence-transformers==2.3.1
+torch>=2.1.0  # Necessário para suporte MPS (Metal) no Mac
+scikit-learn==1.4.0
+numpy>=1.26.0
+
+# LLM Local
+ollama==0.1.6
+requests==2.31.0
