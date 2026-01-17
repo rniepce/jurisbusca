@@ -1,6 +1,5 @@
 streamlit
-langchain==0.3.27
-langchain-openai
+langchain
 langchain-community
 langchain-huggingface
 sentence-transformers
@@ -8,10 +7,7 @@ chromadb
 pypdf
 python-docx
 tiktoken
-# pysqlite3-binary
 rapidocr-onnxruntime
 rapidocr-pdf
 scikit-learn
-langchain-ollama
-langchain-openai
 langchain-google-genai

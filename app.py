@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from backend import process_uploaded_file, get_llm, run_orchestration, LOCAL_MODELS, MLXChatWrapper, process_templates, generate_style_report
+from backend import process_uploaded_file, run_gemini_orchestration, process_templates, generate_style_report
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 # from prompts import LEGAL_ASSISTANT_PROMPT # Obsoleto com multi-agentes
 
@@ -104,27 +104,10 @@ with st.sidebar:
 
     st.markdown("---")
 
-    st.header("2. Seleção do Modelo")
-    # Opções hardcoded conforme solicitação do usuário
-    # Lista de opções combinando modelos locais MLX e opções antigas
-    mlx_options = list(LOCAL_MODELS.keys())
-    other_options = ["gpt-4o", "mistral-nemo (ollama)", "llama3 (ollama)"]
-    
-    model_option = st.selectbox(
-        "Escolha o LLM para teste:",
-        ["GEMINI 3.0 PRO (Análise Profunda Preview)", "AUTO (Melhor Agente p/ cada Tarefa)"],
-        index=0
-    )
-    
-    if model_option.startswith("AUTO"):
-        st.info("🧠 **Modo Auto-Pilot:** O sistema escolherá automaticamente o melhor modelo para cada etapa (Phi-3 para formal, Qwen para mérito, Gemma para redação).")
-    elif "GEMINI" in model_option:
-        st.warning("✨ **Modo Gemini:** Requer API Key do Google. Executa análise profunda em 3 etapas (Triagem -> Mérito -> Auditoria).")
-    
     # google_api_key ja foi pedido acima
-    
     st.markdown("---")
-    st.info("ℹ️ Certifique-se de que o Ollama está rodando (`ollama serve`) se escolher um modelo local.")
+    
+    st.info("✨ **Modo Google Gemini Pro:**\nEste ambiente roda exclusivamente com a IA mais avançada do Google para tarefas jurídicas.")
 
 # --- Lógica Principal ---
 
@@ -183,7 +166,7 @@ if uploaded_file:
         analyze_btn = st.button("🚀 Rodar Análise Jurídica", type="primary")
     
     if analyze_btn:
-        from backend import run_orchestration, run_gemini_orchestration
+        # from backend import run_orchestration, run_gemini_orchestration # Já importado no topo
         
         if not st.session_state.process_text:
             st.error("O texto do arquivo está vazio.")
@@ -200,61 +183,70 @@ if uploaded_file:
                 status_box.write(msg)
                 
             try:
-                # Determina modo: AUTO ou Fixo
-                selected_model_mode = "auto" if model_option.startswith("AUTO") else model_option
-
-                if "GEMINI" in model_option:
-                     # Pipeline exclusiva do Gemini
-                     results = run_gemini_orchestration(
-                         text=st.session_state.process_text,
-                         api_key=google_api_key,
-                         status_callback=update_status,
-                         template_files=template_files
-                     )
-                else:
-                    # Pipeline Local / OpenAI
-                    results = run_orchestration(
-                        text=st.session_state.process_text,
-                        model_mode=selected_model_mode,
-                        api_key=openai_api_key if "gpt" in model_option else None,
-                        status_callback=update_status
-                    )
+            try:
+                # Pipeline exclusiva do Gemini (Railway Deploy)
+                results = run_gemini_orchestration(
+                    text=st.session_state.process_text,
+                    api_key=google_api_key,
+                    status_callback=update_status,
+                    template_files=template_files
+                )
                 
                 status_box.update(label="✅ Análise e Auditoria Concluídas!", state="complete", expanded=False)
                 
-                # 1. ÂNCORA (MINUTA FINAL) - DESTAQUE TOTAL
-                st.subheader("📝 Minuta Sugerida (Pronta para Assinatura)")
-                minuta_text = results.get("steps", {}).get("integral", results["final_report"])
+                # 1. PARSEAMENTO DO OUTPUT (Separar Diagnóstico vs Minuta)
+                full_text = results.get("steps", {}).get("integral", results["final_report"])
                 
-                # Caixa de Código facilita a cópia (botão copy no canto)
-                st.code(minuta_text, language="markdown")
+                # Tenta separar a Minuta (geralmente após "## 3. MINUTA" ou "## MINUTA")
+                import re
+                parts = re.split(r'##\s*3\.\s*MINUTA|##\s*MINUTA', full_text, flags=re.IGNORECASE)
                 
-                # 2. BOTÕES DE ACESSO (DIÁLOGOS/POPOVERS)
+                if len(parts) > 1:
+                    diagnostic_text = parts[0]
+                    minuta_text = parts[1].strip()
+                    # Remove possível rodapé de fim de arquivo do prompt ou assinatura extra
+                    minuta_text = re.split(r'---', minuta_text)[0].strip()
+                else:
+                    # Fallback: se não achar a divisão, mostra tudo
+                    diagnostic_text = "Diagnóstico integral incorporado ao texto."
+                    minuta_text = full_text
+
+                # 2. ÂNCORA (MINUTA FINAL)
+                st.subheader("📝 Minuta da Decisão (Texto Puro)")
+                # 'language=None' tira as cores de markdown e 'st.code' garante o botão de copiar 
+                st.code(minuta_text, language=None)
+                
+                # 3. BOTÕES DE ACESSO (DIÁLOGOS/POPOVERS)
                 st.markdown("---")
-                st.write("🔎 **Ferramentas de Revisão:**")
+                st.write("🔎 **Painel de Controle:**")
                 
-                c1, c2, c3 = st.columns(3)
+                c1, c2, c3, c4 = st.columns(4)
                 
                 with c1:
+                    with st.popover("🧠 Ver Diagnóstico e Fundamentação"):
+                        st.markdown("### 🧠 Raciocínio (Chain-of-Thought)")
+                        st.markdown(diagnostic_text)
+                
+                with c2:
                     dashboard_text = results.get("auditor_dashboard", "")
                     if dashboard_text:
                         with st.popover("🛡️ Ver Auditoria (Compliance)"):
                             st.markdown("### 🛡️ Relatório do Auditor")
                             st.markdown(dashboard_text)
                 
-                with c2:
+                with c3:
                     style_report = results.get("style_report", "")
                     if style_report:
                         with st.popover("🎨 Ver Análise de Estilo"):
                             st.markdown("### 🎨 Dossiê de Estilo Identificado")
                             st.markdown(style_report)
 
-                with c3:
-                    with st.popover("🕵️ Ver Detalhes Técnicos"):
+                with c4:
+                    with st.popover("🕵️ Detalhes Técnicos"):
                         st.markdown("### ⚙️ Logs da Orquestração")
                         st.json(results.get("steps", {}))
                 
-                # Salva no histórico (apenas texto simples para não poluir)
+                # Salva no histórico (apenas a minuta para ser útil)
                 st.session_state.messages.append({"role": "user", "content": f"Analise o processo {uploaded_file.name} (Modo Multi-Agente)"})
                 st.session_state.messages.append({"role": "assistant", "content": minuta_text})
                 
