@@ -35,17 +35,20 @@ except ImportError:
 def clean_text(text: str) -> str:
     """
     Higienização agressiva para peças jurídicas (Otimização de Context Window).
-    Remove: Cabeçalhos, Rodapés, Números de Página, Espaços duplos.
+    Remove: Cabeçalhos, Rodapés, Números de Página, Espaços duplos, Assinaturas Digitais.
     """
+    if not text or not isinstance(text, str):
+        return ""
+        
     # 1. Normalização de quebras de linha
     text = text.replace('\r', '')
     
     # 2. Remove cabeçalhos de numeração de processo (ex: "Processo nº 1234..." repetido)
-    text = re.sub(r'(?i)(fls\.\s*\d+|processo\s*nº?[:\s]*[\d\.\-]+)', '', text)
+    text = re.sub(r'(?i)(fls\.?\s*\d+|processo\s*nº?[:\s]*[\d\.\-]+)', '', text)
     
-    # 3. Remove rodapés de escritório/sistema
-    # Padrão comum: "Rua X, nº Y... | www.advocacia..." ou "PJe - Assinado eletronicamente"
-    text = re.sub(r'(?i)(assinado\s+eletronicamente|documento\s+assinado|pje).*', '', text) 
+    # 3. Remove rodapés de escritório/sistema e assinaturas digitais
+    # Padrão comum: "PJe - Assinado eletronicamente" ou "Documento assinado digitalmente"
+    text = re.sub(r'(?i)(assinado\s+eletronicamente|documento\s+assinado|pje|assinatura\s+digital).*', '', text) 
     
     # 4. Remove números de página soltos
     text = re.sub(r'\n\s*\d+\s*\n', '\n', text)
@@ -53,7 +56,18 @@ def clean_text(text: str) -> str:
     # 5. Redução de ruído visual (traços, asteriscos)
     text = re.sub(r'[_=\-\*]{3,}', '', text)
     
-    # 6. Compressão de espaços (White space normalization)
+    # 6. NOVO: Remove blocos de assinatura digital Base64 (longas sequências alfanuméricas)
+    # Detecta strings com mais de 200 caracteres consecutivos sem espaços (típico de Base64/hash)
+    text = re.sub(r'[A-Za-z0-9+/=]{200,}', '', text)
+    
+    # 7. NOVO: Remove chaves/colchetes JSON com conteúdo de 'signature' ou 'extras'
+    text = re.sub(r"'extras':\s*\{[^}]*\}", '', text)
+    text = re.sub(r"'signature':\s*'[^']*'", '', text)
+    
+    # 8. NOVO: Remove linhas que parecem ser metadados de certificado
+    text = re.sub(r'(?i)(certificado|hash|sha\d*|md5|rsa|dsa|asn\.\d):[^\n]*\n?', '', text)
+    
+    # 9. Compressão de espaços (White space normalization)
     text = re.sub(r'\s+', ' ', text)
     
     return text.strip()
