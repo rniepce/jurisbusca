@@ -407,18 +407,22 @@ if uploaded_files:
 
             st.markdown("---")
 
-        # Exibe Resultados como Links
+        # Exibe Resultados como Links (Grid)
         if st.session_state.batch_results:
             st.markdown("### 🗂️ Processos Analisados (Clique para abrir)")
-            for res in st.session_state.batch_results:
-                if "error" in res:
-                    st.error(f"❌ {res['filename']}: {res['error']}")
-                else:
-                    # Gera Link para Nova Aba
-                    url = f"/?report_id={res['report_id']}"
-                    st.markdown(f"- 📄 [{res['filename']}]({url})", unsafe_allow_html=True) # target_blank é padrão em alguns mds, mas streamlit precisa de hack ou st.link_button
-                    # st.link_button abre na mesma aba ou nova? st.link_button(label, url) sends user to url.
-                    st.link_button(f"Abrir {res['filename']}", url)
+            
+            # Grid de 4 colunas para botões compactos
+            cols = st.columns(4)
+            for i, res in enumerate(st.session_state.batch_results):
+                with cols[i % 4]:
+                    if "error" in res:
+                        st.error(f"❌ {res['filename']}")
+                        st.caption(res['error'])
+                    else:
+                        # Gera Link para Nova Aba
+                        url = f"/?report_id={res['report_id']}"
+                        # Botão limpo, sem link duplicado
+                        st.link_button(f"📄 {res['filename']}", url, use_container_width=True)
 
 
     # 2. MODO INDIVIDUAL (Single File)
