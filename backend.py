@@ -575,9 +575,21 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
             
             try:
                 if suffix == ".pdf":
+                    # Tentativa 1: Leitura de Texto Nativo
                     loader = PyPDFLoader(tmp_path)
                     docs = loader.load()
                     text_content = "\n".join([d.page_content for d in docs])
+                    
+                    # Tentativa 2: OCR (se texto vazio e OCR habilitado)
+                    if len(text_content.strip()) < 50 and HAS_OCR:
+                        try:
+                            ocr_loader = RapidOCRPDFLoader(tmp_path)
+                            ocr_docs = ocr_loader.load()
+                            ocr_text = "\n".join([d.page_content for d in ocr_docs])
+                            if len(ocr_text) > len(text_content):
+                                text_content = ocr_text
+                        except Exception as e:
+                            print(f"Erro no OCR: {e}")
                 elif suffix == ".docx":
                     from langchain_community.document_loaders import Docx2txtLoader
                     loader = Docx2txtLoader(tmp_path)
