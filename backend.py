@@ -27,12 +27,19 @@ import gc
 # from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
 # from prompts_auditor import PROMPT_AUDITOR_FATICO, PROMPT_AUDITOR_EFICIENCIA, PROMPT_AUDITOR_JURIDICO, PROMPT_AUDITOR_DASHBOARD
 from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH
+# V1 Imports (Google Native)
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-    from backend.orchestrator_v2 import run_hybrid_orchestration
     HAS_GEMINI = True
 except ImportError:
     HAS_GEMINI = False
+
+# V2 Imports (Agentic)
+try:
+    from backend.orchestrator_v2 import run_hybrid_orchestration
+except ImportError:
+    # Se falhar (ex: falta langgraph), apenas V2 ficará indisponível
+    run_hybrid_orchestration = None
 
 
 
