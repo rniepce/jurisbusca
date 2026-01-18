@@ -177,9 +177,9 @@ with st.sidebar:
         
     else:
         # Se JÁ tem chave, mostra status discreto com opção de sair
-        cols = st.columns([4, 1])
-        cols[0].success("🔑 API Conectada")
-        if cols[1].button("🚪", help="Sair / Trocar Chave"):
+        cols = st.columns([3, 1])
+        cols[0].success("🔑 API Conectada", icon="✅")
+        if cols[1].button("Alterar", type="secondary", use_container_width=True, help="Trocar chave de acesso"):
             st.session_state.google_api_key = ""
             st.rerun()
         
