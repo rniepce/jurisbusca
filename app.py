@@ -592,6 +592,20 @@ if uploaded_files:
                         diagnostic_text = "Diagnóstico não identificado separadamente."
                         minuta_text = full_text
 
+                    # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
+                    if minuta_text:
+                        # 1. Converte quebras de linha escapadas para reais
+                        if isinstance(minuta_text, str):
+                            minuta_text = minuta_text.replace("\\n", "\n")
+                        
+                        # 2. Remove artefatos de dicionário Python/JSON vazando no final ('extras': {...})
+                        # Padrão capturado: ", 'extras': {'signature': ...}}"
+                        minuta_text = re.sub(r"',\s*'extras':\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
+                        minuta_text = re.sub(r"',\s*\"extras\":\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
+                        
+                        # 3. Remove aspas de tupla se sobrarem no início/fim
+                        minuta_text = minuta_text.strip().strip("'").strip('"')
+
                     # 3. BOTÕES DE ACESSO (DIÁLOGOS/POPOVERS)
                     st.markdown("---")
                     st.write("🔎 **Painel de Controle:**")
