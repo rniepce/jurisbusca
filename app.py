@@ -195,10 +195,41 @@ with st.sidebar:
                  st.session_state.retriever = retriever
         # Se JÁ tem chave, mostra status discreto com opção de sair
         cols = st.columns([1.8, 1])
-        cols[0].success("🔑 API Conectada", icon="✅")
-        if cols[1].button("Alterar", type="secondary", use_container_width=True, help="Trocar chave de acesso"):
+        cols[0].success("🔑 Google Conectado", icon="✅")
+        if cols[1].button("Sair", type="secondary", use_container_width=True, help="Trocar chave de acesso"):
             st.session_state.google_api_key = ""
             st.rerun()
+            
+        st.markdown("---")
+        
+        # SELETOR DE MODO (V1 vs V2)
+        mode_option = st.radio(
+            "Modo de Operação:",
+            ["V1: Standard (Gemini)", "V2: Agentes Híbridos (SOTA)"],
+            index=0,
+            help="V1: Rápido e Econômico (Gemini puro).\nV2: Qualidade Extrema (Orquestração entre Gemini, Claude, GPT e DeepSeek)."
+        )
+        st.session_state.app_mode = "v2" if "V2" in mode_option else "v1"
+
+        # CONFIGURAÇÃO V2 (Chaves Extras)
+        if st.session_state.app_mode == "v2":
+            with st.expander("⚙️ Configurar Banca Digital", expanded=True):
+                st.caption("Insira as chaves para ativar a equipe completa.")
+                
+                # OpenAI
+                if "openai_key" not in st.session_state: st.session_state.openai_key = ""
+                st.session_state.openai_key = st.text_input("OpenAI API Key (Auditor GPT-4o)", value=st.session_state.openai_key, type="password")
+                
+                # Anthropic
+                if "anthropic_key" not in st.session_state: st.session_state.anthropic_key = ""
+                st.session_state.anthropic_key = st.text_input("Anthropic API Key (Redator Claude)", value=st.session_state.anthropic_key, type="password")
+                
+                # DeepSeek
+                if "deepseek_key" not in st.session_state: st.session_state.deepseek_key = ""
+                st.session_state.deepseek_key = st.text_input("DeepSeek API Key (Juiz Reasoning)", value=st.session_state.deepseek_key, type="password")
+                
+                if not (st.session_state.openai_key and st.session_state.anthropic_key and st.session_state.deepseek_key):
+                    st.warning("⚠️ Preencha todas as chaves para usar o Modo V2.")
         
     google_api_key = st.session_state.google_api_key
 
@@ -421,7 +452,19 @@ if uploaded_files:
                 else:
                     with st.spinner(f"Processando {len(uploaded_files)} casos em paralelo (Isso pode levar um tempo)..."):
                         # Processa em Paralelo e Salva JSONs
-                        results = process_batch_parallel(uploaded_files, google_api_key, template_files=template_files)
+                        keys_dict = {
+                            "google": google_api_key,
+                            "openai": st.session_state.get("openai_key"),
+                            "anthropic": st.session_state.get("anthropic_key"),
+                            "deepseek": st.session_state.get("deepseek_key")
+                        }
+                        results = process_batch_parallel(
+                            uploaded_files, 
+                            google_api_key, 
+                            template_files=template_files,
+                            mode=st.session_state.get("app_mode", "v1"),
+                            keys=keys_dict
+                        )
                         st.session_state.batch_results = results
         
         # Exibe Raio-X se houver
@@ -477,12 +520,20 @@ if uploaded_files:
                                         
                                     try:
                                         # Chama processamento com callback
+                                        keys_dict = {
+                                            "google": google_api_key,
+                                            "openai": st.session_state.get("openai_key"),
+                                            "anthropic": st.session_state.get("anthropic_key"),
+                                            "deepseek": st.session_state.get("deepseek_key")
+                                        }
                                         results = process_batch_parallel(
                                             subset_files, 
                                             google_api_key, 
                                             template_files=template_files, 
                                             text_cache_dict=st.session_state.file_text_cache,
-                                            progress_callback=update_progress
+                                            progress_callback=update_progress,
+                                            mode=st.session_state.get("app_mode", "v1"),
+                                            keys=keys_dict
                                         )
                                     except Exception as e:
                                         st.error(f"Erro no processamento em lote: {e}")

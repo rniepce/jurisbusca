@@ -1,14 +1,24 @@
+# Core
 streamlit
 langchain
 langchain-community
-chromadb
+python-dotenv
+pandas
+plotly
+
+# V1: Google Gemini (Native)
+langchain-google-genai
+
+# V2: Multi-Agent Orchestration
+langgraph
+langchain-openai
+langchain-anthropic
+
+# Data Processing
 pypdf
 python-docx
+chromadb
 tiktoken
 rapidocr-onnxruntime
 rapidocr-pdf
 scikit-learn
-langchain-google-genai
-plotly
-pandas
-python-dotenv

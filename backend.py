@@ -26,6 +26,7 @@ import gc
 from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+    from backend.orchestrator_v2 import run_hybrid_orchestration
     HAS_GEMINI = True
 except ImportError:
     HAS_GEMINI = False
@@ -551,10 +552,10 @@ import hashlib
 import json
 import time
 
-def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None):
+def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None, mode="v1", keys=None):
     """
-    Função Worker para processar um único caso completo (Leitura -> RAG -> Gemini -> JSON).
-    Aceita `cached_text` para pular OCR.
+    Função Worker para processar um único caso completo.
+    Suporta V1 (Gemini Only) e V2 (Hybrid Agents).
     """
     try:
         # 1. Extract Text
@@ -588,9 +589,21 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
                 
             clean_content = clean_text(text_content)
         
-        # 2. Run Gemini Pipeline (Deep Analysis)
-        # run_gemini_orchestration expects: (text: str, api_key: str, status_callback=None, template_files=None)
-        results = run_gemini_orchestration(clean_content, api_key, status_callback=None, template_files=template_files)
+        # 2. Run Pipeline (V1 vs V2)
+        if mode == "v2" and keys:
+            # V2: Hybrid Orchestration (Gemini + DeepSeek + Claude + GPT)
+            # Normalizar output para o formato esperado pelo front
+            v2_output = run_hybrid_orchestration(clean_content, keys)
+            
+            results = {
+                "final_report": v2_output.get("final_output", "Erro na geração V2"),
+                "auditor_dashboard": v2_output.get("audit_report", "Auditoria indisponível"),
+                "style_report": "Gerado via Agentic Style Guide",
+                "steps": v2_output.get("logs", [])
+            }
+        else:
+            # V1: Gemini Native Pipeline
+            results = run_gemini_orchestration(clean_content, api_key, status_callback=None, template_files=template_files)
         
         # 3. Save Result
         report_id = hashlib.md5(f"{filename}_{time.time()}".encode()).hexdigest()
@@ -611,12 +624,10 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
     except Exception as e:
         return {"error": str(e), "filename": filename}
 
-def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None):
+def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None, mode="v1", keys=None):
     """
     Processa lista de arquivos EM PARALELO.
-    Aceita `text_cache_dict` {filename: text} para evitar OCR repetido.
-    Aceita `progress_callback(current, total, filename)` para update de UI.
-    Retorna lista de dicionários com resultados.
+    Suporta V1/V2 via worker.
     """
     results_list = []
     total_files = len(files)
@@ -641,7 +652,9 @@ def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=
             filename=data["name"], 
             api_key=api_key, 
             template_files=template_files,
-            cached_text=data["cached_text"]
+            cached_text=data["cached_text"],
+            mode=mode,
+            keys=keys
         )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
