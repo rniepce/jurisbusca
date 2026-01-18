@@ -270,24 +270,26 @@ if "report_id" in query_params:
 
         # Renderiza Decisão
         st.subheader("📝 Minuta da Decisão")
-        st.code(minuta_text, language=None)
+        st.text_area("Copie o texto abaixo:", value=minuta_text, height=600, label_visibility="collapsed")
         
         st.markdown("---")
         st.write("🔎 **Painel de Controle:**")
-        c1, c2, c3, c4 = st.columns(4)
+        
+        # Alinha os botões à esquerda (compactos)
+        c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 2])
         with c1:
-            with st.popover("🧠 Diagnóstico"):
+            with st.popover("🧠 Diagnóstico", use_container_width=True):
                 st.markdown(diagnostic_text)
         with c2:
             if data.get("auditor_dashboard"):
-                with st.popover("🛡️ Auditoria"):
+                with st.popover("🛡️ Auditoria", use_container_width=True):
                     st.markdown(data["auditor_dashboard"])
         with c3:
             if data.get("style_report"):
-                with st.popover("🎨 Estilo"):
+                with st.popover("🎨 Estilo", use_container_width=True):
                     st.markdown(data["style_report"])
         with c4:
-             with st.popover("⚙️ Logs"):
+             with st.popover("⚙️ Logs", use_container_width=True):
                 st.json(data.get("steps", {}))
         
         # Chat (Simulado - não persiste contexto longo por enquanto nesta view simples)
