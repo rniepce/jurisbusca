@@ -598,10 +598,9 @@ if uploaded_files:
                         if isinstance(minuta_text, str):
                             minuta_text = minuta_text.replace("\\n", "\n")
                         
-                        # 2. Remove artefatos de dicionário Python/JSON vazando no final ('extras': {...})
-                        # Padrão capturado: ", 'extras': {'signature': ...}}"
-                        minuta_text = re.sub(r"',\s*'extras':\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
-                        minuta_text = re.sub(r"',\s*\"extras\":\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
+                        # 2. Desabilitado temporariamente para debug (pode estar cortando texto)
+                        # minuta_text = re.sub(r"',\s*'extras':\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
+                        # minuta_text = re.sub(r"',\s*\"extras\":\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
                         
                         # 3. Remove aspas de tupla se sobrarem no início/fim
                         minuta_text = minuta_text.strip().strip("'").strip('"')
@@ -610,6 +609,13 @@ if uploaded_files:
                     st.markdown("---")
                     st.write("🔎 **Painel de Controle:**")
                     
+                    # DEBUG AREA (Visível apenas se houver suspeita de erro)
+                    with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
+                        st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
+                        st.text(f"Tipo do Texto: {type(full_text)}")
+                        st.text(f"Início do Texto (500 chars):\n{str(full_text)[:500]}")
+                        st.text(f"Fim do Texto (500 chars):\n{str(full_text)[-500:]}")
+
                     c1, c2, c3, c4 = st.columns(4)
                     
                     with c1:
