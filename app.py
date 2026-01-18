@@ -140,20 +140,20 @@ with st.sidebar:
     st.title("🎛️ Controle de Testes")
     
     # Botão de Reset (Nova Conversa)
-    if st.button("🗑️ Nova Análise / Limpar Tudo"):
-        # Limpa chaves específicas do estado
-        keys_to_reset = ["messages", "process_text", "retriever", "current_file_name"]
+    if st.button("🗑️ Nova Análise (Manter Modelos)"):
+        # Limpa chaves específicas do estado, MAS PRESERVA OS MODELOS
+        keys_to_reset = ["messages", "process_text", "retriever", "current_file_name", "style_report_preview"]
         for key in keys_to_reset:
             if key in st.session_state:
                 del st.session_state[key]
         
-        # Força recriação do uploader mudando a key
+        # Força recriação APENAS do uploader principal
         if "uploader_key" not in st.session_state:
             st.session_state.uploader_key = 0
         st.session_state.uploader_key += 1
         st.rerun()
 
-    # Inicializa key do uploader
+    # Inicializa key do uploader principal
     if "uploader_key" not in st.session_state:
         st.session_state.uploader_key = 0
 
@@ -175,7 +175,8 @@ with st.sidebar:
     template_files = st.file_uploader(
         "Suba seus despacho/sentenças para o Gemini usar como estilo:",
         type=["pdf", "docx", "txt"],
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        key="rag_templates_uploader" # Key fixa para não resetar
     )
     
     if template_files:
