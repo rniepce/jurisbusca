@@ -157,8 +157,6 @@ with st.sidebar:
     if "uploader_key" not in st.session_state:
         st.session_state.uploader_key = 0
 
-    st.header("1. Upload do Processo")
-    
     # API KEY logo no início para liberar funções
     if "google_api_key" not in st.session_state:
         st.session_state.google_api_key = ""
@@ -177,9 +175,6 @@ with st.sidebar:
                 else:
                     st.error("Chave inválida. Deve começar com 'AIza'.")
         
-        # Bloqueia o resto da sidebar visualmente se não tiver chave (opcional, mas bom pra UX)
-        # st.stop() # Descomentar se quiser obrigar a chave para ver o resto
-    
     else:
         # Se JÁ tem chave, mostra status discreto com opção de sair
         cols = st.columns([4, 1])
@@ -189,18 +184,8 @@ with st.sidebar:
             st.rerun()
         
     google_api_key = st.session_state.google_api_key
-    
-    uploaded_files = st.file_uploader(
-        "Carregue os arquivos (PDF, DOCX, TXT)", 
-        type=["pdf", "docx", "txt"],
-        help="Para análise individual ou em lote (Raio-X).",
-        accept_multiple_files=True, # Agora aceita múltiplos
-        key=f"uploader_{st.session_state.uploader_key}"
-    )
-    
-    st.markdown("---")
-    
-    st.header("📂 Banco de Modelos (RAG)")
+
+    st.header("1. Banco de Modelos (RAG)")
     template_files = st.file_uploader(
         "Suba seus despacho/sentenças para o Gemini usar como estilo:",
         type=["pdf", "docx", "txt"],
@@ -212,9 +197,9 @@ with st.sidebar:
         st.success(f"✅ {len(template_files)} modelos recebidos!")
         
         if st.button("🎨 Gerar Relatório de Estilo (Preview)"):
-            if not google_api_key:
-                st.error("Insira a API Key do Google primeiro.")
-            else:
+             if not google_api_key:
+                 st.error("Insira a Google API Key na barra lateral.")
+             else:
                 with st.spinner("Lendo modelos e criando perfil estilístico (Gemini Flash)..."):
                     try:
                         # Processa apenas para pegar os textos
@@ -227,6 +212,18 @@ with st.sidebar:
                             st.warning("Não consegui extrair texto dos arquivos.")
                     except Exception as e:
                         st.error(f"Erro ao gerar estilo: {e}")
+    
+    st.markdown("---")
+
+    st.header("2. Upload do Processo(s)")
+    
+    uploaded_files = st.file_uploader(
+        "Carregue os arquivos (PDF, DOCX, TXT)", 
+        type=["pdf", "docx", "txt"],
+        help="Para análise individual ou em lote (Raio-X).",
+        accept_multiple_files=True, # Agora aceita múltiplos
+        key=f"uploader_{st.session_state.uploader_key}"
+    )
 
     st.markdown("---")
     
@@ -324,16 +321,36 @@ if uploaded_files:
     if len(uploaded_files) > 1:
         st.info(f"⚡ **Modo Gabinete Detectado:** {len(uploaded_files)} processos na fila.")
         
-        # Botão ABAIXO do upload
-        if st.button("⚡ Processar Gabinete (Paralelo)", type="primary"):
-             if not google_api_key:
-                 st.error("Insira a Google API Key na barra lateral.")
-             else:
-                 with st.spinner(f"Processando {len(uploaded_files)} casos em paralelo (Isso pode levar um tempo)..."):
-                     # Processa em Paralelo e Salva JSONs
-                     results = process_batch_parallel(uploaded_files, google_api_key, template_files=template_files)
-                     st.session_state.batch_results = results
+        col_xray, col_batch = st.columns(2) # Create columns for buttons
+
+        # Botão para Gerar Raio-X
+        with col_xray:
+            if st.button("⚡ Gerar Raio-X da Carteira (Gemini Flash)", type="primary"):
+                if not google_api_key:
+                    st.error("Insira a Google API Key na barra lateral.")
+                else:
+                    with st.spinner("Analisando carteira e gerando Dashboard (Isso pode levar alguns segundos)..."):
+                        # Passa templates se houver
+                        report = generate_batch_xray(uploaded_files, google_api_key, template_files=template_files)
+                        st.session_state.xray_report = report
+
+        # Botão para Processar Gabinete (Paralelo)
+        with col_batch:
+            if st.button("⚡ Processar Gabinete (Paralelo)", type="secondary"): # Changed to secondary to differentiate
+                if not google_api_key:
+                    st.error("Insira a Google API Key na barra lateral.")
+                else:
+                    with st.spinner(f"Processando {len(uploaded_files)} casos em paralelo (Isso pode levar um tempo)..."):
+                        # Processa em Paralelo e Salva JSONs
+                        results = process_batch_parallel(uploaded_files, google_api_key, template_files=template_files)
+                        st.session_state.batch_results = results
         
+        # Exibe Raio-X se houver
+        if st.session_state.xray_report:
+            st.markdown("### 📊 Raio-X da Carteira")
+            st.markdown(st.session_state.xray_report)
+            st.markdown("---")
+
         # Exibe Resultados como Links
         if st.session_state.batch_results:
             st.markdown("### 🗂️ Processos Analisados (Clique para abrir)")

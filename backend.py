@@ -602,22 +602,36 @@ def process_batch(files, api_key):
                 
     return processed_texts
 
-def generate_batch_xray(files, api_key):
+def generate_batch_xray(files, api_key, template_files=None):
     """
     Gera o Raio-X da carteira usando Gemini Flash.
+    Agora considera MODELOS DE REFERÊNCIA se houver.
     """
     try:
+        # 1. Processa Processos
         texts = process_batch(files, api_key)
         if not texts:
             return "Nenhum texto extraído dos processos."
             
         full_context = "\n\n".join(texts)
         
+        # 2. Processa Modelos (se houver)
+        models_context = ""
+        if template_files:
+            # Reutiliza process_batch pois a lógica de extração é a mesma
+            model_texts = process_batch(template_files, api_key) # template_files são UploadedFile
+            if model_texts:
+                 models_context = "\n\n## MODELOS DE REFERÊNCIA DISPONÍVEIS:\n" + "\n".join(model_texts)
+        
         llm_flash = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.1)
+        
+        prompt_content = f"Analise estes processos e gere o Raio-X.\n\n[PROCESSOS]:\n{full_context}"
+        if models_context:
+            prompt_content += f"\n\n{models_context}"
         
         messages = [
             SystemMessage(content=PROMPT_XRAY_BATCH),
-            HumanMessage(content=f"Analise estes processos e gere o Raio-X:\n{full_context}")
+            HumanMessage(content=prompt_content)
         ]
         
         response = llm_flash.invoke(messages)

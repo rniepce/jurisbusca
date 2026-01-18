@@ -143,6 +143,7 @@ PROMPT_XRAY_BATCH = """
 Você recebeu o texto integral de uma lista de múltiplos processos judiciais.
 Sua missão não é julgar um por um, mas fazer uma **Análise Estratégica de Carteira (X-Ray)**.
 Identifique padrões, agrupe casos similares e sugira tratamento em bloco.
+TAMBÉM RECEBEU (OPCIONALMENTE) MODELOS DE DECISÃO JÁ EXISTENTES. SE HOUVER, USE-OS.
 
 ## 2. ANÁLISE DE CLUSTERIZAÇÃO
 Analise os N processos e agrupe-os por similaridade fática/jurídica.
@@ -150,7 +151,13 @@ Analise os N processos e agrupe-os por similaridade fática/jurídica.
 *   **Grupo B (Complexos/Atípicos):** Casos que fogem do padrão e exigem atenção individual.
 *   **Grupo C (Saneáveis):** Casos com vício processual claro (ex: Falta de procuração).
 
-## 3. FORMATO DO RELATÓRIO (BOARD EXECUTIVO)
+## 3. MATCH COM MODELOS (CRUCIAL)
+Se houver "MODELOS DE REFERÊNCIA" no contexto:
+*   Para cada grupo identificado, verifique se algum Modelo serve como base.
+*   Se servir, indique: "Usar Modelo X".
+*   Se não houver modelo compatível, indique: "Necessário redigir nova minuta".
+
+## 4. FORMATO DO RELATÓRIO (BOARD EXECUTIVO)
 Gere um dashboard markdown rico.
 
 ---
@@ -165,7 +172,7 @@ Gere um dashboard markdown rico.
 ### 📁 GRUPO 1: [Nome do Tema, ex: Dano Moral - Telefonia] (Qtd: X)
 > *Processos:* [Lista: Proc. 1, Proc. 3, Proc. 5]
 *   **Padrão Fático:** [Descrição sucinta do fato comum]
-*   **Sugestão de Minuta Padrão:** [Ex: Improcedência por falta de provas / Procedência parcial]
+*   **Sugestão de Minuta/Modelo:** [Indique qual modelo existente usar ou se precisa criar um novo]
 
 ### 📁 GRUPO 2: [Nome do Tema] (Qtd: Y)
 ...
@@ -174,7 +181,6 @@ Gere um dashboard markdown rico.
 *   **[Processo Z]:** [Motivo do alerta: ex: Tutela de Urgência, Caso midiático, Risco de prescrição]
 
 ## 📈 ESTATÍSTICAS
-*   **Autor Mais Frequente:** ...
 *   **Réu Mais Frequente:** ...
 ---
 """
