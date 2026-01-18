@@ -14,11 +14,10 @@ except ImportError:
     HAS_OCR = False
 
 from langchain_community.vectorstores import Chroma
-from langchain_openai import OpenAIEmbeddings
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_ollama import ChatOllama
-from langchain_openai import ChatOpenAI
+# from langchain_ollama import ChatOllama # Removido para deploy Gemini Only
+# from langchain_openai import ChatOpenAI, OpenAIEmbeddings # Removido para deploy Gemini Only
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 import json
 import gc
@@ -439,13 +438,50 @@ def process_templates(files, api_key):
         finally:
             os.remove(tmp_path)
     
+    
     if not documents:
-        return None
+        return None, []
 
-    # Embeddings e Vector Store (Chroma na memória)
+    # Embeddings e Vector Store (PERSISTENTE)
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
-    vectorstore = Chroma.from_documents(documents, embeddings)
-    return vectorstore.as_retriever(search_kwargs={"k": 2}), documents
+    
+    # Define caminho persistente (Railway Volume ou Local)
+    # No Railway, defina CHROMA_DB_PATH como variável de ambiente apontando para o volume (ex: /app/data)
+    persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
+    
+    # Instancia o banco persistente
+    vectorstore = Chroma(
+        persist_directory=persist_dir, 
+        embedding_function=embeddings,
+        collection_name="rag_templates_persistent"
+    )
+    
+    # Adiciona os novos documentos
+    vectorstore.add_documents(documents)
+    
+    # Retorna o retriever e os docs para análise de estilo imediata
+    return vectorstore.as_retriever(search_kwargs={"k": 5}), documents
+
+def load_persistent_rag(api_key):
+    """
+    Tenta carregar o banco de dados persistente (se existir).
+    """
+    try:
+        persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
+        if os.path.exists(persist_dir):
+            embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
+            vectorstore = Chroma(
+                persist_directory=persist_dir, 
+                embedding_function=embeddings,
+                collection_name="rag_templates_persistent"
+            )
+            # Verifica se tem dados (hack simples)
+            if vectorstore._collection.count() > 0:
+                print(f"RAG Persistente carregado: {vectorstore._collection.count()} docs.")
+                return vectorstore.as_retriever(search_kwargs={"k": 5})
+    except Exception as e:
+        print(f"Erro ao carregar RAG persistente: {e}")
+    return None
 
 def generate_style_report(documents, api_key):
     """
