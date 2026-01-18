@@ -170,9 +170,11 @@ with st.sidebar:
     if not st.session_state.google_api_key:
         with st.container(border=True):
             st.markdown("### 🔑 Acesso")
-            key_input = st.text_input("Cole sua Google API Key:", type="password", key="input_key_temp")
+            with st.form("login_form"):
+                key_input = st.text_input("Cole sua Google API Key:", type="password", key="input_key_temp")
+                submitted = st.form_submit_button("🔓 Validar Acesso", type="primary", use_container_width=True)
             
-            if st.button("🔓 Validar Acesso", type="primary", use_container_width=True):
+            if submitted:
                 if key_input.startswith("AIza"):
                     st.session_state.google_api_key = key_input
                     # Tenta carregar RAG persistente ao logar
