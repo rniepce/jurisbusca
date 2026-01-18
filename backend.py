@@ -12,6 +12,9 @@ try:
     HAS_OCR = True
 except ImportError:
     HAS_OCR = False
+except Exception: 
+    # Catch-all para erros de runtime do RapidOCR ou dependências faltantes
+    HAS_OCR = False
 
 from langchain_community.vectorstores import Chroma
 # from langchain_huggingface import HuggingFaceEmbeddings # Não usado (Railway usa Google Embeddings)
