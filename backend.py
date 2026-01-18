@@ -21,8 +21,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 import json
 import gc
-from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
-from prompts_auditor import PROMPT_AUDITOR_FATICO, PROMPT_AUDITOR_EFICIENCIA, PROMPT_AUDITOR_JURIDICO, PROMPT_AUDITOR_DASHBOARD
+# from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
+# from prompts_auditor import PROMPT_AUDITOR_FATICO, PROMPT_AUDITOR_EFICIENCIA, PROMPT_AUDITOR_JURIDICO, PROMPT_AUDITOR_DASHBOARD
 from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
@@ -31,113 +31,7 @@ except ImportError:
     HAS_GEMINI = False
 
 
-try:
-    from mlx_lm import load, generate
-    import mlx.core as mx
-    HAS_MLX = True
-except ImportError:
-    HAS_MLX = False
-
-# Registro de Modelos Finetunados (Local)
-LOCAL_MODELS = {
-    "llama3.1-8b-juris": {
-        "model_id": "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit",
-        "adapter_path": "adapters/llama3_1_adapter"
-    },
-    "qwen2.5-14b-juris": {
-        "model_id": "mlx-community/Qwen2.5-14B-Instruct-4bit",
-        "adapter_path": "adapters/qwen25_14b_adapter"
-    },
-    "gemma2-9b-juris": {
-        "model_id": "mlx-community/gemma-2-9b-it-4bit",
-        "adapter_path": "adapters/gemma2_9b_adapter"
-    },
-    "deepseek-v2-juris": {
-        "model_id": "mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit",
-        "adapter_path": "adapters/deepseek_v2_lite_adapter"
-    },
-    "phi3.5-mini-juris": {
-        "model_id": "mlx-community/Phi-3.5-mini-instruct-4bit",
-        "adapter_path": "adapters/phi3_5_mini_adapter"
-    }
-}
-
-
-
 # Definição de Especialistas (Model Routing)
-AGENT_MODEL_MAP = {
-    "formal": "phi3.5-mini-juris",       # Rápido e bom de checklist
-    "fatos": "qwen2.5-14b-juris",        # Ótima compreensão de contexto
-    "material": "qwen2.5-14b-juris",     # Raciocínio jurídico profundo
-    "relator": "gemma2-9b-juris",        # Ótima escrita/redação
-    "auditor": "qwen2.5-14b-juris"       # Crítico e rigoroso
-}
-
-class MLXChatWrapper:
-    """Wrapper simples para usar modelos MLX compatível com a interface invoke do LangChain."""
-    def __init__(self, model_key):
-        if not HAS_MLX:
-            raise ImportError("mlx_lm não está instalado.")
-        
-        self.model_key = model_key
-        config = LOCAL_MODELS[model_key]
-        print(f"🔄 Carregando modelo especializado: {model_key}...")
-        
-        # Carrega modelo e tokenizer
-        # Se os adapters não existirem (ex: não treinou ainda), carrega só o base model
-        adapter_file = os.path.join(config['adapter_path'], "adapters.safetensors")
-        if os.path.exists(adapter_file):
-            self.model, self.tokenizer = load(config['model_id'], adapter_path=config['adapter_path'])
-        else:
-            print(f"Aviso: Adapter não encontrado em {config['adapter_path']}. Carregando modelo base.")
-            self.model, self.tokenizer = load(config['model_id'])
-            
-    def invoke(self, messages):
-        # Converte mensagens LangChain para formato de chat do tokenizer
-        # Suporta SystemMessage, HumanMessage, AIMessage
-        if "gemma" in self.model_key.lower():
-            # Gemma models generally do not support 'system' role. merging into user.
-            system_content = ""
-            new_messages = []
-            for msg in messages:
-                if isinstance(msg, SystemMessage):
-                    system_content += f"**INSTRUÇÃO DO SISTEMA:** {msg.content}\n\n"
-                else:
-                    new_messages.append(msg)
-            
-            # Prepend system content to first user message
-            if new_messages and isinstance(new_messages[0], HumanMessage):
-                new_messages[0].content = system_content + new_messages[0].content
-            elif system_content:
-                # Fallback if no user message (rare)
-                new_messages.insert(0, HumanMessage(content=system_content))
-                
-            messages = new_messages
-
-        chat_history = []
-        for msg in messages:
-            role = "user"
-            if isinstance(msg, SystemMessage):
-                role = "system"
-            elif isinstance(msg, AIMessage):
-                role = "assistant"
-            
-            chat_history.append({"role": role, "content": msg.content})
-            
-        # Aplica template
-        try:
-           prompt = self.tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
-        except Exception as e:
-           print(f"Erro ao aplicar template (provavelmente role inválida): {e}. Tentando fallback user-only.")
-           # Fallback agressivo: apenas user/assistant
-           simple_history = []
-           for msg in messages:
-               role = "user" if isinstance(msg, (SystemMessage, HumanMessage)) else "model"
-               simple_history.append({"role": role, "content": msg.content})
-           prompt = self.tokenizer.apply_chat_template(simple_history, tokenize=False, add_generation_prompt=True)
-        
-        # Gera resposta
-        response_text = generate(self.model, self.tokenizer, prompt=prompt, max_tokens=2048, verbose=False)
         
         return AIMessage(content=response_text)
     

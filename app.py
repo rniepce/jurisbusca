@@ -1,6 +1,11 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
+import json
+import re
+import traceback
+import pandas as pd
+import plotly.express as px
 from backend import process_uploaded_file, run_gemini_orchestration, process_templates, generate_style_report, generate_batch_xray, process_batch_parallel, load_persistent_rag
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 # from prompts import LEGAL_ASSISTANT_PROMPT # Obsoleto com multi-agentes
@@ -182,7 +187,7 @@ with st.sidebar:
         
     else:
         # Tenta carregar RAG se ainda não tiver (reload de página)
-        if st.session_state.retriever is None and st.session_state.google_api_key:
+        if st.session_state.get("retriever") is None and st.session_state.google_api_key:
              retriever = load_persistent_rag(st.session_state.google_api_key)
              if retriever:
                  st.session_state.retriever = retriever
@@ -260,7 +265,6 @@ query_params = st.query_params
 if "report_id" in query_params:
     report_id = query_params["report_id"]
     try:
-        import json
         with open(f".gemini_cache/reports/{report_id}.json", "r") as f:
             data = json.load(f)
         
@@ -269,7 +273,6 @@ if "report_id" in query_params:
         
         # Recupera dados
         full_text = data.get("steps", {}).get("integral", data.get("final_report", ""))
-        import re
         parts = re.split(r'##\s*3\.\s*MINUTA|##\s*MINUTA', full_text, flags=re.IGNORECASE)
         if len(parts) > 1:
             diagnostic_text = parts[0]
@@ -384,9 +387,6 @@ if uploaded_files:
                 
                 # 1. Gráfico de Pizza (Plotly)
                 try:
-                    import plotly.express as px
-                    import pandas as pd
-                    
                     clusters = report_data.get("clusters", [])
                     if clusters:
                         df_clusters = pd.DataFrame(clusters)
@@ -522,7 +522,6 @@ if uploaded_files:
                     full_text = results.get("steps", {}).get("integral", results["final_report"])
                     
                     # Tenta separar a Minuta (geralmente após "## 3. MINUTA" ou "## MINUTA")
-                    import re
                     parts = re.split(r'##\s*3\.\s*MINUTA|##\s*MINUTA', full_text, flags=re.IGNORECASE)
                     
                     if len(parts) > 1:
@@ -570,7 +569,6 @@ if uploaded_files:
                     st.session_state.messages.append({"role": "assistant", "content": minuta_text})
                     
                 except Exception as e:
-                    import traceback
                     st.error(f"Erro na execução da orquestração: {e}")
                     st.text(traceback.format_exc())
 
@@ -636,6 +634,5 @@ if st.session_state.messages and st.session_state.retriever:
                     st.session_state.messages.append({"role": "assistant", "content": response.content})
                 
             except Exception as e:
-                import traceback
                 st.error(f"Erro: {e}")
                 st.expander("Detalhes do erro").text(traceback.format_exc())
