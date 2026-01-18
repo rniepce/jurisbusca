@@ -232,6 +232,10 @@ with st.sidebar:
                     st.warning("⚠️ Preencha todas as chaves para usar o Modo V2.")
         
     google_api_key = st.session_state.google_api_key
+    
+    if not google_api_key:
+        st.info("👈 Por favor, insira sua Google API Key na barra lateral para liberar o sistema.")
+        st.stop()
 
     st.header("1. Banco de Modelos (RAG)")
     template_files = st.file_uploader(
