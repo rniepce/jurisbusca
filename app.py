@@ -314,6 +314,8 @@ if "current_file_name" not in st.session_state:
     st.session_state.current_file_name = None
 if "batch_results" not in st.session_state:
     st.session_state.batch_results = []
+if "xray_report" not in st.session_state:
+    st.session_state.xray_report = None
 
 # Processamento do Arquivo
 if uploaded_files:
