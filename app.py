@@ -583,21 +583,27 @@ if uploaded_files:
                     with c1:
                         with st.popover("🧠 Ver Diagnóstico e Fundamentação"):
                             st.markdown("### 🧠 Raciocínio (Chain-of-Thought)")
-                            st.markdown(diagnostic_text)
+                            # Fix escaped newlines for proper display
+                            display_text = diagnostic_text.replace("\\n", "\n") if isinstance(diagnostic_text, str) else str(diagnostic_text)
+                            st.markdown(display_text)
                     
                     with c2:
                         dashboard_text = results.get("auditor_dashboard", "")
                         if dashboard_text:
                             with st.popover("🛡️ Ver Auditoria (Compliance)"):
                                 st.markdown("### 🛡️ Relatório do Auditor")
-                                st.markdown(dashboard_text)
+                                # Fix escaped newlines
+                                display_audit = dashboard_text.replace("\\n", "\n") if isinstance(dashboard_text, str) else str(dashboard_text)
+                                st.markdown(display_audit)
                     
                     with c3:
                         style_report = results.get("style_report", "")
                         if style_report:
                             with st.popover("🎨 Ver Análise de Estilo"):
                                 st.markdown("### 🎨 Dossiê de Estilo Identificado")
-                                st.markdown(style_report)
+                                # Fix escaped newlines
+                                display_style = style_report.replace("\\n", "\n") if isinstance(style_report, str) else str(style_report)
+                                st.markdown(display_style)
 
                     with c4:
                         with st.popover("🕵️ Detalhes Técnicos"):
