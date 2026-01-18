@@ -24,7 +24,7 @@ import json
 import gc
 from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
 from prompts_auditor import PROMPT_AUDITOR_FATICO, PROMPT_AUDITOR_EFICIENCIA, PROMPT_AUDITOR_JURIDICO, PROMPT_AUDITOR_DASHBOARD
-from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER
+from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
     HAS_GEMINI = True
@@ -558,3 +558,70 @@ def run_gemini_orchestration(text: str, api_key: str, status_callback=None, temp
             "auditor": auditor_response
         }
     }
+
+def process_batch(files, api_key):
+    """
+    Processa múltiplos arquivos (PDF/DOCX) para o X-Ray.
+    Retorna uma lista de strings (textos extraídos).
+    """
+    processed_texts = []
+    
+    for file in files:
+        # Reutiliza a lógica de extração salvando em temp
+        suffix = os.path.splitext(file.name)[1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+            tmp_file.write(file.read())
+            tmp_path = tmp_file.name
+        
+        try:
+           # Extração simplificada, sem vetorização individual
+           text_content = ""
+           if suffix == ".pdf":
+               loader = PyPDFLoader(tmp_path)
+               docs = loader.load()
+               text_content = "\n".join([d.page_content for d in docs])
+           elif suffix == ".docx":
+               from langchain_community.document_loaders import Docx2txtLoader
+               loader = Docx2txtLoader(tmp_path)
+               docs = loader.load()
+               text_content = "\n".join([d.page_content for d in docs])
+           elif suffix == ".txt":
+               from langchain_community.document_loaders import TextLoader
+               loader = TextLoader(tmp_path)
+               docs = loader.load()
+               text_content = "\n".join([d.page_content for d in docs])
+           
+           if text_content:
+               processed_texts.append(f"--- PROCESSO: {file.name} ---\n{clean_text(text_content[:20000])}") # Limita chars por doc para caber no contexto
+               
+        except Exception as e:
+            print(f"Erro ao ler {file.name}: {e}")
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+                
+    return processed_texts
+
+def generate_batch_xray(files, api_key):
+    """
+    Gera o Raio-X da carteira usando Gemini Flash.
+    """
+    try:
+        texts = process_batch(files, api_key)
+        if not texts:
+            return "Nenhum texto extraído dos processos."
+            
+        full_context = "\n\n".join(texts)
+        
+        llm_flash = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.1)
+        
+        messages = [
+            SystemMessage(content=PROMPT_XRAY_BATCH),
+            HumanMessage(content=f"Analise estes processos e gere o Raio-X:\n{full_context}")
+        ]
+        
+        response = llm_flash.invoke(messages)
+        return response.content
+        
+    except Exception as e:
+        return f"Erro no Raio-X: {str(e)}"

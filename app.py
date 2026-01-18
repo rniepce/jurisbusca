@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from backend import process_uploaded_file, run_gemini_orchestration, process_templates, generate_style_report
+from backend import process_uploaded_file, run_gemini_orchestration, process_templates, generate_style_report, generate_batch_xray
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 # from prompts import LEGAL_ASSISTANT_PROMPT # Obsoleto com multi-agentes
 
@@ -190,10 +190,11 @@ with st.sidebar:
         
     google_api_key = st.session_state.google_api_key
     
-    uploaded_file = st.file_uploader(
-        "Carregue o arquivo (PDF, DOCX, TXT)", 
+    uploaded_files = st.file_uploader(
+        "Carregue os arquivos (PDF, DOCX, TXT)", 
         type=["pdf", "docx", "txt"],
-        help="O arquivo será processado (OCR se necessário) e vetorizado para análise.",
+        help="Para análise individual ou em lote (Raio-X).",
+        accept_multiple_files=True, # Agora aceita múltiplos
         key=f"uploader_{st.session_state.uploader_key}"
     )
     
@@ -228,9 +229,6 @@ with st.sidebar:
                         st.error(f"Erro ao gerar estilo: {e}")
 
     st.markdown("---")
-
-    # google_api_key ja foi pedido acima
-    st.markdown("---")
     
     st.info("✨ **Modo Google Gemini Pro:**\nEste ambiente roda exclusivamente com a IA mais avançada do Google para tarefas jurídicas.")
 
@@ -257,130 +255,158 @@ if "retriever" not in st.session_state:
     st.session_state.retriever = None
 if "current_file_name" not in st.session_state:
     st.session_state.current_file_name = None
+if "xray_report" not in st.session_state:
+    st.session_state.xray_report = None
 
-# Processamento do Arquivo
-if uploaded_file:
-    # Se mudou o arquivo, limpa o estado e reprocessa
-    if st.session_state.current_file_name != uploaded_file.name:
-        st.session_state.messages = []
-        st.session_state.process_text = ""
-        st.session_state.retriever = None
-        st.session_state.current_file_name = uploaded_file.name
-        
-        with st.spinner(f"Processando {uploaded_file.name}... (OCR + Vetorização)"):
-            # Reseta o buffer para o início
-            uploaded_file.seek(0)
-            
-            # Chama backend para OCR e Vetorização
-            text, retriever = process_uploaded_file(uploaded_file, uploaded_file.name, api_key=google_api_key)
-            
-            if text.startswith("Erro") or text.startswith("Formato"):
-                st.error(text)
-            else:
-                st.session_state.process_text = text
-                st.session_state.retriever = retriever
-                st.success(f"Processamento concluído! {len(text)} caracteres extraídos. Vetorização ativa.")
-                
-    # Mostra preview (opcional)
-    with st.expander("📄 Ver conteúdo textual extraído (OCR)"):
-        st.text_area("Conteúdo bruto", st.session_state.process_text, height=200)
+# ==============================================================================
+# LÓGICA DE DECISÃO: SINGLE MODE VS BATCH (RAIO-X)
+# ==============================================================================
 
-    # Botão de Ação Principal
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        analyze_btn = st.button("🚀 Rodar Análise Jurídica", type="primary")
-    
-    if analyze_btn:
-        # from backend import run_orchestration, run_gemini_orchestration # Já importado no topo
+if uploaded_files:
+    # 1. MODO LOTE (Raio-X) - Se houver mais de 1 arquivo
+    if len(uploaded_files) > 1:
+        st.info(f"⚡ **Modo Lote Detectado:** {len(uploaded_files)} processos selecionados.")
         
-        if not st.session_state.process_text:
-            st.error("O texto do arquivo está vazio.")
-        else:
-            # Limpa chat anterior para nova análise
+        col_xray, _ = st.columns([2, 3])
+        if col_xray.button("⚡ Gerar Raio-X da Carteira (Gemini Flash)", type="primary"):
+             if not google_api_key:
+                 st.error("Insira a Google API Key na barra lateral.")
+             else:
+                 with st.spinner("Analisando carteira e gerando Dashboard (Isso pode levar alguns segundos)..."):
+                     report = generate_batch_xray(uploaded_files, google_api_key)
+                     st.session_state.xray_report = report
+        
+        # Exibe o relatório se existir
+        if "xray_report" in st.session_state and st.session_state.xray_report:
+            st.markdown("---")
+            st.markdown(st.session_state.xray_report)
+            
+    # 2. MODO INDIVIDUAL (Single File)
+    else:
+        uploaded_file = uploaded_files[0] # Pega o único arquivo
+        
+        # Se mudou o arquivo, limpa o estado e reprocessa
+        if st.session_state.current_file_name != uploaded_file.name:
             st.session_state.messages = []
+            st.session_state.process_text = ""
+            st.session_state.retriever = None
+            st.session_state.current_file_name = uploaded_file.name
+            st.session_state.xray_report = None # Limpa X-RAY anterior se houver
             
-            # Lógica de Orquestração Multi-Agente
-            
-            # Container de Status Expansível (Novo no Streamlit)
-            status_box = st.status("🤖 Iniciando Orquestração de Agentes...", expanded=True)
-            
-            def update_status(msg):
-                status_box.write(msg)
+            with st.spinner(f"Processando {uploaded_file.name}... (OCR + Vetorização)"):
+                # Reseta o buffer para o início
+                uploaded_file.seek(0)
                 
-            try:
-                # Pipeline exclusiva do Gemini (Railway Deploy)
-                results = run_gemini_orchestration(
-                    text=st.session_state.process_text,
-                    api_key=google_api_key,
-                    status_callback=update_status,
-                    template_files=template_files
-                )
+                # Chama backend para OCR e Vetorização
+                text, retriever = process_uploaded_file(uploaded_file, uploaded_file.name, api_key=google_api_key)
                 
-                status_box.update(label="✅ Análise e Auditoria Concluídas!", state="complete", expanded=False)
-                
-                # 1. PARSEAMENTO DO OUTPUT (Separar Diagnóstico vs Minuta)
-                full_text = results.get("steps", {}).get("integral", results["final_report"])
-                
-                # Tenta separar a Minuta (geralmente após "## 3. MINUTA" ou "## MINUTA")
-                import re
-                parts = re.split(r'##\s*3\.\s*MINUTA|##\s*MINUTA', full_text, flags=re.IGNORECASE)
-                
-                if len(parts) > 1:
-                    diagnostic_text = parts[0]
-                    minuta_text = parts[1].strip()
-                    # Remove possível rodapé de fim de arquivo do prompt ou assinatura extra
-                    minuta_text = re.split(r'---', minuta_text)[0].strip()
+                if text.startswith("Erro") or text.startswith("Formato"):
+                    st.error(text)
                 else:
-                    # Fallback: se não achar a divisão, mostra tudo
-                    diagnostic_text = "Diagnóstico integral incorporado ao texto."
-                    minuta_text = full_text
+                    st.session_state.process_text = text
+                    st.session_state.retriever = retriever
+                    st.success(f"Processamento concluído! {len(text)} caracteres extraídos. Vetorização ativa.")
+                    
+        # Mostra preview (opcional)
+        with st.expander("📄 Ver conteúdo textual extraído (OCR)"):
+            st.text_area("Conteúdo bruto", st.session_state.process_text, height=200)
 
-                # 2. ÂNCORA (MINUTA FINAL)
-                st.subheader("📝 Minuta da Decisão (Texto Puro)")
-                # 'language=None' tira as cores de markdown e 'st.code' garante o botão de copiar 
-                st.code(minuta_text, language=None)
+        # Botão de Ação Principal
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            analyze_btn = st.button("🚀 Rodar Análise Jurídica", type="primary")
+        
+        if analyze_btn:
+            # from backend import run_orchestration, run_gemini_orchestration # Já importado no topo
+            
+            if not st.session_state.process_text:
+                st.error("O texto do arquivo está vazio.")
+            else:
+                # Limpa chat anterior para nova análise
+                st.session_state.messages = []
                 
-                # 3. BOTÕES DE ACESSO (DIÁLOGOS/POPOVERS)
-                st.markdown("---")
-                st.write("🔎 **Painel de Controle:**")
+                # Lógica de Orquestração Multi-Agente
                 
-                c1, c2, c3, c4 = st.columns(4)
+                # Container de Status Expansível (Novo no Streamlit)
+                status_box = st.status("🤖 Iniciando Orquestração de Agentes...", expanded=True)
                 
-                with c1:
-                    with st.popover("🧠 Ver Diagnóstico e Fundamentação"):
-                        st.markdown("### 🧠 Raciocínio (Chain-of-Thought)")
-                        st.markdown(diagnostic_text)
-                
-                with c2:
-                    dashboard_text = results.get("auditor_dashboard", "")
-                    if dashboard_text:
-                        with st.popover("🛡️ Ver Auditoria (Compliance)"):
-                            st.markdown("### 🛡️ Relatório do Auditor")
-                            st.markdown(dashboard_text)
-                
-                with c3:
-                    style_report = results.get("style_report", "")
-                    if style_report:
-                        with st.popover("🎨 Ver Análise de Estilo"):
-                            st.markdown("### 🎨 Dossiê de Estilo Identificado")
-                            st.markdown(style_report)
+                def update_status(msg):
+                    status_box.write(msg)
+                    
+                try:
+                    # Pipeline exclusiva do Gemini (Railway Deploy)
+                    results = run_gemini_orchestration(
+                        text=st.session_state.process_text,
+                        api_key=google_api_key,
+                        status_callback=update_status,
+                        template_files=template_files
+                    )
+                    
+                    status_box.update(label="✅ Análise e Auditoria Concluídas!", state="complete", expanded=False)
+                    
+                    # 1. PARSEAMENTO DO OUTPUT (Separar Diagnóstico vs Minuta)
+                    full_text = results.get("steps", {}).get("integral", results["final_report"])
+                    
+                    # Tenta separar a Minuta (geralmente após "## 3. MINUTA" ou "## MINUTA")
+                    import re
+                    parts = re.split(r'##\s*3\.\s*MINUTA|##\s*MINUTA', full_text, flags=re.IGNORECASE)
+                    
+                    if len(parts) > 1:
+                        diagnostic_text = parts[0]
+                        minuta_text = parts[1].strip()
+                        # Remove possível rodapé de fim de arquivo do prompt ou assinatura extra
+                        minuta_text = re.split(r'---', minuta_text)[0].strip()
+                    else:
+                        # Fallback: se não achar a divisão, mostra tudo
+                        diagnostic_text = "Diagnóstico integral incorporado ao texto."
+                        minuta_text = full_text
 
-                with c4:
-                    with st.popover("🕵️ Detalhes Técnicos"):
-                        st.markdown("### ⚙️ Logs da Orquestração")
-                        st.json(results.get("steps", {}))
-                
-                # Salva no histórico (apenas a minuta para ser útil)
-                st.session_state.messages.append({"role": "user", "content": f"Analise o processo {uploaded_file.name} (Modo Multi-Agente)"})
-                st.session_state.messages.append({"role": "assistant", "content": minuta_text})
-                
-            except Exception as e:
-                import traceback
-                st.error(f"Erro na execução da orquestração: {e}")
-                st.text(traceback.format_exc())
+                    # 2. ÂNCORA (MINUTA FINAL)
+                    st.subheader("📝 Minuta da Decisão (Texto Puro)")
+                    # 'language=None' tira as cores de markdown e 'st.code' garante o botão de copiar 
+                    st.code(minuta_text, language=None)
+                    
+                    # 3. BOTÕES DE ACESSO (DIÁLOGOS/POPOVERS)
+                    st.markdown("---")
+                    st.write("🔎 **Painel de Controle:**")
+                    
+                    c1, c2, c3, c4 = st.columns(4)
+                    
+                    with c1:
+                        with st.popover("🧠 Ver Diagnóstico e Fundamentação"):
+                            st.markdown("### 🧠 Raciocínio (Chain-of-Thought)")
+                            st.markdown(diagnostic_text)
+                    
+                    with c2:
+                        dashboard_text = results.get("auditor_dashboard", "")
+                        if dashboard_text:
+                            with st.popover("🛡️ Ver Auditoria (Compliance)"):
+                                st.markdown("### 🛡️ Relatório do Auditor")
+                                st.markdown(dashboard_text)
+                    
+                    with c3:
+                        style_report = results.get("style_report", "")
+                        if style_report:
+                            with st.popover("🎨 Ver Análise de Estilo"):
+                                st.markdown("### 🎨 Dossiê de Estilo Identificado")
+                                st.markdown(style_report)
+
+                    with c4:
+                        with st.popover("🕵️ Detalhes Técnicos"):
+                            st.markdown("### ⚙️ Logs da Orquestração")
+                            st.json(results.get("steps", {}))
+                    
+                    # Salva no histórico (apenas a minuta para ser útil)
+                    st.session_state.messages.append({"role": "user", "content": f"Analise o processo {uploaded_file.name} (Modo Multi-Agente)"})
+                    st.session_state.messages.append({"role": "assistant", "content": minuta_text})
+                    
+                except Exception as e:
+                    import traceback
+                    st.error(f"Erro na execução da orquestração: {e}")
+                    st.text(traceback.format_exc())
 
 else:
-    st.info("👈 Faça o upload de um processo na barra lateral para começar.")
+    st.info("👈 Faça o upload de um processo (ou vários para Raio-X) na barra lateral para começar.")
 
 # --- Área de Chat (Pós Análise com RAG) ---
 if st.session_state.messages and st.session_state.retriever:
