@@ -88,8 +88,13 @@ def get_embedding_function(api_key=None):
             return OpenAIEmbeddings(openai_api_key=api_key)
             
     # Modelo leve para rodar localmente no Mac M3
-    print("⚠️ Usando Embeddings Locais (HuggingFace)...")
-    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    # Fallback to Environment Variable if available
+    env_key = os.getenv("GOOGLE_API_KEY")
+    if env_key and HAS_GEMINI:
+        return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=env_key)
+        
+    raise ValueError("Nenhum provedor de Embeddings configurado. Por favor, insira a Google API Key.")
+    # return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") # REMOVIDO PARA EVITAR ERRO
 
 def process_uploaded_file(file_obj, filename: str, api_key=None):
     """
