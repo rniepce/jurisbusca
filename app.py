@@ -313,9 +313,12 @@ if "report_id" in query_params:
             # 1. Converte quebras de linha escapadas para reais
             minuta_text = minuta_text.replace("\\n", "\n")
             
-            # 2. Desabilitado temporariamente para debug (pode estar cortando texto) - SYNC COM PRINCIPAL
-            # minuta_text = re.sub(r"',\s*'extras':\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
-            # minuta_text = re.sub(r"',\s*\"extras\":\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
+            # 2. Remove artefatos de dicionário Python/JSON vazando no final
+            # Solução "Nuclear" (Sync com Main View): Corta tudo a partir de 'extras':
+            if "'extras':" in minuta_text:
+                    minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
+            elif '"extras":' in minuta_text:
+                    minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
             
             # 3. Remove aspas de tupla se sobrarem no início/fim
             minuta_text = minuta_text.strip().strip("'").strip('"')
@@ -639,10 +642,13 @@ if uploaded_files:
                         if isinstance(minuta_text, str):
                             minuta_text = minuta_text.replace("\\n", "\n")
                         
-                        # 2. Remove artefatos de dicionário Python/JSON vazando no final ('extras': {...})
-                        # Re-habilitado com regex mais seguro para não cortar texto legal
-                        # Remove apenas se estiver no FINAL da string
-                        minuta_text = re.sub(r",\s*['\"]extras['\"]\s*:\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
+                        # 2. Remove artefatos de dicionário Python/JSON vazando no final
+                        # Solução "Nuclear": Corta tudo a partir de 'extras': {'signature'
+                        # Isso previne qualquer variação de regex complexo
+                        if "'extras':" in minuta_text:
+                             minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
+                        elif '"extras":' in minuta_text:
+                             minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
                         
                         # 3. Remove aspas de tupla se sobrarem no início/fim
                         minuta_text = minuta_text.strip().strip("'").strip('"')
