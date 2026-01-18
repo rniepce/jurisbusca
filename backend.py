@@ -14,7 +14,7 @@ except ImportError:
     HAS_OCR = False
 
 from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+# from langchain_huggingface import HuggingFaceEmbeddings # Não usado (Railway usa Google Embeddings)
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 # from langchain_ollama import ChatOllama # Removido para deploy Gemini Only
 # from langchain_openai import ChatOpenAI, OpenAIEmbeddings # Removido para deploy Gemini Only
@@ -178,129 +178,9 @@ def process_uploaded_file(file_obj, filename: str, api_key=None):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-def get_llm(model_name: str, api_key: str = None, temperature: float = 0.1):
-    """
-    Retorna a instância do LLM (Ollama ou OpenAI).
-    """
-    if "gpt" in model_name.lower():
-        if not api_key:
-            # Fallback or error is better handled in UI, but raising here is safe
-            raise ValueError("API Key é obrigatória para modelos GPT.")
-        return ChatOpenAI(api_key=api_key, model=model_name, temperature=temperature)
-    
-    # Configuração para modelos locais via Ollama ou MLX
-    
-    # 1. Verifica se é um modelo MLX registrado
-    if model_name in LOCAL_MODELS:
-        # Retorna o wrapper MLX
-        # Nota: O ideal seria cachear isso no nível da aplicação (app.py) para não recarregar pesos
-        # Mas instanciamos aqui para manter a assinatura.
-        return MLXChatWrapper(model_name)
-
-    # 2. Tenta conectar ao host local padrão (Ollama)
-    return ChatOllama(model=model_name, temperature=temperature, base_url="http://localhost:11434")
-
-def run_orchestration(text: str, model_mode: str = "auto", api_key: str = None, status_callback=None):
-    """
-    Executa o pipeline multi-agente com ROUTING DE MODELOS.
-    :param model_mode: "auto" (usa mapa de especialistas) ou nome de modelo único.
-    """
-    
-    # Cache local de sessão para evitar recarregar o mesmo modelo seguidamente
-    current_llm = None
-    current_model_key = None
-    
-    def get_agent_llm(role):
-        nonlocal current_llm, current_model_key
-        
-        target_model = AGENT_MODEL_MAP.get(role, "qwen2.5-14b-juris") if model_mode == "auto" else model_mode
-        
-        # Se for modelo GPT/Ollama (não MLX), usa o get_llm padrão
-        if target_model not in LOCAL_MODELS:
-            return get_llm(target_model, api_key)
-            
-        # Se já estamos com o modelo certo carregado, retorna ele
-        if current_llm and current_model_key == target_model:
-            return current_llm
-            
-        # Se precisamos trocar de modelo
-        if current_llm and hasattr(current_llm, "unload"):
-            current_llm.unload()
-            
-        if status_callback:
-            status_callback(f"🔄 Carregando Especialista: {target_model}...")
-            
-        current_llm = MLXChatWrapper(target_model)
-        current_model_key = target_model
-        return current_llm
-
-    # helper para invocar
-    def invoke_agent(system_prompt, user_content, agent_name, role_key):
-        if status_callback:
-            model_name = current_model_key if current_model_key else model_mode
-            status_callback(f"🤖 {agent_name} trabalhando... (Model: {model_name})")
-        
-        llm = get_agent_llm(role_key)
-        
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_content)
-        ]
-        response = llm.invoke(messages)
-        return response.content
-
-    try:
-        # --- PASSO 1: ANÁLISE FORMAL (Phi-3.5 - Rápido) ---
-        formal_out = invoke_agent(PROMPT_ANALISE_FORMAL, f"Analise formalmente a petição:\n\n{text[:50000]}", "Agente de Análise Formal", "formal")
-        
-        # --- PASSO 2: FATOS (Qwen 14B - Contexto) ---
-        fatos_out = invoke_agent(PROMPT_FATOS, f"Extraia os dados básicos deste processo:\n\n{text[:50000]}", "Agente de Fatos", "fatos")
-        
-        # --- PASSO 3: MATERIAL/TEMPORAL (Qwen 14B - Raciocínio) ---
-        # Note: Fatos e Material usam o mesmo modelo, então não haverá reload aqui
-        material_out = invoke_agent(PROMPT_ANALISE_MATERIAL, f"Analise mérito liminar, prescrição e inépcia:\n\n{text[:50000]}\n\nFatos extraídos: {fatos_out}", "Agente de Admissibilidade", "material")
-        
-        # --- PASSO 4: RELATOR (Gemma 9B - Escrita) ---
-        relator_input = PROMPT_RELATOR_FINAL.format(
-            fatos_texto=fatos_out,
-            formal_json=formal_out,
-            material_texto=material_out
-        )
-        final_report = invoke_agent(relator_input, "Gere o Relatório de Triagem Final.", "Agente Relator/Chefe de Gabinete", "relator")
-
-        # --- PASSO 5: AUDITOR (Qwen 14B - Review) ---
-        # 5.1 Auditor Fático
-        auditor_fatico_out = invoke_agent(PROMPT_AUDITOR_FATICO.format(fatos_originais=fatos_out, minuta_gerada=final_report), "Valide integridade fática.", "Auditor de Conformidade (Fatos)", "auditor")
-        
-        # 5.2 Auditor Eficiência
-        auditor_eficiencia_out = invoke_agent(PROMPT_AUDITOR_EFICIENCIA.format(minuta_gerada=final_report), "Valide eficiência (Prov. 355).", "Auditor de Conformidade (Eficiência)", "auditor")
-        
-        # 5.3 Auditor Jurídico
-        auditor_juridico_out = invoke_agent(PROMPT_AUDITOR_JURIDICO.format(pedidos_iniciais=fatos_out, minuta_gerada=final_report), "Valide congruência jurídica.", "Auditor de Conformidade (Jurídico)", "auditor")
-        
-        # 5.4 Dashboard
-        dashboard_out = invoke_agent(PROMPT_AUDITOR_DASHBOARD.format(
-            status_fatico=auditor_fatico_out,
-            status_eficiencia=auditor_eficiencia_out,
-            status_juridico=auditor_juridico_out
-        ), "Gere o Dashboard final.", "Gerador de Dashboard", "auditor")
-        
-        return {
-            "final_report": final_report,
-            "auditor_dashboard": dashboard_out,
-            "steps": {
-                "fatos": fatos_out,
-                "formal": formal_out, 
-                "material": material_out,
-                "auditor_fatico": auditor_fatico_out,
-                "auditor_eficiencia": auditor_eficiencia_out,
-                "auditor_juridico": auditor_juridico_out
-            }
-        }
-    finally:
-        # Limpeza final de memória
-        if current_llm and hasattr(current_llm, "unload"):
-            current_llm.unload()
+# --- REMOVIDO: get_llm() e run_orchestration() ---
+# Essas funções usavam modelos locais (MLX/Ollama) que não estão disponíveis no Railway.
+# O sistema agora usa exclusivamente run_gemini_orchestration().
 
 def process_templates(files, api_key):
     """
