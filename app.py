@@ -278,13 +278,45 @@ if "report_id" in query_params:
         elif not isinstance(full_text, str):
             full_text = str(full_text if full_text is not None else "")
             
-        parts = re.split(r'##\s*3\.\s*MINUTA|##\s*MINUTA', full_text, flags=re.IGNORECASE)
-        if len(parts) > 1:
-            diagnostic_text = parts[0]
-            minuta_text = parts[1].strip().split('---')[0].strip()
-        else:
+        # Tenta separar a Minuta (múltiplos padrões possíveis) - SYNC COM LOGICA PRINCIPAL
+        patterns = [
+            r'##\s*3\.\s*MINUTA',
+            r'##\s*MINUTA',
+            r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
+            r'DO\s+ATO\s+JUDICIAL',
+            r'\*\*SENTENÇA\*\*',
+            r'\*\*DECISÃO\*\*',
+            r'##\s*SENTENÇA',
+            r'##\s*DECISÃO'
+        ]
+        
+        minuta_text = None
+        diagnostic_text = None
+        
+        for pattern in patterns:
+            parts = re.split(pattern, full_text, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                diagnostic_text = parts[0].strip()
+                minuta_text = parts[1].strip()
+                # Não corta mais no rodapé '---', pois estava removendo conteúdo útil
+                # minuta_text = re.split(r'---', minuta_text)[0].strip()
+                break
+        
+        if not minuta_text:
             diagnostic_text = "Diagnóstico integral."
             minuta_text = full_text
+
+        # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
+        if minuta_text and isinstance(minuta_text, str):
+            # 1. Converte quebras de linha escapadas para reais
+            minuta_text = minuta_text.replace("\\n", "\n")
+            
+            # 2. Desabilitado temporariamente para debug (pode estar cortando texto) - SYNC COM PRINCIPAL
+            # minuta_text = re.sub(r"',\s*'extras':\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
+            # minuta_text = re.sub(r"',\s*\"extras\":\s*\{.*\}$", "", minuta_text, flags=re.DOTALL)
+            
+            # 3. Remove aspas de tupla se sobrarem no início/fim
+            minuta_text = minuta_text.strip().strip("'").strip('"')
 
         # Renderiza Decisão
         st.subheader("📝 Minuta da Decisão")
@@ -293,6 +325,13 @@ if "report_id" in query_params:
         st.markdown("---")
         st.write("🔎 **Painel de Controle:**")
         
+        # DEBUG AREA (Visível apenas se houver suspeita de erro)
+        with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
+            st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
+            st.text(f"Tipo do Texto: {type(full_text)}")
+            st.text(f"Início do Texto (500 chars):\n{str(full_text)[:500]}")
+            st.text(f"Fim do Texto (500 chars):\n{str(full_text)[-500:]}")
+            
         # Alinha os botões à esquerda (compactos)
         c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 2])
         with c1:
@@ -359,7 +398,7 @@ if uploaded_files:
 
         # Botão para Gerar Raio-X
         with col_xray:
-            if st.button("⚡ Gerar Raio-X da Carteira (Gemini Flash)", type="primary"):
+            if st.button("⚡ Gerar Raio-X da Carteira", type="primary"):
                 if not google_api_key:
                     st.error("Insira a Google API Key na barra lateral.")
                 else:
@@ -371,7 +410,7 @@ if uploaded_files:
 
         # Botão para Processar Gabinete (Paralelo)
         with col_batch:
-            if st.button("⚡ Processar Gabinete (Paralelo)", type="secondary"): # Changed to secondary to differentiate
+            if st.button("⚡ Análise em Lote", type="secondary"): # Changed to secondary to differentiate
                 if not google_api_key:
                     st.error("Insira a Google API Key na barra lateral.")
                 else:
