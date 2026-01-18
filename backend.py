@@ -619,6 +619,9 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
         # 2. Run Pipeline (V1 vs V2)
         if mode == "v2" and keys:
             # V2: Hybrid Orchestration (Gemini + DeepSeek + Claude + GPT)
+            if run_hybrid_orchestration is None:
+                return {"error": "ERRO DE INSTALAÇÃO (V2): As bibliotecas da versão Agente (LangGraph) não estão instaladas no servidor. O modo V2 está indisponível.", "filename": filename}
+
             # Normalizar output para o formato esperado pelo front
             v2_output = run_hybrid_orchestration(clean_content, keys)
             
