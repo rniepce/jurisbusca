@@ -613,7 +613,7 @@ if uploaded_files:
                     c1, c2, c3, c4 = st.columns(4)
                     
                     with c1:
-                        with st.popover("🧠 Ver Diagnóstico e Fundamentação"):
+                        with st.popover("🧠 Ver Diagnóstico"): # Encurtado para caber em 1 linha
                             st.markdown("### 🧠 Raciocínio (Chain-of-Thought)")
                             # Fix escaped newlines for proper display
                             display_text = diagnostic_text.replace("\\n", "\n") if isinstance(diagnostic_text, str) else str(diagnostic_text)
