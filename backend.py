@@ -31,18 +31,6 @@ except ImportError:
     HAS_GEMINI = False
 
 
-# Definição de Especialistas (Model Routing)
-        
-        return AIMessage(content=response_text)
-    
-    def unload(self):
-        """Libera memória da GPU/RAM."""
-        print(f"🗑️ Descarregando modelo {self.model_key}...")
-        del self.model
-        del self.tokenizer
-        gc.collect()
-        if HAS_MLX:
-            mx.metal.clear_cache()
 
 def clean_text(text: str) -> str:
     """
