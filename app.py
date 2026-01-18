@@ -216,17 +216,29 @@ with st.sidebar:
             with st.expander("⚙️ Configurar Banca Digital", expanded=True):
                 st.caption("Insira as chaves para ativar a equipe completa.")
                 
-                # OpenAI
+                # OpenAI (Input com validação visual)
                 if "openai_key" not in st.session_state: st.session_state.openai_key = ""
-                st.session_state.openai_key = st.text_input("OpenAI API Key (Auditor GPT-4o)", value=st.session_state.openai_key, type="password")
-                
+                o_key = st.text_input("OpenAI API Key (Auditor GPT-4o)", value=st.session_state.openai_key, type="password", key="input_openai")
+                if o_key: 
+                    st.session_state.openai_key = o_key
+                    if o_key.startswith("sk-"): st.success("Válida!", icon="✅")
+                    else: st.warning("Formato estranho...")
+
                 # Anthropic
                 if "anthropic_key" not in st.session_state: st.session_state.anthropic_key = ""
-                st.session_state.anthropic_key = st.text_input("Anthropic API Key (Redator Claude)", value=st.session_state.anthropic_key, type="password")
-                
+                a_key = st.text_input("Anthropic API Key (Redator Claude)", value=st.session_state.anthropic_key, type="password", key="input_anthropic")
+                if a_key:
+                    st.session_state.anthropic_key = a_key
+                    if a_key.startswith("sk-ant"): st.success("Válida!", icon="✅")
+                    else: st.warning("Formato estranho...")
+
                 # DeepSeek
                 if "deepseek_key" not in st.session_state: st.session_state.deepseek_key = ""
-                st.session_state.deepseek_key = st.text_input("DeepSeek API Key (Juiz Reasoning)", value=st.session_state.deepseek_key, type="password")
+                d_key = st.text_input("DeepSeek API Key (Juiz Reasoning)", value=st.session_state.deepseek_key, type="password", key="input_deepseek")
+                if d_key:
+                    st.session_state.deepseek_key = d_key
+                    if d_key.startswith("sk-"): st.success("Válida!", icon="✅")
+                    else: st.warning("Formato estranho...")
                 
                 if not (st.session_state.openai_key and st.session_state.anthropic_key and st.session_state.deepseek_key):
                     st.warning("⚠️ Preencha todas as chaves para usar o Modo V2.")
@@ -252,7 +264,7 @@ with st.sidebar:
              if not google_api_key:
                  st.error("Insira a Google API Key na barra lateral.")
              else:
-                with st.spinner("Lendo modelos e criando perfil estilístico (Gemini Flash)..."):
+                with st.spinner("Lendo modelos e criando perfil estilístico..."):
                     try:
                         # Processa apenas para pegar os textos
                         _, docs = process_templates(template_files, google_api_key)
