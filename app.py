@@ -422,15 +422,44 @@ if uploaded_files:
                                 if not google_api_key:
                                     st.error("Insira a Google API Key.")
                                 else:
-                                    with st.spinner(f"Processando grupo {cluster['nome']} ({len(subset_files)} arquivos)..."):
-                                        results = process_batch_parallel(subset_files, google_api_key, template_files=template_files, text_cache_dict=st.session_state.file_text_cache)
-                                        # Adiciona aos resultados existentes ou substitui? 
-                                        # O ideal é adicionar ou mostrar separado. Vamos adicionar.
-                                        existing_ids = {r.get('filename') for r in st.session_state.batch_results}
-                                        for new_res in results:
-                                            if new_res.get('filename') not in existing_ids:
-                                                st.session_state.batch_results.append(new_res)
-                                        st.success("✅ Grupo processado! Resultados abaixo.")
+                                    progress_bar = st.progress(0)
+                                    status_text = st.empty()
+                                    
+                                    def update_progress(current, total, filename):
+                                        ratio = current / total
+                                        progress_bar.progress(ratio)
+                                        status_text.text(f"Processando {current}/{total}: {filename}...")
+                                        
+                                    try:
+                                        # Chama processamento com callback
+                                        results = process_batch_parallel(
+                                            subset_files, 
+                                            google_api_key, 
+                                            template_files=template_files, 
+                                            text_cache_dict=st.session_state.file_text_cache,
+                                            progress_callback=update_progress
+                                        )
+                                    except Exception as e:
+                                        st.error(f"Erro no processamento em lote: {e}")
+                                        import traceback
+                                        st.text(traceback.format_exc())
+                                        results = []
+                                        
+                                    status_text.empty()
+                                    progress_bar.empty()
+                                    
+                                    # Adiciona aos resultados existentes
+                                    existing_ids = {r.get('filename') for r in st.session_state.batch_results}
+                                    added_count = 0
+                                    for new_res in results:
+                                        if new_res.get('filename') not in existing_ids:
+                                            st.session_state.batch_results.append(new_res)
+                                            added_count += 1
+                                    
+                                    if added_count > 0:
+                                        st.success(f"✅ {added_count} novos processos analisados!")
+                                    else:
+                                        st.info("Nenhum processo novo adicionado (todos já processados).")
 
             st.markdown("---")
 
@@ -525,6 +554,12 @@ if uploaded_files:
                     
                     # 1. PARSEAMENTO DO OUTPUT (Separar Diagnóstico vs Minuta)
                     full_text = results.get("steps", {}).get("integral", results["final_report"])
+                    
+                    # Fix defensive: Ensure full_text is string
+                    if isinstance(full_text, list):
+                        full_text = "\n".join([str(x) for x in full_text])
+                    elif not isinstance(full_text, str):
+                         full_text = str(full_text if full_text is not None else "")
                     
                     # Tenta separar a Minuta (geralmente após "## 3. MINUTA" ou "## MINUTA")
                     parts = re.split(r'##\s*3\.\s*MINUTA|##\s*MINUTA', full_text, flags=re.IGNORECASE)

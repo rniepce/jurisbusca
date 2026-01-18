@@ -735,20 +735,21 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
     except Exception as e:
         return {"error": str(e), "filename": filename}
 
-def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None):
+def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None):
     """
     Processa lista de arquivos EM PARALELO.
     Aceita `text_cache_dict` {filename: text} para evitar OCR repetido.
-    Retorna lista de dicionários com resultados (report_id, filename, etc).
+    Aceita `progress_callback(current, total, filename)` para update de UI.
+    Retorna lista de dicionários com resultados.
     """
     results_list = []
+    total_files = len(files)
     
     # Prepara dados para threads
     files_data = []
     for f in files:
         cached = text_cache_dict.get(f.name) if text_cache_dict else None
         if cached:
-             # Se tem cache, não precisamos ler bytes agora (o pipeline vai usar o texto)
              files_data.append({"name": f.name, "bytes": None, "cached_text": cached})
         else:
             f.seek(0)
@@ -773,6 +774,7 @@ def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=
             for d in files_data
         }
         
+        completed_count = 0
         for future in concurrent.futures.as_completed(future_to_file):
             fname = future_to_file[future]
             try:
@@ -780,5 +782,9 @@ def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=
                 results_list.append(res)
             except Exception as exc:
                 results_list.append({"error": str(exc), "filename": fname})
+            
+            completed_count += 1
+            if progress_callback:
+                progress_callback(completed_count, total_files, fname)
                 
     return results_list
