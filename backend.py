@@ -657,18 +657,6 @@ import hashlib
 import json
 import time
 
-def process_single_case_pipeline(file_bytes, filename, api_key, template_files=None):
-    """
-    Executa a pipeline completa (OCR -> Gemini Integral + Auditoria) para UM caso.
-    Salva o resultado em disco para persistência entre abas.
-    Retorna o ID do relatório.
-    """
-    try:
-        # 1. OCR / Extração de Texto
-        # Precisamos salvar em temp para o loader ler
-        suffix = os.path.splitext(filename)[1].lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            tmp_file.write(file_bytes)
 def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None):
     """
     Função Worker para processar um único caso completo (Leitura -> RAG -> Gemini -> JSON).
