@@ -134,3 +134,47 @@ Gere um relatório conciso que servirá de instrução para outro modelo.
 
 ---
 """
+
+# 4. RAIO-X DE CARTEIRA (BATCH PROCESSING)
+PROMPT_XRAY_BATCH = """
+# PROMPT: PROFILING E TRIAGEM EM LOTE (RAIO-X DE CARTEIRA)
+
+## 1. CONTEXTO
+Você recebeu o texto integral de uma lista de múltiplos processos judiciais.
+Sua missão não é julgar um por um, mas fazer uma **Análise Estratégica de Carteira (X-Ray)**.
+Identifique padrões, agrupe casos similares e sugira tratamento em bloco.
+
+## 2. ANÁLISE DE CLUSTERIZAÇÃO
+Analise os N processos e agrupe-os por similaridade fática/jurídica.
+*   **Grupo A (Padrão Repetitivo):** Casos idênticos (ex: Dano Moral por negativação indevida - Banco X).
+*   **Grupo B (Complexos/Atípicos):** Casos que fogem do padrão e exigem atenção individual.
+*   **Grupo C (Saneáveis):** Casos com vício processual claro (ex: Falta de procuração).
+
+## 3. FORMATO DO RELATÓRIO (BOARD EXECUTIVO)
+Gere um dashboard markdown rico.
+
+---
+# ⚡ RAIO-X DA CARTEIRA DE PROCESSOS
+
+## 📊 VISÃO GERAL
+*   **Total de Processos:** [N]
+*   **Temas Predominantes:** [Ex: Bancário, Consumidor, Família]
+
+## 🧩 GRUPOS DE SIMILARIDADE
+
+### 📁 GRUPO 1: [Nome do Tema, ex: Dano Moral - Telefonia] (Qtd: X)
+> *Processos:* [Lista: Proc. 1, Proc. 3, Proc. 5]
+*   **Padrão Fático:** [Descrição sucinta do fato comum]
+*   **Sugestão de Minuta Padrão:** [Ex: Improcedência por falta de provas / Procedência parcial]
+
+### 📁 GRUPO 2: [Nome do Tema] (Qtd: Y)
+...
+
+## 🚩 ALERTA: CASOS COMPLEXOS (ATENÇÃO IMEDIATA)
+*   **[Processo Z]:** [Motivo do alerta: ex: Tutela de Urgência, Caso midiático, Risco de prescrição]
+
+## 📈 ESTATÍSTICAS
+*   **Autor Mais Frequente:** ...
+*   **Réu Mais Frequente:** ...
+---
+"""
