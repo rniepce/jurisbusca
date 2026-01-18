@@ -135,7 +135,29 @@ Gere um relatório conciso que servirá de instrução para outro modelo.
 ---
 """
 
-# 4. RAIO-X DE CARTEIRA (BATCH PROCESSING) - JSON MODE
+# 4. RAIO-X DE CARTEIRA (BATCH PROCESSING) - MAP-REDUCE STRATEGY
+
+# 4.1 PASSO MAP (Individual)
+PROMPT_XRAY_MAP = """
+# PROMPT: FICHA TÉCNICA DE PROCESSO (ETAPA MAP)
+Você é um analista de triagem. Leia o texto extraído do processo e extraia uma ficha técnica ESTRUTURADA EM JSON.
+
+## FORMATO DE SAÍDA (Strict JSON)
+{
+    "classe_assunto": "Ex: Procedimento Comum - Indenização",
+    "partes": {
+        "autor": "Nome do Autor",
+        "reu": "Nome do Réu"
+    },
+    "sintese_fatos": "Resumo de 2 linhas dos fatos geradores.",
+    "pedidos_principais": ["Dano Moral", "Restituição em Dobro", etc],
+    "tags_juridicas": ["Bancário", "Descontos Indevidos", "Venda Casada"]
+}
+
+## TEXTO DO PROCESSO:
+"""
+
+# 4.2 PASSO REDUCE (Agrupamento dos JSONs)
 PROMPT_XRAY_BATCH = """
 # PROMPT: PROFILING E TRIAGEM EM LOTE (RAIO-X DE CARTEIRA)
 

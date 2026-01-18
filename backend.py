@@ -520,52 +520,134 @@ def process_batch(files, api_key):
                 
     return processed_texts
 
-def generate_batch_xray(files, api_key, template_files=None):
+from prompts_gemini import PROMPT_XRAY_MAP, PROMPT_XRAY_BATCH
+
+def map_process_individual(text_content, filename, api_key):
     """
-    Gera o Raio-X da carteira usando Gemini Flash.
-    Agora considera MODELOS DE REFERÊNCIA se houver.
+    ETAPA MAP: Analisa um único processo e retorna JSON estruturado.
+    Usa Gemini Flash para rapidez.
     """
     try:
-        # 1. Processa Processos
-        texts = process_batch(files, api_key)
-        if not texts:
-            return "Nenhum texto extraído dos processos."
-            
-        full_context = "\n\n".join(texts)
+        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.1)
+        messages = [
+            SystemMessage(content=PROMPT_XRAY_MAP),
+            HumanMessage(content=f"Arquivo: {filename}\n\n{text_content[:20000]}")
+        ]
+        response = llm.invoke(messages).content
         
-        # 2. Processa Modelos (se houver)
+        # Limpa JSON
+        cleaned = response.replace("```json", "").replace("```", "").strip()
+        data = json.loads(cleaned)
+        data["filename"] = filename # Garante que o nome do arquivo persista
+        return data
+    except Exception as e:
+        print(f"Erro no Map de {filename}: {e}")
+        return {
+            "filename": filename, 
+            "error": "Falha na leitura", 
+            "sintese_fatos": "Erro de leitura", 
+            "tags_juridicas": ["ERRO"]
+        }
+
+def generate_batch_xray(files, api_key, template_files=None):
+    """
+    Gera o Raio-X da carteira usando estratégia MAP-REDUCE.
+    1. MAP: Extrai metadados de cada processo individualmente (Paralelo).
+    2. REDUCE: Envia lista de metadados para o Gemini agrupar.
+    """
+    try:
+        # 1. PROCESSAMENTO DE TEXTO (Leitura)
+        raw_texts = []
+        # Precisamos ler os arquivos primeiro. Reutilizando lógica simples do process_batch mas retornando tuplas (nome, texto)
+        for file in files:
+            suffix = os.path.splitext(file.name)[1].lower()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                tmp_file.write(file.read())
+                tmp_path = tmp_file.name
+            
+            try:
+                content = ""
+                if suffix == ".pdf":
+                    loader = PyPDFLoader(tmp_path)
+                    docs = loader.load()
+                    content = "\n".join([d.page_content for d in docs])
+                elif suffix == ".docx":
+                    from langchain_community.document_loaders import Docx2txtLoader
+                    loader = Docx2txtLoader(tmp_path)
+                    docs = loader.load()
+                    content = "\n".join([d.page_content for d in docs])
+                elif suffix == ".txt":
+                    from langchain_community.document_loaders import TextLoader
+                    loader = TextLoader(tmp_path)
+                    content = loader.load()[0].page_content
+                
+                if content:
+                    raw_texts.append((file.name, clean_text(content)))
+            except Exception as e:
+                print(f"Erro lendo {file.name}: {e}")
+            finally:
+                if os.path.exists(tmp_path): os.remove(tmp_path)
+
+        if not raw_texts:
+            return {"error": "Nenhum texto extraído."}
+
+        # 2. ETAPA MAP (Execução Paralela)
+        mapped_data = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_file = {
+                executor.submit(map_process_individual, text, fname, api_key): fname 
+                for fname, text in raw_texts
+            }
+            for future in concurrent.futures.as_completed(future_to_file):
+                try:
+                    res = future.result()
+                    mapped_data.append(res)
+                except Exception as e:
+                    print(f"Erro no map thread: {e}")
+
+        # 3. ETAPA REDUCE (Clusterização)
+        # Prepara o JSON consolidado para o Gemini
+        mapped_json_str = json.dumps(mapped_data, ensure_ascii=False, indent=2)
+        
+        # Prepara Contexto de Modelos (Templates)
         models_context = ""
         if template_files:
-            # Reutiliza process_batch pois a lógica de extração é a mesma
-            model_texts = process_batch(template_files, api_key) # template_files são UploadedFile
+            # Templates também poderiam passar pelo Map-Reduce se fossem muitos, 
+            # mas vamos assumir que são poucos e ler direto.
+            model_texts = process_batch(template_files, api_key) # Reusing legacy function just for text extraction
             if model_texts:
                  models_context = "\n\n## MODELOS DE REFERÊNCIA DISPONÍVEIS:\n" + "\n".join(model_texts)
         
         llm_flash = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.1)
         
-        prompt_content = f"Analise estes processos e gere o Raio-X.\n\n[PROCESSOS]:\n{full_context}"
-        if models_context:
-            prompt_content += f"\n\n{models_context}"
+        human_msg = f"""
+        Aqui estão as FICHAS TÉCNICAS dos processos processados individualmente.
+        Agrupe-os e gere o relatório de Raio-X.
+        
+        [DADOS DOS PROCESSOS (JSON)]:
+        {mapped_json_str}
+        
+        {models_context}
+        """
         
         messages = [
             SystemMessage(content=PROMPT_XRAY_BATCH),
-            HumanMessage(content=prompt_content)
+            HumanMessage(content=human_msg)
         ]
         
         response = llm_flash.invoke(messages)
         content = response.content
         
-        # Limpeza do JSON (caso venha com markdown)
-        import json
+        # Limpeza do JSON
         try:
             cleaned_json = content.replace("```json", "").replace("```", "").strip()
-            data = json.loads(cleaned_json)
-            return data
+            return json.loads(cleaned_json)
         except json.JSONDecodeError:
-            return {"error": "Falha ao decodificar JSON do Gemini", "raw_content": content}
+            return {"error": "Falha ao decodificar JSON do Reduce", "raw_content": content}
         
     except Exception as e:
-        return {"error": f"Erro no Raio-X: {str(e)}"}
+        import traceback
+        return {"error": f"Erro Geral no Pipeline: {str(e)}\n{traceback.format_exc()}"}
 
 import concurrent.futures
 import hashlib
