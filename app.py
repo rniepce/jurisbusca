@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from backend import process_uploaded_file, run_gemini_orchestration, process_templates, generate_style_report, generate_batch_xray, process_batch_parallel
+from backend import process_uploaded_file, run_gemini_orchestration, process_templates, generate_style_report, generate_batch_xray, process_batch_parallel, load_persistent_rag
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 # from prompts import LEGAL_ASSISTANT_PROMPT # Obsoleto com multi-agentes
 
@@ -170,14 +170,24 @@ with st.sidebar:
             if st.button("🔓 Validar Acesso", type="primary", use_container_width=True):
                 if key_input.startswith("AIza"):
                     st.session_state.google_api_key = key_input
+                    # Tenta carregar RAG persistente ao logar
+                    retriever = load_persistent_rag(key_input)
+                    if retriever:
+                        st.session_state.retriever = retriever
+                        st.toast("Banco de Modelos (RAG) Carregado!", icon="📚")
                     st.toast("Chave Validada! Acesso Liberado.", icon="🎉")
                     st.rerun()
                 else:
                     st.error("Chave inválida. Deve começar com 'AIza'.")
         
     else:
+        # Tenta carregar RAG se ainda não tiver (reload de página)
+        if st.session_state.retriever is None and st.session_state.google_api_key:
+             retriever = load_persistent_rag(st.session_state.google_api_key)
+             if retriever:
+                 st.session_state.retriever = retriever
         # Se JÁ tem chave, mostra status discreto com opção de sair
-        cols = st.columns([3, 1])
+        cols = st.columns([1.8, 1])
         cols[0].success("🔑 API Conectada", icon="✅")
         if cols[1].button("Alterar", type="secondary", use_container_width=True, help="Trocar chave de acesso"):
             st.session_state.google_api_key = ""
