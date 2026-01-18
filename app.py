@@ -160,7 +160,35 @@ with st.sidebar:
     st.header("1. Upload do Processo")
     
     # API KEY logo no início para liberar funções
-    google_api_key = st.text_input("Google API Key (Para Gemini):", type="password")
+    if "google_api_key" not in st.session_state:
+        st.session_state.google_api_key = ""
+
+    # Se a chave NÃO estiver definida, mostra input + botão
+    if not st.session_state.google_api_key:
+        with st.container(border=True):
+            st.markdown("### 🔑 Acesso")
+            key_input = st.text_input("Cole sua Google API Key:", type="password", key="input_key_temp")
+            
+            if st.button("🔓 Validar Acesso", type="primary", use_container_width=True):
+                if key_input.startswith("AIza"):
+                    st.session_state.google_api_key = key_input
+                    st.toast("Chave Validada! Acesso Liberado.", icon="🎉")
+                    st.rerun()
+                else:
+                    st.error("Chave inválida. Deve começar com 'AIza'.")
+        
+        # Bloqueia o resto da sidebar visualmente se não tiver chave (opcional, mas bom pra UX)
+        # st.stop() # Descomentar se quiser obrigar a chave para ver o resto
+    
+    else:
+        # Se JÁ tem chave, mostra status discreto com opção de sair
+        cols = st.columns([4, 1])
+        cols[0].success("🔑 API Conectada")
+        if cols[1].button("🔄", help="Trocar Chave"):
+            st.session_state.google_api_key = ""
+            st.rerun()
+        
+    google_api_key = st.session_state.google_api_key
     
     uploaded_file = st.file_uploader(
         "Carregue o arquivo (PDF, DOCX, TXT)", 
