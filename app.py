@@ -561,17 +561,34 @@ if uploaded_files:
                     elif not isinstance(full_text, str):
                          full_text = str(full_text if full_text is not None else "")
                     
-                    # Tenta separar a Minuta (geralmente após "## 3. MINUTA" ou "## MINUTA")
-                    parts = re.split(r'##\s*3\.\s*MINUTA|##\s*MINUTA', full_text, flags=re.IGNORECASE)
+                    # Tenta separar a Minuta (múltiplos padrões possíveis)
+                    # Padrões: "## 3. MINUTA", "## MINUTA", "DO ATO JUDICIAL", "SENTENÇA", "DECISÃO"
+                    patterns = [
+                        r'##\s*3\.\s*MINUTA',
+                        r'##\s*MINUTA',
+                        r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
+                        r'DO\s+ATO\s+JUDICIAL',
+                        r'\*\*SENTENÇA\*\*',
+                        r'\*\*DECISÃO\*\*',
+                        r'##\s*SENTENÇA',
+                        r'##\s*DECISÃO'
+                    ]
                     
-                    if len(parts) > 1:
-                        diagnostic_text = parts[0]
-                        minuta_text = parts[1].strip()
-                        # Remove possível rodapé de fim de arquivo do prompt ou assinatura extra
-                        minuta_text = re.split(r'---', minuta_text)[0].strip()
-                    else:
-                        # Fallback: se não achar a divisão, mostra tudo
-                        diagnostic_text = "Diagnóstico integral incorporado ao texto."
+                    minuta_text = None
+                    diagnostic_text = None
+                    
+                    for pattern in patterns:
+                        parts = re.split(pattern, full_text, flags=re.IGNORECASE)
+                        if len(parts) > 1:
+                            diagnostic_text = parts[0].strip()
+                            minuta_text = parts[1].strip()
+                            # Remove possível rodapé
+                            minuta_text = re.split(r'---', minuta_text)[0].strip()
+                            break
+                    
+                    if not minuta_text:
+                        # Fallback final: se nenhum padrão bater, mostra tudo como minuta
+                        diagnostic_text = "Diagnóstico não identificado separadamente."
                         minuta_text = full_text
 
                     # 3. BOTÕES DE ACESSO (DIÁLOGOS/POPOVERS)
