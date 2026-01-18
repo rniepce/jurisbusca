@@ -183,7 +183,6 @@ if uploaded_file:
                 status_box.write(msg)
                 
             try:
-            try:
                 # Pipeline exclusiva do Gemini (Railway Deploy)
                 results = run_gemini_orchestration(
                     text=st.session_state.process_text,
@@ -276,42 +275,45 @@ if st.session_state.messages and st.session_state.retriever:
         
         with st.spinner("Pesquisando nos autos e gerando resposta..."):
             try:
-                llm = get_llm(model_option, api_key=openai_api_key if "gpt" in model_option else None)
+                from langchain_google_genai import ChatGoogleGenerativeAI
                 
-                # 1. RAG Retrieval: Busca trechos relevantes para a pergunta
-                retrieved_docs = st.session_state.retriever.invoke(prompt)
-                context_str = "\n\n".join([doc.page_content for doc in retrieved_docs])
-                
-                # 2. Montagem do Histórico
-                # System Prompt
-                chat_history = [SystemMessage(content=LEGAL_ASSISTANT_PROMPT)]
-                
-                # Adiciona mensagens anteriores (sem o contexto gigante da primeira análise para economizar tokens, 
-                # assumindo que o RAG vai trazer o necessário para a pergunta atual)
-                # Porém, para manter coerência, talvez seja bom manter as msgs.
-                for msg in st.session_state.messages[:-1]: # Tudo menos a última user msg
-                    if msg["role"] == "user":
-                        chat_history.append(HumanMessage(content=msg["content"]))
-                    else:
-                        chat_history.append(AIMessage(content=msg["content"]))
-                
-                # 3. Adiciona a Pergunta Atual com Contexto Enriquecido (RAG)
-                rag_message_content = f"""
-                Informações Relevantes encontradas nos autos através de busca vetorial:
-                {context_str}
-                
-                Pergunta do Usuário:
-                {prompt}
-                """
-                chat_history.append(HumanMessage(content=rag_message_content))
-                
-                # 4. Invoke LLM
-                response = llm.invoke(chat_history)
-                
-                with st.chat_message("assistant"):
-                    st.markdown(response.content)
-                
-                st.session_state.messages.append({"role": "assistant", "content": response.content})
+                if not google_api_key:
+                    st.error("Insira a Google API Key na barra lateral.")
+                else:
+                    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=google_api_key, temperature=0.3)
+                    
+                    # 1. RAG Retrieval: Busca trechos relevantes para a pergunta
+                    retrieved_docs = st.session_state.retriever.invoke(prompt)
+                    context_str = "\n\n".join([doc.page_content for doc in retrieved_docs])
+                    
+                    # 2. Montagem do Histórico (simplificado para Gemini)
+                    chat_history = [
+                        SystemMessage(content="Você é um assistente jurídico especializado. Responda de forma precisa, citando os documentos quando relevante."),
+                    ]
+                    
+                    for msg in st.session_state.messages[:-1]:
+                        if msg["role"] == "user":
+                            chat_history.append(HumanMessage(content=msg["content"]))
+                        else:
+                            chat_history.append(AIMessage(content=msg["content"]))
+                    
+                    # 3. Adiciona a Pergunta Atual com Contexto Enriquecido (RAG)
+                    rag_message_content = f"""
+                    Informações Relevantes encontradas nos autos através de busca vetorial:
+                    {context_str}
+                    
+                    Pergunta do Usuário:
+                    {prompt}
+                    """
+                    chat_history.append(HumanMessage(content=rag_message_content))
+                    
+                    # 4. Invoke LLM
+                    response = llm.invoke(chat_history)
+                    
+                    with st.chat_message("assistant"):
+                        st.markdown(response.content)
+                    
+                    st.session_state.messages.append({"role": "assistant", "content": response.content})
                 
             except Exception as e:
                 import traceback
