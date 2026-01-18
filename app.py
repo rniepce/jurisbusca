@@ -364,9 +364,10 @@ if uploaded_files:
                     st.error("Insira a Google API Key na barra lateral.")
                 else:
                     with st.spinner("Analisando carteira e gerando Dashboard (Isso pode levar alguns segundos)..."):
-                        # Passa templates se houver
-                        report = generate_batch_xray(uploaded_files, google_api_key, template_files=template_files)
+                        # generate_batch_xray returns (report_dict, text_cache_dict)
+                        report, text_cache = generate_batch_xray(uploaded_files, google_api_key, template_files=template_files)
                         st.session_state.xray_report = report
+                        st.session_state.file_text_cache = text_cache
 
         # Botão para Processar Gabinete (Paralelo)
         with col_batch:
