@@ -13,3 +13,4 @@ scikit-learn
 langchain-google-genai
 plotly
 pandas
+python-dotenv

@@ -331,9 +331,21 @@ if "xray_report" not in st.session_state:
 
 # Processamento do Arquivo
 if uploaded_files:
+    st.markdown("---")
+    
+    # Seletor de Modo (Automático com Override)
+    default_index = 1 if len(uploaded_files) > 1 else 0
+    mode = st.radio(
+        "Modo de Operação:",
+        ["🎯 Análise Profunda (Individual)", "📊 Raio-X de Carteira (Gabinete)"],
+        index=default_index,
+        horizontal=True,
+        key="operation_mode"
+    )
+    
     # 1. MODO GABINETE / LOTE (Batch Processing)
-    if len(uploaded_files) > 1:
-        st.info(f"⚡ **Modo Gabinete Detectado:** {len(uploaded_files)} processos na fila.")
+    if mode == "📊 Raio-X de Carteira (Gabinete)":
+        st.info(f"⚡ **Modo Gabinete Ativo:** {len(uploaded_files)} arquivos selecionados para triagem.")
         
         col_xray, col_batch = st.columns(2) # Create columns for buttons
 
@@ -437,7 +449,15 @@ if uploaded_files:
 
     # 2. MODO INDIVIDUAL (Single File)
     else:
-        uploaded_file = uploaded_files[0] # Pega o único arquivo
+        # Se houver múltiplos arquivos, permite escolher qual analisar em profundidade
+        if len(uploaded_files) > 1:
+            uploaded_file = st.selectbox(
+                "Selecione o processo para análise detalhada:", 
+                uploaded_files, 
+                format_func=lambda x: x.name
+            )
+        else:
+            uploaded_file = uploaded_files[0] # Pega o único arquivo
         
         # Se mudou o arquivo, limpa o estado e reprocessa
         if st.session_state.current_file_name != uploaded_file.name:
