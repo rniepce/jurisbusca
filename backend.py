@@ -695,14 +695,8 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
             clean_content = clean_text(text_content)
         
         # 2. Run Gemini Pipeline (Deep Analysis)
-        # We invoke the EXACT same function used in single mode: run_gemini_orchestration
-        # Mas run_gemini_orchestration espera 'uploaded_file' para ler texto se não passar cached_text.
-        # Como já temos clean_content, passamos como cached_text.
-        
-        # Criamos um dummy file object apenas para satisfazer o primeiro argumento (que será ignorado pela logica interna se cached_text for passado)
-        dummy_file = type('obj', (object,), {'name': filename})
-        
-        results = run_gemini_orchestration(dummy_file, user_prompt=None, api_key=api_key, template_files=template_files, cached_text=clean_content)
+        # run_gemini_orchestration expects: (text: str, api_key: str, status_callback=None, template_files=None)
+        results = run_gemini_orchestration(clean_content, api_key, status_callback=None, template_files=template_files)
         
         # 3. Save Result
         report_id = hashlib.md5(f"{filename}_{time.time()}".encode()).hexdigest()
