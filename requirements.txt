@@ -11,3 +11,5 @@ rapidocr-onnxruntime
 rapidocr-pdf
 scikit-learn
 langchain-google-genai
+plotly
+pandas

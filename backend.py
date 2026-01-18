@@ -635,10 +635,19 @@ def generate_batch_xray(files, api_key, template_files=None):
         ]
         
         response = llm_flash.invoke(messages)
-        return response.content
+        content = response.content
+        
+        # Limpeza do JSON (caso venha com markdown)
+        import json
+        try:
+            cleaned_json = content.replace("```json", "").replace("```", "").strip()
+            data = json.loads(cleaned_json)
+            return data
+        except json.JSONDecodeError:
+            return {"error": "Falha ao decodificar JSON do Gemini", "raw_content": content}
         
     except Exception as e:
-        return f"Erro no Raio-X: {str(e)}"
+        return {"error": f"Erro no Raio-X: {str(e)}"}
 
 import concurrent.futures
 import hashlib

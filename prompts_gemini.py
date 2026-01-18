@@ -135,52 +135,41 @@ Gere um relatório conciso que servirá de instrução para outro modelo.
 ---
 """
 
-# 4. RAIO-X DE CARTEIRA (BATCH PROCESSING)
+# 4. RAIO-X DE CARTEIRA (BATCH PROCESSING) - JSON MODE
 PROMPT_XRAY_BATCH = """
 # PROMPT: PROFILING E TRIAGEM EM LOTE (RAIO-X DE CARTEIRA)
 
 ## 1. CONTEXTO
-Você recebeu o texto integral de uma lista de múltiplos processos judiciais.
-Sua missão não é julgar um por um, mas fazer uma **Análise Estratégica de Carteira (X-Ray)**.
-Identifique padrões, agrupe casos similares e sugira tratamento em bloco.
-TAMBÉM RECEBEU (OPCIONALMENTE) MODELOS DE DECISÃO JÁ EXISTENTES. SE HOUVER, USE-OS.
+Você recebeu o texto integral de uma lista de processos.
+Sua missão é agrupar os casos por similaridade (Clusterização) para tratamento em bloco.
+TAMBÉM RECEBEU (OPCIONALMENTE) MODELOS DE DECISÃO.
 
-## 2. ANÁLISE DE CLUSTERIZAÇÃO
-Analise os N processos e agrupe-os por similaridade fática/jurídica.
-*   **Grupo A (Padrão Repetitivo):** Casos idênticos (ex: Dano Moral por negativação indevida - Banco X).
-*   **Grupo B (Complexos/Atípicos):** Casos que fogem do padrão e exigem atenção individual.
-*   **Grupo C (Saneáveis):** Casos com vício processual claro (ex: Falta de procuração).
+## 2. FORMATO DE SAÍDA (STRICKT JSON)
+Você DEVE retornar um JSON válido (sem markdown, sem ```json).
+Estrutura:
+{
+    "total_processos": int,
+    "temas_predominantes": [str],
+    "estatisticas": {
+        "reu_frequente": "..."
+    },
+    "alertas_globais": ["..."],
+    "clusters": [
+        {
+            "id": "grupo_a",
+            "nome": "Nome do Grupo (ex: Telefonia - Dano Moral)",
+            "quantidade": int,
+            "descricao_fato": "Resumo do fato...",
+            "sugestao_minuta": "Sugestão ou indicação de Modelo X...",
+            "arquivos": ["nome_do_arquivo_1.pdf", "nome_do_arquivo_2.pdf"] 
+        }
+    ]
+}
 
-## 3. MATCH COM MODELOS (CRUCIAL)
-Se houver "MODELOS DE REFERÊNCIA" no contexto:
-*   Para cada grupo identificado, verifique se algum Modelo serve como base.
-*   Se servir, indique: "Usar Modelo X".
-*   Se não houver modelo compatível, indique: "Necessário redigir nova minuta".
-
-## 4. FORMATO DO RELATÓRIO (BOARD EXECUTIVO)
-Gere um dashboard markdown rico.
-
----
-# ⚡ RAIO-X DA CARTEIRA DE PROCESSOS
-
-## 📊 VISÃO GERAL
-*   **Total de Processos:** [N]
-*   **Temas Predominantes:** [Ex: Bancário, Consumidor, Família]
-
-## 🧩 GRUPOS DE SIMILARIDADE
-
-### 📁 GRUPO 1: [Nome do Tema, ex: Dano Moral - Telefonia] (Qtd: X)
-> *Processos:* [Lista: Proc. 1, Proc. 3, Proc. 5]
-*   **Padrão Fático:** [Descrição sucinta do fato comum]
-*   **Sugestão de Minuta/Modelo:** [Indique qual modelo existente usar ou se precisa criar um novo]
-
-### 📁 GRUPO 2: [Nome do Tema] (Qtd: Y)
-...
-
-## 🚩 ALERTA: CASOS COMPLEXOS (ATENÇÃO IMEDIATA)
-*   **[Processo Z]:** [Motivo do alerta: ex: Tutela de Urgência, Caso midiático, Risco de prescrição]
-
-## 📈 ESTATÍSTICAS
-*   **Réu Mais Frequente:** ...
----
+## 3. REGRAS CRÍTICAS
+1.  **Arquivos:** Liste os nomes dos arquivos EXATAMENTE como aparecem nos cabeçalhos "--- PROCESSO: [nome] ---".
+2.  **Agrupamento:**
+    *   Casos idênticos -> Mesmo Grupo.
+    *   Casos complexos/únicos -> Grupos individuais ou "Outros".
+3.  **Modelos:** Se houver modelo compatível, cite em "sugestao_minuta".
 """

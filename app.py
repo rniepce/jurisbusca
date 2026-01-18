@@ -347,8 +347,60 @@ if uploaded_files:
         
         # Exibe Raio-X se houver
         if st.session_state.xray_report:
-            st.markdown("### 📊 Raio-X da Carteira")
-            st.markdown(st.session_state.xray_report)
+            report_data = st.session_state.xray_report
+            
+            if "error" in report_data:
+                st.error(f"Erro ao gerar Raio-X: {report_data['error']}")
+                with st.expander("Ver RAW"):
+                    st.text(report_data.get("raw_content", ""))
+            else:
+                st.markdown("### 📊 Raio-X da Carteira (Interativo)")
+                
+                # 1. Gráfico de Pizza (Plotly)
+                try:
+                    import plotly.express as px
+                    import pandas as pd
+                    
+                    clusters = report_data.get("clusters", [])
+                    if clusters:
+                        df_clusters = pd.DataFrame(clusters)
+                        fig = px.pie(df_clusters, names='nome', values='quantidade', title='Distribuição por Temas')
+                        st.plotly_chart(fig, use_container_width=True)
+                except ImportError:
+                    st.warning("⚠️ Instale 'plotly' e 'pandas' para ver os gráficos.")
+                except Exception as e:
+                    st.error(f"Erro no gráfico: {e}")
+                
+                # 2. Lista de Clusters com Ação
+                st.markdown("### 🧩 Grupos Identificados")
+                for cluster in report_data.get("clusters", []):
+                    with st.expander(f"📁 {cluster['nome']} ({cluster['quantidade']} processos)"):
+                        st.markdown(f"**Descrição:** {cluster['descricao_fato']}")
+                        st.markdown(f"**Sugestão:** {cluster['sugestao_minuta']}")
+                        st.markdown(f"**Arquivos:** {', '.join(cluster['arquivos'])}")
+                        
+                        # Botão de Ação Específica para o Cluster
+                        if st.button(f"⚡ Processar Grupo '{cluster['nome']}'", key=f"btn_{cluster['id']}"):
+                            # Filtra os arquivos
+                            target_filenames = cluster['arquivos']
+                            subset_files = [f for f in uploaded_files if f.name in target_filenames]
+                            
+                            if not subset_files:
+                                st.warning("Nenhum arquivo correspondente encontrado no upload atual (verifique os nomes).")
+                            else:
+                                if not google_api_key:
+                                    st.error("Insira a Google API Key.")
+                                else:
+                                    with st.spinner(f"Processando grupo {cluster['nome']} ({len(subset_files)} arquivos)..."):
+                                        results = process_batch_parallel(subset_files, google_api_key, template_files=template_files)
+                                        # Adiciona aos resultados existentes ou substitui? 
+                                        # O ideal é adicionar ou mostrar separado. Vamos adicionar.
+                                        existing_ids = {r.get('filename') for r in st.session_state.batch_results}
+                                        for new_res in results:
+                                            if new_res.get('filename') not in existing_ids:
+                                                st.session_state.batch_results.append(new_res)
+                                        st.success("✅ Grupo processado! Resultados abaixo.")
+
             st.markdown("---")
 
         # Exibe Resultados como Links
