@@ -625,3 +625,108 @@ def generate_batch_xray(files, api_key):
         
     except Exception as e:
         return f"Erro no Raio-X: {str(e)}"
+
+import concurrent.futures
+import hashlib
+import json
+import time
+
+def process_single_case_pipeline(file_bytes, filename, api_key, template_files=None):
+    """
+    Executa a pipeline completa (OCR -> Gemini Integral + Auditoria) para UM caso.
+    Salva o resultado em disco para persistência entre abas.
+    Retorna o ID do relatório.
+    """
+    try:
+        # 1. OCR / Extração de Texto
+        # Precisamos salvar em temp para o loader ler
+        suffix = os.path.splitext(filename)[1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+            tmp_file.write(file_bytes)
+            tmp_path = tmp_file.name
+            
+        text_content = ""
+        # Reusing simple extraction logic for speed in batch, 
+        # but calls run_gemini_orchestration which expects clean text.
+        # Ideally we should use process_uploaded_file but it has streamlit dependencies/cache logic which might conflict in threads?
+        # Let's use clean pure python logic.
+        
+        if suffix == ".pdf":
+            loader = PyPDFLoader(tmp_path)
+            docs = loader.load()
+            text_content = "\n".join([d.page_content for d in docs])
+        elif suffix == ".docx":
+            from langchain_community.document_loaders import Docx2txtLoader
+            loader = Docx2txtLoader(tmp_path)
+            docs = loader.load()
+            text_content = "\n".join([d.page_content for d in docs])
+        elif suffix == ".txt":
+            from langchain_community.document_loaders import TextLoader
+            loader = TextLoader(tmp_path)
+            docs = loader.load()
+            text_content = "\n".join([d.page_content for d in docs])
+            
+        os.remove(tmp_path) # cleanup
+        
+        if not text_content:
+            return {"error": f"Vazio: {filename}", "filename": filename}
+            
+        clean_content = clean_text(text_content)
+        
+        # 2. Run Gemini Pipeline (Deep Analysis)
+        # We invoke the EXACT same function used in single mode
+        results = run_gemini_orchestration(clean_content, api_key, template_files=template_files)
+        
+        # 3. Save Result
+        report_id = hashlib.md5(f"{filename}_{time.time()}".encode()).hexdigest()
+        
+        # Add metadata for the UI
+        results["filename"] = filename
+        results["report_id"] = report_id
+        results["timestamp"] = time.time()
+        
+        # Ensure directory exists
+        os.makedirs(".gemini_cache/reports", exist_ok=True)
+        
+        with open(f".gemini_cache/reports/{report_id}.json", "w") as f:
+            json.dump(results, f)
+            
+        return {"report_id": report_id, "filename": filename, "status": "success"}
+
+    except Exception as e:
+        return {"error": str(e), "filename": filename}
+
+def process_batch_parallel(files, api_key, template_files=None):
+    """
+    Processa lista de arquivos EM PARALELO.
+    Retorna lista de resultados (IDs de relatório).
+    """
+    results_list = []
+    
+    # Prepara os dados para não passar objetos Streamlit (FileUploader) para threads se não for seguro
+    # Actually Streamlit files are bytesIO wrappers, usually thread safe for reading if we read them first.
+    # Let's read content into RAM first.
+    files_data = []
+    for f in files:
+        f.seek(0)
+        files_data.append({
+            "bytes": f.read(),
+            "name": f.name
+        })
+        
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        # Submit tasks
+        future_to_file = {
+            executor.submit(process_single_case_pipeline, d["bytes"], d["name"], api_key, template_files): d["name"]
+            for d in files_data
+        }
+        
+        for future in concurrent.futures.as_completed(future_to_file):
+            fname = future_to_file[future]
+            try:
+                res = future.result()
+                results_list.append(res)
+            except Exception as exc:
+                results_list.append({"error": str(exc), "filename": fname})
+                
+    return results_list

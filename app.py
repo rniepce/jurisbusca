@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from backend import process_uploaded_file, run_gemini_orchestration, process_templates, generate_style_report, generate_batch_xray
+from backend import process_uploaded_file, run_gemini_orchestration, process_templates, generate_style_report, generate_batch_xray, process_batch_parallel
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 # from prompts import LEGAL_ASSISTANT_PROMPT # Obsoleto com multi-agentes
 
@@ -184,7 +184,7 @@ with st.sidebar:
         # Se JÁ tem chave, mostra status discreto com opção de sair
         cols = st.columns([4, 1])
         cols[0].success("🔑 API Conectada")
-        if cols[1].button("🔄", help="Trocar Chave"):
+        if cols[1].button("🚪", help="Sair / Trocar Chave"):
             st.session_state.google_api_key = ""
             st.rerun()
         
@@ -246,6 +246,66 @@ if "style_report_preview" in st.session_state and st.session_state.style_report_
         st.rerun()
     st.markdown("---")
 
+# ==============================================================================
+# 0. ROTEAMENTO (ROUTER) - PARA ABAS NOVAS
+# ==============================================================================
+query_params = st.query_params
+if "report_id" in query_params:
+    report_id = query_params["report_id"]
+    try:
+        import json
+        with open(f".gemini_cache/reports/{report_id}.json", "r") as f:
+            data = json.load(f)
+        
+        # --- VIEW: PROCESSO INDIVIDUAL (NOVA ABA) ---
+        st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
+        
+        # Recupera dados
+        full_text = data.get("steps", {}).get("integral", data.get("final_report", ""))
+        import re
+        parts = re.split(r'##\s*3\.\s*MINUTA|##\s*MINUTA', full_text, flags=re.IGNORECASE)
+        if len(parts) > 1:
+            diagnostic_text = parts[0]
+            minuta_text = parts[1].strip().split('---')[0].strip()
+        else:
+            diagnostic_text = "Diagnóstico integral."
+            minuta_text = full_text
+
+        # Renderiza Decisão
+        st.subheader("📝 Minuta da Decisão")
+        st.code(minuta_text, language=None)
+        
+        st.markdown("---")
+        st.write("🔎 **Painel de Controle:**")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            with st.popover("🧠 Diagnóstico"):
+                st.markdown(diagnostic_text)
+        with c2:
+            if data.get("auditor_dashboard"):
+                with st.popover("🛡️ Auditoria"):
+                    st.markdown(data["auditor_dashboard"])
+        with c3:
+            if data.get("style_report"):
+                with st.popover("🎨 Estilo"):
+                    st.markdown(data["style_report"])
+        with c4:
+             with st.popover("⚙️ Logs"):
+                st.json(data.get("steps", {}))
+        
+        # Chat (Simulado - não persiste contexto longo por enquanto nesta view simples)
+        st.markdown("---")
+        st.info("💬 O chat interativo requer o contexto vetorial completo (não disponível nesta visualização rápida).")
+        
+    except Exception as e:
+        st.error(f"Erro ao carregar relatório: {e}")
+    
+    st.stop() # PARA A EXECUÇÃO AQUI PARA ESTA ABA
+
+# ==============================================================================
+# LÓGICA PRINCIPAL (DASHBOARD / GABINETE)
+# ==============================================================================
+
 # Inicializa estado da sessão
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -255,32 +315,39 @@ if "retriever" not in st.session_state:
     st.session_state.retriever = None
 if "current_file_name" not in st.session_state:
     st.session_state.current_file_name = None
-if "xray_report" not in st.session_state:
-    st.session_state.xray_report = None
+if "batch_results" not in st.session_state:
+    st.session_state.batch_results = []
 
-# ==============================================================================
-# LÓGICA DE DECISÃO: SINGLE MODE VS BATCH (RAIO-X)
-# ==============================================================================
-
+# Processamento do Arquivo
 if uploaded_files:
-    # 1. MODO LOTE (Raio-X) - Se houver mais de 1 arquivo
+    # 1. MODO GABINETE / LOTE (Batch Processing)
     if len(uploaded_files) > 1:
-        st.info(f"⚡ **Modo Lote Detectado:** {len(uploaded_files)} processos selecionados.")
+        st.info(f"⚡ **Modo Gabinete Detectado:** {len(uploaded_files)} processos na fila.")
         
-        col_xray, _ = st.columns([2, 3])
-        if col_xray.button("⚡ Gerar Raio-X da Carteira (Gemini Flash)", type="primary"):
+        # Botão ABAIXO do upload
+        if st.button("⚡ Processar Gabinete (Paralelo)", type="primary"):
              if not google_api_key:
                  st.error("Insira a Google API Key na barra lateral.")
              else:
-                 with st.spinner("Analisando carteira e gerando Dashboard (Isso pode levar alguns segundos)..."):
-                     report = generate_batch_xray(uploaded_files, google_api_key)
-                     st.session_state.xray_report = report
+                 with st.spinner(f"Processando {len(uploaded_files)} casos em paralelo (Isso pode levar um tempo)..."):
+                     # Processa em Paralelo e Salva JSONs
+                     results = process_batch_parallel(uploaded_files, google_api_key, template_files=template_files)
+                     st.session_state.batch_results = results
         
-        # Exibe o relatório se existir
-        if "xray_report" in st.session_state and st.session_state.xray_report:
-            st.markdown("---")
-            st.markdown(st.session_state.xray_report)
-            
+        # Exibe Resultados como Links
+        if st.session_state.batch_results:
+            st.markdown("### 🗂️ Processos Analisados (Clique para abrir)")
+            for res in st.session_state.batch_results:
+                if "error" in res:
+                    st.error(f"❌ {res['filename']}: {res['error']}")
+                else:
+                    # Gera Link para Nova Aba
+                    url = f"/?report_id={res['report_id']}"
+                    st.markdown(f"- 📄 [{res['filename']}]({url})", unsafe_allow_html=True) # target_blank é padrão em alguns mds, mas streamlit precisa de hack ou st.link_button
+                    # st.link_button abre na mesma aba ou nova? st.link_button(label, url) sends user to url.
+                    st.link_button(f"Abrir {res['filename']}", url)
+
+
     # 2. MODO INDIVIDUAL (Single File)
     else:
         uploaded_file = uploaded_files[0] # Pega o único arquivo
