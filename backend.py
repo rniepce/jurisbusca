@@ -36,9 +36,10 @@ except ImportError:
 
 # V2 Imports (Agentic)
 try:
-    from backend.orchestrator_v2 import run_hybrid_orchestration
-except ImportError:
+    from v2_engine.orchestrator_v2 import run_hybrid_orchestration
+except ImportError as e:
     # Se falhar (ex: falta langgraph), apenas V2 ficará indisponível
+    print(f"Erro ao importar V2 Engine: {e}")
     run_hybrid_orchestration = None
 
 
