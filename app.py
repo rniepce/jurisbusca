@@ -273,6 +273,11 @@ if "report_id" in query_params:
         
         # Recupera dados
         full_text = data.get("steps", {}).get("integral", data.get("final_report", ""))
+        if isinstance(full_text, list):
+            full_text = "\n".join([str(x) for x in full_text])
+        elif not isinstance(full_text, str):
+            full_text = str(full_text if full_text is not None else "")
+            
         parts = re.split(r'##\s*3\.\s*MINUTA|##\s*MINUTA', full_text, flags=re.IGNORECASE)
         if len(parts) > 1:
             diagnostic_text = parts[0]
