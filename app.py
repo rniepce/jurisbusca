@@ -15,26 +15,122 @@ st.set_page_config(
 # Carrega variáveis de ambiente
 load_dotenv()
 
-# --- CSS Personalizado ---
+# --- CSS Personalizado (Design Moderno) ---
 st.markdown("""
 <style>
-    .reportview-container {
-        background: #f0f2f6;
+    /* Paleta de Cores Moderna */
+    :root {
+        --primary-color: #4F46E5; /* Indigo */
+        --secondary-color: #10B981; /* Emerald */
+        --background-dark: #1E1B4B;
+        --text-primary: #1F2937;
+        --text-secondary: #6B7280;
+        --surface: #FFFFFF;
+        --surface-hover: #F3F4F6;
     }
+    
+    /* Header Principal */
     .main-header {
-        font-size: 2.5rem;
-        color: #2c3e50;
-        font-weight: 700;
+        font-size: 2.8rem;
+        background: linear-gradient(135deg, var(--primary-color), #7C3AED);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        margin-bottom: 0.5rem;
     }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #34495e;
+    
+    .subtitle {
+        font-size: 1.1rem;
+        color: var(--text-secondary);
+        margin-bottom: 2rem;
     }
-    .chat-container {
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #F8FAFC 0%, #EEF2FF 100%);
+    }
+    
+    [data-testid="stSidebar"] h1 {
+        font-size: 1.4rem !important;
+        color: var(--primary-color) !important;
+    }
+    
+    /* Botões */
+    .stButton > button {
+        background: linear-gradient(135deg, var(--primary-color), #7C3AED);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 0.7rem 1.5rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 14px rgba(79, 70, 229, 0.3);
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4);
+    }
+    
+    /* Cards e Containers */
+    .stExpander {
+        border: 1px solid #E5E7EB;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    
+    /* Status Box */
+    [data-testid="stStatusWidget"] {
+        border-radius: 12px;
+        border: 1px solid #E5E7EB;
+    }
+    
+    /* Code Block (Minuta) */
+    .stCodeBlock {
+        border-radius: 12px !important;
+        border: 2px solid var(--primary-color) !important;
+    }
+    
+    /* Popovers */
+    [data-testid="stPopover"] > div {
+        border-radius: 16px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+    
+    /* Input Fields */
+    .stTextInput > div > div > input {
         border-radius: 10px;
-        padding: 20px;
-        background-color: white;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        border: 2px solid #E5E7EB;
+        transition: border-color 0.2s ease;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    }
+    
+    /* File Uploader */
+    [data-testid="stFileUploader"] {
+        border: 2px dashed #E5E7EB;
+        border-radius: 12px;
+        padding: 1rem;
+        transition: border-color 0.2s ease;
+    }
+    
+    [data-testid="stFileUploader"]:hover {
+        border-color: var(--primary-color);
+    }
+    
+    /* Success/Info Messages */
+    .stSuccess, .stInfo {
+        border-radius: 10px;
+    }
+    
+    /* Chat Messages */
+    [data-testid="stChatMessage"] {
+        border-radius: 16px;
+        padding: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -112,7 +208,7 @@ with st.sidebar:
 # --- Lógica Principal ---
 
 st.markdown('<div class="main-header">🤖 Assistente Rafa</div>', unsafe_allow_html=True)
-st.write("Ferramenta para teste e validação de LLMs finetunados em tarefas de análise jurídica.")
+st.markdown('<p class="subtitle">Inteligência Artificial para Análise Jurídica Profunda</p>', unsafe_allow_html=True)
 
 # Exibe Preview do Estilo se houver
 if "style_report_preview" in st.session_state and st.session_state.style_report_preview:
