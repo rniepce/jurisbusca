@@ -583,8 +583,8 @@ if uploaded_files:
                         if len(parts) > 1:
                             diagnostic_text = parts[0].strip()
                             minuta_text = parts[1].strip()
-                            # Remove possível rodapé
-                            minuta_text = re.split(r'---', minuta_text)[0].strip()
+                            # Remove possível rodapé - REMOVIDO pois estava cortando minutas que usam "---"
+                            # minuta_text = re.split(r'---', minuta_text)[0].strip()
                             break
                     
                     if not minuta_text:
