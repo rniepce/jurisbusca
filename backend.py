@@ -609,6 +609,9 @@ def generate_batch_xray(files, api_key, template_files=None):
         # Prepara o JSON consolidado para o Gemini
         mapped_json_str = json.dumps(mapped_data, ensure_ascii=False, indent=2)
         
+        # Cria dicionário de cache para retorno {filename: text}
+        text_cache = {fname: text for fname, text in raw_texts}
+        
         # Prepara Contexto de Modelos (Templates)
         models_context = ""
         if template_files:
@@ -641,13 +644,13 @@ def generate_batch_xray(files, api_key, template_files=None):
         # Limpeza do JSON
         try:
             cleaned_json = content.replace("```json", "").replace("```", "").strip()
-            return json.loads(cleaned_json)
+            return json.loads(cleaned_json), text_cache
         except json.JSONDecodeError:
-            return {"error": "Falha ao decodificar JSON do Reduce", "raw_content": content}
+            return {"error": "Falha ao decodificar JSON do Reduce", "raw_content": content}, text_cache
         
     except Exception as e:
         import traceback
-        return {"error": f"Erro Geral no Pipeline: {str(e)}\n{traceback.format_exc()}"}
+        return {"error": f"Erro Geral no Pipeline: {str(e)}\n{traceback.format_exc()}"}, {}
 
 import concurrent.futures
 import hashlib
@@ -666,39 +669,52 @@ def process_single_case_pipeline(file_bytes, filename, api_key, template_files=N
         suffix = os.path.splitext(filename)[1].lower()
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
             tmp_file.write(file_bytes)
-            tmp_path = tmp_file.name
+def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None):
+    """
+    Função Worker para processar um único caso completo (Leitura -> RAG -> Gemini -> JSON).
+    Aceita `cached_text` para pular OCR.
+    """
+    try:
+        # 1. Extract Text
+        if cached_text:
+            text_content = cached_text
+            clean_content = text_content # Já deve vir limpo do cache
+        else:
+            # Fallback para leitura de bytes se não tiver cache
+            # Precisamos salvar bytes em temp file para loaders funcionarem
+            suffix = os.path.splitext(filename)[1].lower()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(pdf_bytes)
+                tmp_path = tmp.name
             
-        text_content = ""
-        # Reusing simple extraction logic for speed in batch, 
-        # but calls run_gemini_orchestration which expects clean text.
-        # Ideally we should use process_uploaded_file but it has streamlit dependencies/cache logic which might conflict in threads?
-        # Let's use clean pure python logic.
-        
-        if suffix == ".pdf":
-            loader = PyPDFLoader(tmp_path)
-            docs = loader.load()
-            text_content = "\n".join([d.page_content for d in docs])
-        elif suffix == ".docx":
-            from langchain_community.document_loaders import Docx2txtLoader
-            loader = Docx2txtLoader(tmp_path)
-            docs = loader.load()
-            text_content = "\n".join([d.page_content for d in docs])
-        elif suffix == ".txt":
-            from langchain_community.document_loaders import TextLoader
-            loader = TextLoader(tmp_path)
-            docs = loader.load()
-            text_content = "\n".join([d.page_content for d in docs])
-            
-        os.remove(tmp_path) # cleanup
-        
-        if not text_content:
-            return {"error": f"Vazio: {filename}", "filename": filename}
-            
-        clean_content = clean_text(text_content)
+            try:
+                if suffix == ".pdf":
+                    loader = PyPDFLoader(tmp_path)
+                    docs = loader.load()
+                    text_content = "\n".join([d.page_content for d in docs])
+                elif suffix == ".docx":
+                    from langchain_community.document_loaders import Docx2txtLoader
+                    loader = Docx2txtLoader(tmp_path)
+                    docs = loader.load()
+                    text_content = "\n".join([d.page_content for d in docs])
+                elif suffix == ".txt":
+                    with open(tmp_path, "r") as f: text_content = f.read()
+                else:
+                    text_content = ""
+            finally:
+                if os.path.exists(tmp_path): os.remove(tmp_path)
+                
+            clean_content = clean_text(text_content)
         
         # 2. Run Gemini Pipeline (Deep Analysis)
-        # We invoke the EXACT same function used in single mode
-        results = run_gemini_orchestration(clean_content, api_key, template_files=template_files)
+        # We invoke the EXACT same function used in single mode: run_gemini_orchestration
+        # Mas run_gemini_orchestration espera 'uploaded_file' para ler texto se não passar cached_text.
+        # Como já temos clean_content, passamos como cached_text.
+        
+        # Criamos um dummy file object apenas para satisfazer o primeiro argumento (que será ignorado pela logica interna se cached_text for passado)
+        dummy_file = type('obj', (object,), {'name': filename})
+        
+        results = run_gemini_orchestration(dummy_file, user_prompt=None, api_key=api_key, template_files=template_files, cached_text=clean_content)
         
         # 3. Save Result
         report_id = hashlib.md5(f"{filename}_{time.time()}".encode()).hexdigest()
@@ -719,28 +735,41 @@ def process_single_case_pipeline(file_bytes, filename, api_key, template_files=N
     except Exception as e:
         return {"error": str(e), "filename": filename}
 
-def process_batch_parallel(files, api_key, template_files=None):
+def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None):
     """
     Processa lista de arquivos EM PARALELO.
-    Retorna lista de resultados (IDs de relatório).
+    Aceita `text_cache_dict` {filename: text} para evitar OCR repetido.
+    Retorna lista de dicionários com resultados (report_id, filename, etc).
     """
     results_list = []
     
-    # Prepara os dados para não passar objetos Streamlit (FileUploader) para threads se não for seguro
-    # Actually Streamlit files are bytesIO wrappers, usually thread safe for reading if we read them first.
-    # Let's read content into RAM first.
+    # Prepara dados para threads
     files_data = []
     for f in files:
-        f.seek(0)
-        files_data.append({
-            "bytes": f.read(),
-            "name": f.name
-        })
-        
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        # Submit tasks
+        cached = text_cache_dict.get(f.name) if text_cache_dict else None
+        if cached:
+             # Se tem cache, não precisamos ler bytes agora (o pipeline vai usar o texto)
+             files_data.append({"name": f.name, "bytes": None, "cached_text": cached})
+        else:
+            f.seek(0)
+            files_data.append({
+                "bytes": f.read(),
+                "name": f.name,
+                "cached_text": None
+            })
+
+    def _worker(data):
+        return process_single_case_pipeline(
+            pdf_bytes=data["bytes"], 
+            filename=data["name"], 
+            api_key=api_key, 
+            template_files=template_files,
+            cached_text=data["cached_text"]
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         future_to_file = {
-            executor.submit(process_single_case_pipeline, d["bytes"], d["name"], api_key, template_files): d["name"]
+            executor.submit(_worker, d): d["name"]
             for d in files_data
         }
         

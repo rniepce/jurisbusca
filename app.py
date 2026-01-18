@@ -423,7 +423,7 @@ if uploaded_files:
                                     st.error("Insira a Google API Key.")
                                 else:
                                     with st.spinner(f"Processando grupo {cluster['nome']} ({len(subset_files)} arquivos)..."):
-                                        results = process_batch_parallel(subset_files, google_api_key, template_files=template_files)
+                                        results = process_batch_parallel(subset_files, google_api_key, template_files=template_files, text_cache_dict=st.session_state.file_text_cache)
                                         # Adiciona aos resultados existentes ou substitui? 
                                         # O ideal é adicionar ou mostrar separado. Vamos adicionar.
                                         existing_ids = {r.get('filename') for r in st.session_state.batch_results}
