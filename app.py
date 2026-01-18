@@ -361,11 +361,6 @@ if uploaded_files:
                         diagnostic_text = "Diagnóstico integral incorporado ao texto."
                         minuta_text = full_text
 
-                    # 2. ÂNCORA (MINUTA FINAL)
-                    st.subheader("📝 Minuta da Decisão (Texto Puro)")
-                    # 'language=None' tira as cores de markdown e 'st.code' garante o botão de copiar 
-                    st.code(minuta_text, language=None)
-                    
                     # 3. BOTÕES DE ACESSO (DIÁLOGOS/POPOVERS)
                     st.markdown("---")
                     st.write("🔎 **Painel de Controle:**")
