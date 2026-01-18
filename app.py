@@ -708,10 +708,11 @@ if uploaded_files:
                     st.markdown("---")
                     st.write("🔎 **Painel de Controle:**")
                     
-                    c1, c2, c3, c4 = st.columns(4)
+                    # Layout: 3 colunas iguais para alinhar os botões
+                    c1, c2, c3 = st.columns(3)
                     
                     with c1:
-                        with st.popover("🧠 Ver Diagnóstico"): # Encurtado para caber em 1 linha
+                        with st.popover("🧠 Ver Diagnóstico", use_container_width=True): 
                             st.markdown("### 🧠 Raciocínio (Chain-of-Thought)")
                             # Fix escaped newlines for proper display
                             display_text = diagnostic_text.replace("\\n", "\n") if isinstance(diagnostic_text, str) else str(diagnostic_text)
@@ -720,7 +721,7 @@ if uploaded_files:
                     with c2:
                         dashboard_text = results.get("auditor_dashboard", "")
                         if dashboard_text:
-                            with st.popover("🛡️ Ver Auditoria (Compliance)"):
+                            with st.popover("🛡️ Ver Auditoria", use_container_width=True):
                                 st.markdown("### 🛡️ Relatório do Auditor")
                                 # Fix escaped newlines
                                 display_audit = dashboard_text.replace("\\n", "\n") if isinstance(dashboard_text, str) else str(dashboard_text)
@@ -729,16 +730,13 @@ if uploaded_files:
                     with c3:
                         style_report = results.get("style_report", "")
                         if style_report:
-                            with st.popover("🎨 Ver Análise de Estilo"):
+                            with st.popover("🎨 Ver Estilo", use_container_width=True):
                                 st.markdown("### 🎨 Dossiê de Estilo Identificado")
                                 # Fix escaped newlines
                                 display_style = style_report.replace("\\n", "\n") if isinstance(style_report, str) else str(style_report)
                                 st.markdown(display_style)
 
-                    with c4:
-                        with st.popover("🕵️ Detalhes Técnicos"):
-                            st.markdown("### ⚙️ Logs da Orquestração")
-                            st.json(results.get("steps", {}))
+                    # Removido Coluna 4 (Debug) como solicitado
                     
                     # Salva no histórico (apenas a minuta para ser útil)
                     st.session_state.messages.append({"role": "user", "content": f"Analise o processo {uploaded_file.name} (Modo Multi-Agente)"})
