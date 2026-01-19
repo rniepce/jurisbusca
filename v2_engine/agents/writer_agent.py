@@ -15,6 +15,12 @@ ESTILO DO JUIZ (RAG):
 
 ESBOÇO LÓGICO (DO JUIZ AUXILIAR):
 {verdict_outline}
+
+REGRAS DE OURO (RASTREABILIDADE):
+1. CITAÇÃO DE ID É OBRIGATÓRIA: Nunca mencione um documento (Contrato, Petição, Laudo) sem citar o ID do PJe.
+   - Errado: "O contrato prevê..."
+   - Certo: "O contrato de adesão anexado ao ID 123456 prevê..."
+2. Se o ID não foi fornecido no resumo, use "[ID NÃO LOCALIZADO]" para alertar, mas não invente.
 """
 
 def run_writer_agent(verdict_outline: str, style_guide: str, api_key: str):
