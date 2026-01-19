@@ -31,7 +31,11 @@ IMPORTANTE:
   - Audiência: `r'(audi[êe]ncia|concilia[cç][aã]o|termo|assentada)'`
   - Sentença/Decisão: `r'(senten[çc]a|decis[aã]o|dispositivo|julgo|ante\s*o\s*exposto)'`
 - **SAFETY FALLBACK:** Se `smart_search` não encontrar nada, LEIA O INÍCIO DO TEXTO DIRETAMENTE rodando: `print(PROCESS_TEXT[:5000])`. 
-- **NUNCA RETORNE VAZIO.** Se falhar em tudo, resuma o que você ler no fallback.
+- **PROTOCOLO DE FALHA DE BUSCA:** Se uma busca específica (ex: 'data da audiência') retornar 0 resultados:
+  1. NÃO DESISTA nem retorne "não encontrado".
+  2. ESTIME onde a informação estaria (ex: audiências costumam estar no final ou em despachos curtos).
+  3. LEIA O TEXTO NESSA REGIÃO com `print(PROCESS_TEXT[start:end])` e procure manualmente.
+- **NUNCA RETORNE VAZIO.** Se falhar em tudo, resuma o que você ler no fallback inicial.
 """
 
 def smart_search_impl(text: str, pattern: str, window: int = 500) -> str:
