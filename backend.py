@@ -79,8 +79,11 @@ def clean_text(text: str) -> str:
     # 8. NOVO: Remove linhas que parecem ser metadados de certificado
     text = re.sub(r'(?i)(certificado|hash|sha\d*|md5|rsa|dsa|asn\.\d):[^\n]*\n?', '', text)
     
-    # 9. Compressão de espaços (White space normalization)
-    text = re.sub(r'\s+', ' ', text)
+    # 9. Compressão de espaços (White space normalization) - PRESERVANDO quebras de linha
+    # Substitui múltiplos espaços horizontais por um único
+    text = re.sub(r'[ \t]+', ' ', text)
+    # Limita múltiplas quebras de linha a no máximo duas
+    text = re.sub(r'\n{3,}', '\n\n', text)
     
     return text.strip()
 
