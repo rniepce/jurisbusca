@@ -609,10 +609,17 @@ if uploaded_files:
                         st.error(f"❌ {res['filename']}")
                         st.caption(res['error'])
                     else:
-                        # Gera Link para Nova Aba
-                        url = f"/?report_id={res['report_id']}"
-                        # Botão limpo, sem link duplicado
-                        st.link_button(f"📄 {res['filename']}", url, use_container_width=True)
+                        # Substituindo link_button por button + callback para preservar Session State
+                        def open_report(rid):
+                            st.query_params["report_id"] = rid
+                            
+                        st.button(
+                            f"📄 {res['filename']}", 
+                            key=f"btn_open_{res['report_id']}",
+                            on_click=open_report,
+                            args=(res['report_id'],),
+                            use_container_width=True
+                        )
 
 
     # 2. MODO INDIVIDUAL (Single File)
