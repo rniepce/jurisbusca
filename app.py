@@ -744,6 +744,17 @@ if uploaded_files:
                     else:
                         # Substituindo link_button por button + callback para preservar Session State
                         # Substituindo por HTML Link para garantir Nova Aba (target="_blank")
+                        
+                        # LAZY SAVE / SELF-HEALING: Garante que o arquivo existe antes de gerar o link
+                        # Isso corrige o erro de "Relatório não encontrado" para itens processados antes da persistence.
+                        rid = res.get('report_id')
+                        if rid:
+                            fpath = f"data/reports/{rid}.json"
+                            if not os.path.exists(fpath):
+                                os.makedirs("data/reports", exist_ok=True)
+                                with open(fpath, "w") as f:
+                                    json.dump(res, f)
+
                         btn_html = f"""
                         <a href="?report_id={res['report_id']}" target="_blank" style="text-decoration:none;">
                             <div style="
