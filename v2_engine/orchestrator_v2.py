@@ -57,7 +57,7 @@ def node_auditor(state: AgentState):
         final_text = state["draft_text"]
         
         if "APROVADO" not in audit.upper():
-            final_text += "\n\n--- 🛡️ NOTAS DE AUDITORIA ---\n" + audit
+            # final_text += "\n\n--- 🛡️ NOTAS DE AUDITORIA ---\n" + audit # REMOVIDO: Auditoria fica separada
             log += " (Com ressalvas)"
         else:
             log += " (Aprovado)"
