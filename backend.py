@@ -144,8 +144,12 @@ def process_uploaded_file(file_obj, filename: str, api_key=None):
             
         elif suffix == ".txt":
             from langchain_community.document_loaders import TextLoader
-            loader = TextLoader(tmp_path, encoding='utf-8')
-            docs = loader.load()
+            try:
+                loader = TextLoader(tmp_path, encoding='utf-8')
+                docs = loader.load()
+            except Exception:
+                loader = TextLoader(tmp_path, encoding='latin-1')
+                docs = loader.load()
             
         else:
             return f"Formato não suportado: {filename}", None
@@ -222,8 +226,10 @@ def process_templates(files, api_key):
                 doc = docx.Document(tmp_path)
                 text = "\n".join([p.text for p in doc.paragraphs])
             else: # txt
-                with open(tmp_path, "r") as f:
-                    text = f.read()
+                try:
+                    with open(tmp_path, "r", encoding="utf-8") as f: text = f.read()
+                except UnicodeDecodeError:
+                     with open(tmp_path, "r", encoding="latin-1") as f: text = f.read()
             
             # Adiciona metadados
             doc_chunks = text_splitter.create_documents([text], metadatas=[{"source": file.name}])
@@ -526,8 +532,12 @@ def generate_batch_xray(files, api_key, template_files=None):
                     content = "\n".join([d.page_content for d in docs])
                 elif suffix == ".txt":
                     from langchain_community.document_loaders import TextLoader
-                    loader = TextLoader(tmp_path)
-                    content = loader.load()[0].page_content
+                    try:
+                        loader = TextLoader(tmp_path, encoding='utf-8')
+                        content = loader.load()[0].page_content
+                    except Exception:
+                        loader = TextLoader(tmp_path, encoding='latin-1')
+                        content = loader.load()[0].page_content
                 
                 if content:
                     raw_texts.append((file.name, clean_text(content)))
@@ -646,7 +656,10 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
                     docs = loader.load()
                     text_content = "\n".join([d.page_content for d in docs])
                 elif suffix == ".txt":
-                    with open(tmp_path, "r") as f: text_content = f.read()
+                    try:
+                        with open(tmp_path, "r", encoding="utf-8") as f: text_content = f.read()
+                    except UnicodeDecodeError:
+                        with open(tmp_path, "r", encoding="latin-1") as f: text_content = f.read()
                 else:
                     text_content = ""
             finally:
