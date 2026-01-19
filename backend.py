@@ -318,7 +318,7 @@ def run_gemini_orchestration(text: str, api_key: str, status_callback=None, temp
 
     # Instancia Gemini (modelo robusto para análise profunda)
     # Trocando para gemini-3-pro-preview (Solicitado pelo usuário)
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro", google_api_key=api_key, temperature=0.2)
+    llm = ChatGoogleGenerativeAI(model="gemini-3.0-pro-preview", google_api_key=api_key, temperature=0.2)
     
     def update(msg):
         if status_callback:
