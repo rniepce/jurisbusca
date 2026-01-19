@@ -381,9 +381,9 @@ def run_gemini_orchestration(text: str, api_key: str, status_callback=None, temp
         
         if kb_text:
             final_prompt_integral += f"\n\n## 6. BASE DE CONHECIMENTO VINCULANTE (CARREGADA)\n{kb_text}"
-            update("📚 Base de Conhecimento (Súmulas/IRDR) carregada com sucesso!")
+            # update("📚 Base de Conhecimento (Súmulas/IRDR) carregada com sucesso!") # SILENT MODE
         else:
-            update("⚠️ Nenhuma Base de Conhecimento carregada (Operando com Conhecimento Geral)...")
+            pass # update("⚠️ Nenhuma Base de Conhecimento carregada (Operando com Conhecimento Geral)...") # SILENT MODE
 
     except ImportError:
         # Fallback para V1 se o arquivo novo não existir
