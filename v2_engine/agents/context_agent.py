@@ -25,6 +25,7 @@ SAÍDA ESPERADA (JSON FINAL):
 IMPORTANTE:
 - NÃO TENTE "ADIVINHAR" O TEXTO. USE O CÓDIGO PARA LER.
 - Use `smart_search(r'AUDIÊNCIA')` para achar trechos relevantes com contexto seguro.
+- **SAFETY FALLBACK:** Se `smart_search` não encontrar nada, LEIA O INÍCIO DO TEXTO DIRETAMENTE rodando: `print(PROCESS_TEXT[:5000])`. Não retorne JSON vazio sem antes ler o texto bruto!
 """
 
 def smart_search_impl(text: str, pattern: str, window: int = 500) -> str:
