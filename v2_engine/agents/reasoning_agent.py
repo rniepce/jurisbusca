@@ -28,7 +28,7 @@ def run_reasoning_agent(fatos_json: dict, api_key: str):
         llm = ChatOpenAI(
             api_key=api_key, 
             base_url="https://api.deepseek.com", 
-            model="deepseek-chat", 
+            model="deepseek-reasoner", 
             temperature=0.2
         )
         
