@@ -53,7 +53,8 @@ def run_context_agent(text_content: str, api_key: str):
         tools = [navigator]
         
         # 2. Inicializa LLM com Tools
-        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.0)
+        # Modelo Rápido e Barato (Flash) para leitura de grandes volumes
+        llm = ChatGoogleGenerativeAI(model="gemini-3.0-flash-preview", google_api_key=api_key, temperature=0.0)
         llm_with_tools = llm.bind_tools(tools)
         
         # 3. Loop de Execução (ReAct Manual Simplificado)

@@ -287,8 +287,8 @@ def generate_style_report(documents, api_key):
     Usa um modelo rápido (Flash) para ler os templates e criar um perfil de estilo.
     """
     try:
-        # Usa Gemini 2.0 Flash (se disponível) ou 1.5 Flash para ser rápido
-        llm_flash = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.3)
+        # Usa Gemini 3.0 Flash Preview (se disponível) ou 2.0 Flash para ser rápido
+        llm_flash = ChatGoogleGenerativeAI(model="gemini-3.0-flash-preview", google_api_key=api_key, temperature=0.3)
         
         # Concatena amostras dos documentos (máx 30k chars para não gastar muito)
         sample_text = ""
@@ -482,7 +482,7 @@ def map_process_individual(text_content, filename, api_key):
     Usa Gemini Flash para rapidez.
     """
     try:
-        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.1)
+        llm = ChatGoogleGenerativeAI(model="gemini-3.0-flash-preview", google_api_key=api_key, temperature=0.1)
         messages = [
             SystemMessage(content=PROMPT_XRAY_MAP),
             HumanMessage(content=f"Arquivo: {filename}\n\n{text_content[:20000]}")
@@ -579,7 +579,7 @@ def generate_batch_xray(files, api_key, template_files=None):
             if model_texts:
                  models_context = "\n\n## MODELOS DE REFERÊNCIA DISPONÍVEIS:\n" + "\n".join(model_texts)
         
-        llm_flash = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.1)
+        llm_flash = ChatGoogleGenerativeAI(model="gemini-3.0-flash-preview", google_api_key=api_key, temperature=0.1)
         
         human_msg = f"""
         Aqui estão as FICHAS TÉCNICAS dos processos processados individualmente.
