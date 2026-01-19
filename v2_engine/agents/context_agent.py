@@ -10,7 +10,7 @@ O texto completo do processo NÃO está no seu prompt, mas está carregado na va
 
 SUA MISSÃO:
 1. Use a ferramenta `navigator` para rodar scripts Python e explorar o `PROCESS_TEXT`.
-2. Encontre datas, valores, nomes e folhas (páginas) específicas usando Regex ou fatiamento de string.
+2. USE A FUNÇÃO `smart_search(regex)` para encontrar termos chave. Ela já retorna o contexto (+/- 500 caracteres) automaticamente.
 3. Extraia os fatos com precisão cirúrgica baseada no retorno do código.
 
 SAÍDA ESPERADA (JSON FINAL):
@@ -24,19 +24,56 @@ SAÍDA ESPERADA (JSON FINAL):
 
 IMPORTANTE:
 - NÃO TENTE "ADIVINHAR" O TEXTO. USE O CÓDIGO PARA LER.
-- Exemplo: `print(PROCESS_TEXT[:500])` para ler o início.
-- Exemplo: `import re; print(re.findall(r'VALOR DA CAUSA: R\$ [\d,.]+', PROCESS_TEXT))`
+- Use `smart_search(r'AUDIÊNCIA')` para achar trechos relevantes com contexto seguro.
 """
+
+def smart_search_impl(text: str, pattern: str, window: int = 500) -> str:
+    import re
+    matches = list(re.finditer(pattern, text, re.IGNORECASE))
+    if not matches:
+        return f"Nenhum match encontrado para: {pattern}"
+    
+    results = []
+    results.append(f"Encontrados {len(matches)} resultados para '{pattern}':")
+    for i, m in enumerate(matches[:5]): # Top 5 matches
+        start = max(0, m.start() - window)
+        end = min(len(text), m.end() + window)
+        excerpt = text[start:end].replace('\\n', ' ')
+        results.append(f"--- MATCH {i+1} (Pos {m.start()}) ---\n...{excerpt}...\n")
+    return "\\n".join(results)
 
 def run_context_agent(text_content: str, api_key: str):
     """
     Agente V3 que usa Python REPL para navegar no texto bruto.
     """
     try:
-        # 1. Configura Ambiente REPL com o texto carregado
+        # 1. Configura Ambiente REPL com o texto carregado e Helper Functions
         repl = PythonREPL()
         repl.globals["PROCESS_TEXT"] = text_content
         
+        # Injeta a função smart_search no escopo do REPL
+        # Como o REPL roda string, precisamos passar o código da função ou injetar a lambda/wrapper
+        # Mas PythonREPL.run executa em seu proprio escopo. A melhor forma é definir a funçao no setup code.
+        setup_code = \"\"\"
+import re
+def smart_search(pattern, window=500):
+    text = PROCESS_TEXT
+    matches = list(re.finditer(pattern, text, re.IGNORECASE))
+    if not matches:
+        print(f"Nenhum match encontrado para: {pattern}")
+        return
+    
+    print(f"Encontrados {len(matches)} resultados para '{pattern}':")
+    for i, m in enumerate(matches[:5]): 
+        start = max(0, m.start() - window)
+        end = min(len(text), m.end() + window)
+        excerpt = text[start:end].replace('\\n', ' ')
+        print(f"--- MATCH {i+1} (Pos {m.start()}) ---")
+        print(f"...{excerpt}...")
+        print("-" * 20)
+"""
+        repl.run(setup_code)
+
         @tool
         def navigator(code: str):
             """
