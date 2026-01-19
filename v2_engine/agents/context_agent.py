@@ -10,8 +10,9 @@ O texto completo do processo NÃO está no seu prompt, mas está carregado na va
 
 SUA MISSÃO:
 1. Use a ferramenta `navigator` para rodar scripts Python e explorar o `PROCESS_TEXT`.
-2. USE A FUNÇÃO `smart_search(regex)` para encontrar termos chave. Ela já retorna o contexto (+/- 500 caracteres) automaticamente.
-3. Extraia os fatos com precisão cirúrgica baseada no retorno do código.
+2. **PASSO 0 (OBRIGATÓRIO):** Execute `print(PROCESS_TEXT[:3000])` para ler o cabeçalho e a causa de pedir antes de qualquer busca.
+3. USE A FUNÇÃO `smart_search(regex)` para encontrar termos chave adicionais (audiência, sentença, contestação).
+4. Extraia os fatos com precisão cirúrgica baseada no retorno do código.
 
 SAÍDA ESPERADA (JSON FINAL):
 {
