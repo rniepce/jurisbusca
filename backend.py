@@ -300,7 +300,21 @@ def generate_style_report(documents, api_key):
             HumanMessage(content=f"Aqui estão amostras de decisões do magistrado. Crie o Dossiê de Estilo:\n{sample_text}")
         ]
         
-        return llm_flash.invoke(messages).content
+        response = llm_flash.invoke(messages)
+        content = response.content
+        
+        # Correção para formato de lista (Gemini 3 Flash Preview as vezes retorna blocos)
+        if isinstance(content, list):
+            # Tenta extrair texto de blocos do tipo {'type': 'text', 'text': ...}
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and 'text' in part:
+                    text_parts.append(part['text'])
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            return "\n".join(text_parts)
+            
+        return content
     except Exception as e:
         return f"Erro ao gerar perfil de estilo: {str(e)}"
 
