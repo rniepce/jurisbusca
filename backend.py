@@ -312,9 +312,9 @@ def generate_style_report(documents, api_key):
                     text_parts.append(part['text'])
                 elif isinstance(part, str):
                     text_parts.append(part)
-            return "\n".join(text_parts)
+            return clean_text("\n".join(text_parts))
             
-        return content
+        return clean_text(content)
     except Exception as e:
         return f"Erro ao gerar perfil de estilo: {str(e)}"
 
