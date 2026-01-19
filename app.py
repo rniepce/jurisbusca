@@ -242,6 +242,28 @@ with st.sidebar:
                 
                 if not (st.session_state.openai_key and st.session_state.anthropic_key and st.session_state.deepseek_key):
                     st.warning("⚠️ Preencha todas as chaves para usar o Modo V2.")
+
+        # GESTÃO DE PRECEDENTES (VINCULAÇÃO)
+        with st.expander("📚 Base Vicunlante (Knowledge)", expanded=False):
+            st.caption("Arquivos de consulta obrigatória do Prompt V4.5")
+            
+            # Arquivo A: Sobrestamentos
+            f_sobre = st.file_uploader("Arquivo A: Sobrestamentos", type=["txt"], key="upload_sobre")
+            if f_sobre:
+                with open("data/knowledge_base/sobrestamentos.txt", "wb") as f: f.write(f_sobre.getbuffer())
+                st.toast("Sobrestamentos Atualizados!", icon="💾")
+            
+            # Arquivo B: Súmulas
+            f_sumula = st.file_uploader("Arquivo B: Súmulas", type=["txt"], key="upload_sumula")
+            if f_sumula:
+                 with open("data/knowledge_base/sumulas.txt", "wb") as f: f.write(f_sumula.getbuffer())
+                 st.toast("Súmulas Atualizadas!", icon="💾")
+
+            # Arquivo C: Qualificados
+            f_qualif = st.file_uploader("Arquivo C: Qualificados", type=["txt"], key="upload_qualif")
+            if f_qualif:
+                 with open("data/knowledge_base/qualificados.txt", "wb") as f: f.write(f_qualif.getbuffer())
+                 st.toast("Qualificados Atualizados!", icon="💾")
         
     google_api_key = st.session_state.google_api_key
     

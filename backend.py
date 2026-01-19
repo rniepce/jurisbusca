@@ -346,14 +346,51 @@ def run_gemini_orchestration(text: str, api_key: str, status_callback=None, temp
     # 1. ANÁLISE INTEGRAL (MÉRITO/MINUTA)
     update("⚖️ Fase 1: Análise Integral e Minutagem (Analista Sênior)...")
     
-    # Injeta contexto RAG no prompt se houver
-    final_prompt_integral = PROMPT_GEMINI_INTEGRAL
+    # --- LOAD KNOWLEDGE BASE (V4.5 Logic) ---
+    kb_summary = ""
+    try:
+        from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE
+        
+        # Carrega arquivos de vinculação
+        kb_text = ""
+        base_path = "data/knowledge_base"
+        
+        files_map = {
+            "sobrestamentos.txt": "ARQUIVO A (SOBRESTAMENTOS)",
+            "sumulas.txt": "ARQUIVO B (SÚMULAS)",
+            "qualificados.txt": "ARQUIVO C (QUALIFICADOS)"
+        }
+        
+        for fname, label in files_map.items():
+            fpath = os.path.join(base_path, fname)
+            if os.path.exists(fpath):
+                with open(fpath, "r") as f:
+                    content = f.read()
+                    if content.strip():
+                        kb_text += f"\n=== {label} ===\n{content}\n"
+        
+        # Constrói o Prompt Final V4.5 se houver KB, senão usa Default
+        # (Na verdade, usa o V4.5 sempre para garantir a autonomia V3)
+        final_prompt_integral = PROMPT_V3_MAGISTRATE_CORE
+        
+        if kb_text:
+            final_prompt_integral += f"\n\n## 6. BASE DE CONHECIMENTO VINCULANTE (CARREGADA)\n{kb_text}"
+            update("📚 Base de Conhecimento (Súmulas/IRDR) carregada com sucesso!")
+        else:
+            update("⚠️ Nenhuma Base de Conhecimento carregada (Operando com Conhecimento Geral)...")
+
+    except ImportError:
+        # Fallback para V1 se o arquivo novo não existir
+        final_prompt_integral = PROMPT_GEMINI_INTEGRAL 
+        update("⚠️ Usando Prompt V1 (Legacy)...")
+
+    # Injeta contexto RAG (Estilo)
     if rag_context:
         final_prompt_integral += rag_context
 
     integral_messages = [
         SystemMessage(content=final_prompt_integral),
-        HumanMessage(content=f"Realize a ANÁLISE INTEGRAL E MINUTAGEM deste processo:\n\n[AUTOS DO PROCESSO]: {text[:150000]}") # Aumentado context
+        HumanMessage(content=f"Realize a ANÁLISE INTEGRAL E MINUTAGEM deste processo:\n\n[AUTOS DO PROCESSO]: {text[:200000]}") # Increase context window
     ]
     integral_response = llm.invoke(integral_messages).content
     
