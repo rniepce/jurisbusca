@@ -682,7 +682,14 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
             finally:
                 if os.path.exists(tmp_path): os.remove(tmp_path)
                 
-            clean_content = clean_text(text_content)
+            try:
+                clean_content = clean_text(text_content)
+                # Ensure it's a valid string, replacing bad chars if needed
+                if isinstance(clean_content, bytes):
+                    clean_content = clean_content.decode('utf-8', errors='replace')
+            except Exception as e_clean:
+                clean_content = "Erro de decodificação de texto."
+                print(f"Erro no clean_text: {e_clean}")
         
         # 2. Run Pipeline (V1 vs V2)
         if mode == "v2" and keys:
@@ -712,9 +719,9 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
         results["timestamp"] = time.time()
         
         # Ensure directory exists
-        os.makedirs(".gemini_cache/reports", exist_ok=True)
+        os.makedirs("data/reports", exist_ok=True)
         
-        with open(f".gemini_cache/reports/{report_id}.json", "w") as f:
+        with open(f"data/reports/{report_id}.json", "w") as f:
             json.dump(results, f)
             
         return {"report_id": report_id, "filename": filename, "status": "success"}
