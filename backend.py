@@ -740,16 +740,24 @@ def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=
     # Prepara dados para threads
     files_data = []
     for f in files:
-        cached = text_cache_dict.get(f.name) if text_cache_dict else None
-        if cached:
-             files_data.append({"name": f.name, "bytes": None, "cached_text": cached})
-        else:
-            f.seek(0)
-            files_data.append({
-                "bytes": f.read(),
-                "name": f.name,
-                "cached_text": None
-            })
+        try:
+            cached = text_cache_dict.get(f.name) if text_cache_dict else None
+            if cached:
+                files_data.append({"name": f.name, "bytes": None, "cached_text": cached})
+            else:
+                f.seek(0)
+                # Defensive Read: Ensure bytes
+                content = f.read()
+                if isinstance(content, str):
+                    content = content.encode('utf-8', errors='replace')
+                
+                files_data.append({
+                    "bytes": content,
+                    "name": f.name,
+                    "cached_text": None
+                })
+        except Exception as e:
+            results_list.append({"error": f"Erro de Leitura (Upload): {str(e)}", "filename": f.name})
 
     def _worker(data):
         return process_single_case_pipeline(
