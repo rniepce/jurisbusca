@@ -351,7 +351,14 @@ if "report_id" in query_params:
         st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
         
         # Recupera dados
-        full_text = data.get("steps", {}).get("integral", data.get("final_report", ""))
+        steps_data = data.get("steps", {})
+        if isinstance(steps_data, dict):
+            integral_text = steps_data.get("integral")
+        else:
+            integral_text = None
+            
+        full_text = integral_text if integral_text else data.get("final_report", "")
+        
         if isinstance(full_text, list):
             full_text = "\n".join([str(x) for x in full_text])
         elif not isinstance(full_text, str):

@@ -667,7 +667,7 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
                 "final_report": v2_output.get("final_output", "Erro na geração V2"),
                 "auditor_dashboard": v2_output.get("audit_report", "Auditoria indisponível"),
                 "style_report": "Gerado via Agentic Style Guide",
-                "steps": v2_output.get("logs", [])
+                "steps": v2_output.get("logs", {})
             }
         else:
             # V1: Gemini Native Pipeline
