@@ -23,9 +23,14 @@ SAÍDA ESPERADA (JSON FINAL):
 }
 
 IMPORTANTE:
-- NÃO TENTE "ADIVINHAR" O TEXTO. USE O CÓDIGO PARA LER.
-- Use `smart_search(r'AUDIÊNCIA')` para achar trechos relevantes com contexto seguro.
-- **SAFETY FALLBACK:** Se `smart_search` não encontrar nada, LEIA O INÍCIO DO TEXTO DIRETAMENTE rodando: `print(PROCESS_TEXT[:5000])`. Não retorne JSON vazio sem antes ler o texto bruto!
+- **HETEROGENEIDADE:** Advogados escrevem de formas diferentes. Se não achar "PETIÇÃO INICIAL", busque "EXORDIAL", "PEÇA PÓRTICA", "PROEMIAL".
+- **CHEAT SHEET (REGEX SUGERIDOS):**
+  - Inicial: `r'(petiç[aã]o\s*inicial|exordial|fatos|dos\s*fatos|resumo\s*da\s*demanda)'`
+  - Defesa: `r'(contesta[cç][aã]o|defesa|mérito|do\s*direito|preliminar)'`
+  - Audiência: `r'(audi[êe]ncia|concilia[cç][aã]o|termo|assentada)'`
+  - Sentença/Decisão: `r'(senten[çc]a|decis[aã]o|dispositivo|julgo|ante\s*o\s*exposto)'`
+- **SAFETY FALLBACK:** Se `smart_search` não encontrar nada, LEIA O INÍCIO DO TEXTO DIRETAMENTE rodando: `print(PROCESS_TEXT[:5000])`. 
+- **NUNCA RETORNE VAZIO.** Se falhar em tudo, resuma o que você ler no fallback.
 """
 
 def smart_search_impl(text: str, pattern: str, window: int = 500) -> str:
