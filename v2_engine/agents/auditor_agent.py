@@ -60,14 +60,14 @@ def run_auditor_agent(draft_text: str, fatos_json: dict, style_guide: str, keys:
     # 2. TENTATIVA FALLBACK GOOGLE (GEMINI 1.5 PRO)
     if google_key:
         try:
-            # Gemini 1.5 Pro é um ótimo auditor também
+            # Gemini 2.5 Pro (Fallback Robusto)
             llm_fallback = ChatGoogleGenerativeAI(
                 google_api_key=google_key,
-                model="gemini-1.5-pro",
+                model="gemini-2.5-pro",
                 temperature=0.1
             )
             response = llm_fallback.invoke(messages).content
-            return f"{response}\n\n[NOTA: Auditoria realizada via Gemini 1.5 Pro (Fallback Ativo)]"
+            return f"{response}\n\n[NOTA: Auditoria realizada via Gemini 2.5 Pro (Fallback Ativo)]"
         except Exception as e_google:
             return f"Erro Agente Auditor (OpenAI & Google): {str(e_google)}"
             
