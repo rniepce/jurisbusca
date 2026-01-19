@@ -20,6 +20,232 @@ st.set_page_config(
 # Carrega variáveis de ambiente
 load_dotenv()
 
+
+# ==============================================================================
+# 0. ROTEAMENTO (ROUTER) - PARA ABAS NOVAS (PRIORIDADE ALTA)
+# ==============================================================================
+query_params = st.query_params
+if "report_id" in query_params:
+    report_id = query_params["report_id"]
+    try:
+        # Load from persistent storage
+        file_path = f"data/reports/{report_id}.json"
+        
+        if not os.path.exists(file_path):
+             st.error(f"Relatório não encontrado: {file_path}")
+             st.stop()
+             
+        with open(file_path, "r") as f:
+            data = json.load(f)
+            
+        # Defensive fix for 'list' vs 'dict'
+        if isinstance(data, list):
+            if len(data) > 0 and isinstance(data[0], dict):
+                data = data[0]
+            else:
+                 st.error(f"Formato de relatório inválido (Lista): {str(data)[:100]}")
+                 st.stop()
+        
+        # --- VIEW: PROCESSO INDIVIDUAL (NOVA ABA) ---
+        st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
+        
+        # Recupera dados
+        steps_data = data.get("steps", {})
+        if isinstance(steps_data, dict):
+            integral_text = steps_data.get("integral")
+        else:
+            integral_text = None
+            
+        full_text = integral_text if integral_text else data.get("final_report", "")
+        
+        if isinstance(full_text, list):
+            full_text = "\n".join([str(x) for x in full_text])
+        elif not isinstance(full_text, str):
+            full_text = str(full_text if full_text is not None else "")
+            
+        # Tenta separar a Minuta (múltiplos padrões possíveis) - SYNC COM LOGICA PRINCIPAL
+        patterns = [
+            r'##\s*3\.\s*MINUTA',
+            r'##\s*MINUTA',
+            r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
+            r'DO\s+ATO\s+JUDICIAL',
+            r'\*\*SENTENÇA\*\*',
+            r'\*\*DECISÃO\*\*',
+            r'##\s*SENTENÇA',
+            r'##\s*DECISÃO'
+        ]
+        
+        minuta_text = None
+        diagnostic_text = None
+        
+        for pattern in patterns:
+            parts = re.split(pattern, full_text, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                diagnostic_text = parts[0].strip()
+                minuta_text = parts[1].strip()
+                break
+        
+        if not minuta_text:
+            diagnostic_text = "Diagnóstico integral."
+            minuta_text = full_text
+
+        # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
+        if minuta_text and isinstance(minuta_text, str):
+            minuta_text = minuta_text.replace("\\n", "\n")
+            if "'extras':" in minuta_text:
+                    minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
+            elif '"extras":' in minuta_text:
+                    minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
+            minuta_text = minuta_text.strip().strip("'").strip('"')
+
+        # Renderiza Decisão
+        st.subheader("📝 Minuta da Decisão")
+        st.text_area("Copie o texto abaixo:", value=minuta_text, height=600, label_visibility="collapsed")
+        
+        st.markdown("---")
+        st.write("🔎 **Painel de Controle:**")
+        
+        with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
+            st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
+            st.code(str(full_text)[:500])
+            
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            with st.popover("🧠 Diagnóstico", use_container_width=True):
+                st.markdown(diagnostic_text)
+        with c2:
+            if data.get("auditor_dashboard"):
+                with st.popover("🛡️ Auditoria", use_container_width=True):
+                    st.markdown(data["auditor_dashboard"])
+        with c3:
+            if data.get("style_report"):
+                with st.popover("🎨 Estilo", use_container_width=True):
+                    st.markdown(data["style_report"])
+        with c4:
+             with st.popover("⚙️ Logs", use_container_width=True):
+                st.json(data.get("steps", {}))
+        
+        st.markdown("---")
+        st.info("💬 Modo de Visualização Rápida (Sessão Simplificada)")
+        
+    except Exception as e:
+        st.error(f"Erro ao carregar relatório: {e}")
+    
+    st.stop() # PARA A EXECUÇÃO AQUI PARA ESTA ABA
+
+
+# ==============================================================================
+# 0. ROTEAMENTO (ROUTER) - PARA ABAS NOVAS (PRIORIDADE ALTA)
+# ==============================================================================
+query_params = st.query_params
+if "report_id" in query_params:
+    report_id = query_params["report_id"]
+    try:
+        # Load from persistent storage
+        file_path = f"data/reports/{report_id}.json"
+        
+        if not os.path.exists(file_path):
+             st.error(f"Relatório não encontrado: {file_path}")
+             st.stop()
+             
+        with open(file_path, "r") as f:
+            data = json.load(f)
+            
+        # Defensive fix for 'list' vs 'dict'
+        if isinstance(data, list):
+            if len(data) > 0 and isinstance(data[0], dict):
+                data = data[0]
+            else:
+                 st.error(f"Formato de relatório inválido (Lista): {str(data)[:100]}")
+                 st.stop()
+        
+        # --- VIEW: PROCESSO INDIVIDUAL (NOVA ABA) ---
+        st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
+        
+        # Recupera dados
+        steps_data = data.get("steps", {})
+        if isinstance(steps_data, dict):
+            integral_text = steps_data.get("integral")
+        else:
+            integral_text = None
+            
+        full_text = integral_text if integral_text else data.get("final_report", "")
+        
+        if isinstance(full_text, list):
+            full_text = "\n".join([str(x) for x in full_text])
+        elif not isinstance(full_text, str):
+            full_text = str(full_text if full_text is not None else "")
+            
+        # Tenta separar a Minuta (múltiplos padrões possíveis) - SYNC COM LOGICA PRINCIPAL
+        patterns = [
+            r'##\s*3\.\s*MINUTA',
+            r'##\s*MINUTA',
+            r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
+            r'DO\s+ATO\s+JUDICIAL',
+            r'\*\*SENTENÇA\*\*',
+            r'\*\*DECISÃO\*\*',
+            r'##\s*SENTENÇA',
+            r'##\s*DECISÃO'
+        ]
+        
+        minuta_text = None
+        diagnostic_text = None
+        
+        for pattern in patterns:
+            parts = re.split(pattern, full_text, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                diagnostic_text = parts[0].strip()
+                minuta_text = parts[1].strip()
+                break
+        
+        if not minuta_text:
+            diagnostic_text = "Diagnóstico integral."
+            minuta_text = full_text
+
+        # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
+        if minuta_text and isinstance(minuta_text, str):
+            minuta_text = minuta_text.replace("\\n", "\n")
+            if "'extras':" in minuta_text:
+                    minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
+            elif '"extras":' in minuta_text:
+                    minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
+            minuta_text = minuta_text.strip().strip("'").strip('"')
+
+        # Renderiza Decisão
+        st.subheader("📝 Minuta da Decisão")
+        st.text_area("Copie o texto abaixo:", value=minuta_text, height=600, label_visibility="collapsed")
+        
+        st.markdown("---")
+        st.write("🔎 **Painel de Controle:**")
+        
+        with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
+            st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
+            st.code(str(full_text)[:500])
+            
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            with st.popover("🧠 Diagnóstico", use_container_width=True):
+                st.markdown(diagnostic_text)
+        with c2:
+            if data.get("auditor_dashboard"):
+                with st.popover("🛡️ Auditoria", use_container_width=True):
+                    st.markdown(data["auditor_dashboard"])
+        with c3:
+            if data.get("style_report"):
+                with st.popover("🎨 Estilo", use_container_width=True):
+                    st.markdown(data["style_report"])
+        with c4:
+             with st.popover("⚙️ Logs", use_container_width=True):
+                st.json(data.get("steps", {}))
+        
+        st.markdown("---")
+        st.info("💬 Modo de Visualização Rápida (Sessão Simplificada)")
+        
+    except Exception as e:
+        st.error(f"Erro ao carregar relatório: {e}")
+    
+    st.stop() # PARA A EXECUÇÃO AQUI PARA ESTA ABA
+
 # --- CSS Personalizado (Design Moderno) ---
 st.markdown("""
 <style>
@@ -328,131 +554,6 @@ if "style_report_preview" in st.session_state and st.session_state.style_report_
         del st.session_state.style_report_preview
         st.rerun()
     st.markdown("---")
-
-# ==============================================================================
-# 0. ROTEAMENTO (ROUTER) - PARA ABAS NOVAS
-# ==============================================================================
-query_params = st.query_params
-if "report_id" in query_params:
-    report_id = query_params["report_id"]
-    try:
-        # Load from persistent storage
-        file_path = f"data/reports/{report_id}.json"
-        
-        if not os.path.exists(file_path):
-             st.error(f"Relatório não encontrado: {file_path}")
-             st.stop()
-             
-        with open(file_path, "r") as f:
-            data = json.load(f)
-            
-        # Defensive fix for 'list' vs 'dict'
-        if isinstance(data, list):
-            if len(data) > 0 and isinstance(data[0], dict):
-                data = data[0]
-            else:
-                 st.error(f"Formato de relatório inválido (Lista): {str(data)[:100]}")
-                 st.stop()
-        
-        # --- VIEW: PROCESSO INDIVIDUAL (NOVA ABA) ---
-        st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
-        
-        # Recupera dados
-        steps_data = data.get("steps", {})
-        if isinstance(steps_data, dict):
-            integral_text = steps_data.get("integral")
-        else:
-            integral_text = None
-            
-        full_text = integral_text if integral_text else data.get("final_report", "")
-        
-        if isinstance(full_text, list):
-            full_text = "\n".join([str(x) for x in full_text])
-        elif not isinstance(full_text, str):
-            full_text = str(full_text if full_text is not None else "")
-            
-        # Tenta separar a Minuta (múltiplos padrões possíveis) - SYNC COM LOGICA PRINCIPAL
-        patterns = [
-            r'##\s*3\.\s*MINUTA',
-            r'##\s*MINUTA',
-            r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
-            r'DO\s+ATO\s+JUDICIAL',
-            r'\*\*SENTENÇA\*\*',
-            r'\*\*DECISÃO\*\*',
-            r'##\s*SENTENÇA',
-            r'##\s*DECISÃO'
-        ]
-        
-        minuta_text = None
-        diagnostic_text = None
-        
-        for pattern in patterns:
-            parts = re.split(pattern, full_text, flags=re.IGNORECASE)
-            if len(parts) > 1:
-                diagnostic_text = parts[0].strip()
-                minuta_text = parts[1].strip()
-                # Não corta mais no rodapé '---', pois estava removendo conteúdo útil
-                # minuta_text = re.split(r'---', minuta_text)[0].strip()
-                break
-        
-        if not minuta_text:
-            diagnostic_text = "Diagnóstico integral."
-            minuta_text = full_text
-
-        # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
-        if minuta_text and isinstance(minuta_text, str):
-            # 1. Converte quebras de linha escapadas para reais
-            minuta_text = minuta_text.replace("\\n", "\n")
-            
-            # 2. Remove artefatos de dicionário Python/JSON vazando no final
-            # Solução "Nuclear" (Sync com Main View): Corta tudo a partir de 'extras':
-            if "'extras':" in minuta_text:
-                    minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
-            elif '"extras":' in minuta_text:
-                    minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
-            
-            # 3. Remove aspas de tupla se sobrarem no início/fim
-            minuta_text = minuta_text.strip().strip("'").strip('"')
-
-        # Renderiza Decisão
-        st.subheader("📝 Minuta da Decisão")
-        st.text_area("Copie o texto abaixo:", value=minuta_text, height=600, label_visibility="collapsed")
-        
-        st.markdown("---")
-        st.write("🔎 **Painel de Controle:**")
-        
-        # DEBUG AREA (Visível apenas se houver suspeita de erro)
-        with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
-            st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
-            st.text(f"Tipo do Texto: {type(full_text)}")
-            st.text(f"Início do Texto (500 chars):\n{str(full_text)[:500]}")
-            st.text(f"Fim do Texto (500 chars):\n{str(full_text)[-500:]}")
-            
-        # Alinha os botões à esquerda (compactos)
-        c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 2])
-        with c1:
-            with st.popover("🧠 Diagnóstico", use_container_width=True):
-                st.markdown(diagnostic_text)
-        with c2:
-            if data.get("auditor_dashboard"):
-                with st.popover("🛡️ Auditoria", use_container_width=True):
-                    st.markdown(data["auditor_dashboard"])
-        with c3:
-            if data.get("style_report"):
-                with st.popover("🎨 Estilo", use_container_width=True):
-                    st.markdown(data["style_report"])
-        with c4:
-             with st.popover("⚙️ Logs", use_container_width=True):
-                st.json(data.get("steps", {}))
-        
-        # Chat (Simulado - não persiste contexto longo por enquanto nesta view simples)
-        st.markdown("---")
-        st.info("💬 O chat interativo requer o contexto vetorial completo (não disponível nesta visualização rápida).")
-        
-    except Exception as e:
-        st.error(f"Erro ao carregar relatório: {e}")
-    
-    st.stop() # PARA A EXECUÇÃO AQUI PARA ESTA ABA
 
 # ==============================================================================
 # LÓGICA PRINCIPAL (DASHBOARD / GABINETE)
