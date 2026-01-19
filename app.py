@@ -338,6 +338,14 @@ if "report_id" in query_params:
     try:
         with open(f".gemini_cache/reports/{report_id}.json", "r") as f:
             data = json.load(f)
+            
+        # Defensive fix for 'list' vs 'dict'
+        if isinstance(data, list):
+            if len(data) > 0 and isinstance(data[0], dict):
+                data = data[0]
+            else:
+                 st.error(f"Formato de relatório inválido (Lista): {str(data)[:100]}")
+                 st.stop()
         
         # --- VIEW: PROCESSO INDIVIDUAL (NOVA ABA) ---
         st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
