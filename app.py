@@ -251,19 +251,19 @@ with st.sidebar:
             f_sobre = st.file_uploader("Arquivo A: Sobrestamentos", type=["txt"], key="upload_sobre")
             if f_sobre:
                 with open("data/knowledge_base/sobrestamentos.txt", "wb") as f: f.write(f_sobre.getbuffer())
-                st.toast("Sobrestamentos Atualizados!", icon="💾")
+                # st.toast("Sobrestamentos Atualizados!", icon="💾") # SILENT MODE
             
             # Arquivo B: Súmulas
             f_sumula = st.file_uploader("Arquivo B: Súmulas", type=["txt"], key="upload_sumula")
             if f_sumula:
                  with open("data/knowledge_base/sumulas.txt", "wb") as f: f.write(f_sumula.getbuffer())
-                 st.toast("Súmulas Atualizadas!", icon="💾")
+                 # st.toast("Súmulas Atualizadas!", icon="💾") # SILENT MODE
 
             # Arquivo C: Qualificados
             f_qualif = st.file_uploader("Arquivo C: Qualificados", type=["txt"], key="upload_qualif")
             if f_qualif:
                  with open("data/knowledge_base/qualificados.txt", "wb") as f: f.write(f_qualif.getbuffer())
-                 st.toast("Qualificados Atualizados!", icon="💾")
+                 # st.toast("Qualificados Atualizados!", icon="💾") # SILENT MODE
         
     google_api_key = st.session_state.google_api_key
     
