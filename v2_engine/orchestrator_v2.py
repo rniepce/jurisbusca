@@ -50,7 +50,7 @@ def node_writer(state: AgentState):
 def node_auditor(state: AgentState):
     log = "🛡️ [4/4] Auditor (GPT-4o): Validando conformidade..."
     try:
-        audit = run_auditor_agent(state["draft_text"], state["fatos_json"], state["style_guide"], state["keys"]["openai"])
+        audit = run_auditor_agent(state["draft_text"], state["fatos_json"], state["style_guide"], state["keys"])
         
         # Lógica Simples: Se aprovado, finaliza. Se não, idealmente voltaria (loop), 
         # mas no MVP vamos apenas anexar o relatório de auditoria à minuta.
