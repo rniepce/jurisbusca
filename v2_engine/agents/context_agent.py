@@ -54,7 +54,7 @@ def run_context_agent(text_content: str, api_key: str):
         # Injeta a função smart_search no escopo do REPL
         # Como o REPL roda string, precisamos passar o código da função ou injetar a lambda/wrapper
         # Mas PythonREPL.run executa em seu proprio escopo. A melhor forma é definir a funçao no setup code.
-        setup_code = \"\"\"
+        setup_code = """
 import re
 def smart_search(pattern, window=500):
     text = PROCESS_TEXT
