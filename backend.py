@@ -24,15 +24,31 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 import json
 import gc
-# from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
-# from prompts_auditor import PROMPT_AUDITOR_FATICO, PROMPT_AUDITOR_EFICIENCIA, PROMPT_AUDITOR_JURIDICO, PROMPT_AUDITOR_DASHBOARD
-from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH
-# V1 Imports (Google Native)
+
+# Provider Integrations
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
     HAS_GEMINI = True
 except ImportError:
     HAS_GEMINI = False
+
+try:
+    from langchain_openai import ChatOpenAI
+    HAS_OPENAI = True
+except ImportError:
+    HAS_OPENAI = False
+
+try:
+    from langchain_anthropic import ChatAnthropic
+    HAS_ANTHROPIC = True
+except ImportError:
+    HAS_ANTHROPIC = False
+# from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
+# (Re-enabling imports for V2 Ensemble)
+from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
+from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH
+# V1 Imports
+# (Already imported above)
 
 # V2 Imports (Agentic)
 try:
@@ -202,9 +218,257 @@ def process_uploaded_file(file_obj, filename: str, api_key=None):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-# --- REMOVIDO: get_llm() e run_orchestration() ---
-# Essas funções usavam modelos locais (MLX/Ollama) que não estão disponíveis no Railway.
-# O sistema agora usa exclusivamente run_gemini_orchestration().
+def get_llm(provider: str, model_name: str, api_key: str, temperature: float = 0.2):
+    """
+    Factory para instanciar LLMs de diferentes provedores.
+    """
+    if provider == "google":
+        if not HAS_GEMINI: raise ImportError("langchain-google-genai não instalado.")
+        return ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=temperature)
+    
+    elif provider == "openai":
+        if not HAS_OPENAI: raise ImportError("langchain-openai não instalado.")
+        # Suporte a DeepSeek via OpenAI compatível (base_url deve ser tratado no app.py ou aqui se necessário)
+        # Por enquanto, assumindo OpenAI padrão ou DeepSeek via ChatOpenAI com base_url custom
+        if "deepseek" in model_name.lower():
+             return ChatOpenAI(model=model_name, api_key=api_key, base_url="https://api.deepseek.com", temperature=temperature)
+        return ChatOpenAI(model=model_name, api_key=api_key, temperature=temperature)
+        
+    elif provider == "anthropic":
+        if not HAS_ANTHROPIC: raise ImportError("langchain-anthropic não instalado.")
+        return ChatAnthropic(model=model_name, api_key=api_key, temperature=temperature)
+        
+    else:
+        raise ValueError(f"Provedor desconhecido: {provider}")
+
+def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_config: dict, status_callback=None, template_files=None):
+    """
+    Pipeline Padrão (V1) FLEXÍVEL.
+    Suporta qualquer LLM para Analista Principal e Analista de Estilo.
+    """
+    # Config keys: {'provider': str, 'model': str, 'key': str}
+    
+    def update(msg):
+        if status_callback: status_callback(msg)
+
+    try:
+        # Instancia LLMs
+        main_llm = get_llm(main_llm_config['provider'], main_llm_config['model'], main_llm_config['key'], temperature=0.2)
+        style_llm = get_llm(style_llm_config['provider'], style_llm_config['model'], style_llm_config['key'], temperature=0.3)
+    except Exception as e:
+        return {"final_report": f"Erro na inicialização dos modelos: {str(e)}", "steps": {}}
+
+    # PROCESSAMENTO DE TEMPLATES (RAG)
+    rag_context = ""
+    style_report = None
+    
+    if template_files:
+        update("📚 Indexando Modelos de Referência (RAG)...")
+        try:
+            # Note: Embeddings ainda usam Google por padrão (definido em process_templates), 
+            # mas poderíamos parametrizar isso também no futuro.
+            # Para simplificar, assumimos que o usuário tem uma chave Google para embeddings se usar RAG,
+            # ou usamos a chave do main_llm se for Google.
+            
+            # HACK: Se main_llm não for google, precisamos de uma chave google para o RAG/Embeddings
+            # ou refatorar process_templates para usar OpenAI Embeddings.
+            # Por hora, vamos tentar usar a chave do main_llm_config se o provider for google.
+            rag_key = main_llm_config['key'] if main_llm_config['provider'] == 'google' else os.getenv("GOOGLE_API_KEY")
+            
+            if not rag_key and (template_files or style_llm_config['provider'] == 'google'):
+                 update("⚠️ Aviso: Chave Google necessária para RAG/Embeddings não encontrada. RAG pode falhar.")
+            
+            retriever, all_docs = process_templates(template_files, rag_key)
+            
+            if retriever:
+                # 1. RAG (Busca por similaridade)
+                relevant_docs = retriever.invoke(text[:4000])
+                rag_context = "\n\n## MODELOS DE REFERÊNCIA (RAG)\n"
+                rag_context += "Use o ESTILO e ESTRUTURA visual destes modelos:\n"
+                for i, doc in enumerate(relevant_docs):
+                    rag_context += f"\n[MODELO {i+1} - {doc.metadata.get('source')}]:\n{doc.page_content}\n"
+                
+                # 2. STYLE ANALYZER (Usando o modelo escolhido para estilo)
+                update(f"🎨 Analisando Estilo Judicial ({style_llm_config['model']})...")
+                
+                # Profile Generation Logic inline to support generic LLM
+                sample_text = ""
+                for doc in all_docs[:5]: 
+                    sample_text += f"\n--- AMOSTRA ({doc.metadata.get('source')}): ---\n{doc.page_content[:5000]}\n"
+                
+                style_msgs = [
+                    SystemMessage(content=PROMPT_STYLE_ANALYZER),
+                    HumanMessage(content=f"Aqui estão amostras de decisões do magistrado. Crie o Dossiê de Estilo:\n{sample_text}")
+                ]
+                style_resp = style_llm.invoke(style_msgs)
+                style_content = style_resp.content
+                
+                # Cleaning list artifacts if needed (common in Gemini)
+                if isinstance(style_content, list):
+                     style_content = "\n".join([x if isinstance(x, str) else str(x) for x in style_content])
+                
+                style_report = clean_text(str(style_content))
+                
+                if style_report:
+                    rag_context += f"\n\n## DIRETRIZES DE PERSONALIDADE (PERFIL DO JULGADOR)\nVocê deve emular estritamente o seguinte perfil:\n{style_report}\n"
+
+        except Exception as e:
+            update(f"⚠️ Erro ao processar modelos/estilo: {e}")
+
+    update(f"🧠 Iniciando Análise Profunda ({main_llm_config['model']})...")
+
+    # 1. ANÁLISE INTEGRAL (MÉRITO/MINUTA)
+    update("⚖️ Fase 1: Análise Integral e Minutagem (Analista Sênior)...")
+    
+    # --- LOAD KNOWLEDGE BASE (V4.5 Logic) ---
+    kb_text = ""
+    try:
+        from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE
+        base_path = "data/knowledge_base"
+        files_map = {
+            "sobrestamentos.txt": "ARQUIVO A (SOBRESTAMENTOS)",
+            "sumulas.txt": "ARQUIVO B (SÚMULAS)",
+            "qualificados.txt": "ARQUIVO C (QUALIFICADOS)"
+        }
+        for fname, label in files_map.items():
+            fpath = os.path.join(base_path, fname)
+            if os.path.exists(fpath):
+                with open(fpath, "r") as f:
+                    content = f.read()
+                    if content.strip():
+                        kb_text += f"\n=== {label} ===\n{content}\n"
+        
+        final_prompt_integral = PROMPT_V3_MAGISTRATE_CORE
+        if kb_text:
+            final_prompt_integral += f"\n\n## 6. BASE DE CONHECIMENTO VINCULANTE (CARREGADA)\n{kb_text}"
+
+    except ImportError:
+        final_prompt_integral = PROMPT_GEMINI_INTEGRAL 
+        update("⚠️ Usando Prompt V1 (Legacy)...")
+
+    # Injeta contexto RAG (Estilo)
+    if rag_context:
+        final_prompt_integral += rag_context
+
+    integral_messages = [
+        SystemMessage(content=final_prompt_integral),
+        HumanMessage(content=f"Realize a ANÁLISE INTEGRAL E MINUTAGEM deste processo:\n\n[AUTOS DO PROCESSO]: {text[:200000]}") 
+    ]
+    integral_response = main_llm.invoke(integral_messages).content
+    
+    # SIMPLIFICAÇÃO V1 (Pedido do Usuário):
+    # Sem auditoria automática obrigatória. Retorna direto a minuta.
+    
+    return {
+        "final_report": integral_response,
+        "auditor_dashboard": None, # Auditoria removida do fluxo padrão
+        "style_report": style_report,
+        "steps": {
+            "integral": integral_response
+        }
+    }
+
+def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, template_files=None):
+    """
+    V2: LINEAR ENSEMBLE PIPELINE (A "Linha de Montagem").
+    Pipeline determinístico onde cada modelo faz uma parte específica.
+    
+    Fluxo:
+    1. Gemini 3 Pro -> Extração de Fatos e Análise Formal (Input Massivo).
+    2. DeepSeek R1 -> Análise Material/Mérito e Lógica Jurídica (Reasoning).
+    3. Claude 3.5 Sonnet -> Redação Final (Minuta) com base nos insumos.
+    """
+    def update(msg):
+         if status_callback: status_callback(msg)
+
+    # 1. Setup Models
+    try:
+        # Step A: Analista de Triagem (Gemini - Context Window Grande e Barato)
+        analista_fatos = get_llm("google", "gemini-3.0-pro-preview", keys['google'], temperature=0.1)
+        
+        # Step B: Juiz Substituto (DeepSeek - Raciocínio Complexo)
+        # Se deepseek key nao existir, fallback para openai ou google
+        ds_key = keys.get('deepseek')
+        if ds_key:
+             juiz_logico = get_llm("openai", "deepseek-reasoner", ds_key, temperature=0.3) # Via OpenAI Compat
+        else:
+             update("⚠️ Chave DeepSeek não encontrada. Usando GPT-4o para raciocínio.")
+             juiz_logico = get_llm("openai", "gpt-4o", keys['openai'], temperature=0.3)
+             
+        # Step C: Assessor Redator (Claude - Melhor Prosa)
+        # Se claude key nao existir, fallback para openai
+        cl_key = keys.get('anthropic')
+        if cl_key:
+             redator_final = get_llm("anthropic", "claude-3-5-sonnet-20240620", cl_key, temperature=0.2)
+        else:
+             update("⚠️ Chave Anthropic não encontrada. Usando GPT-4o para redação.")
+             redator_final = get_llm("openai", "gpt-4o", keys['openai'], temperature=0.2)
+             
+    except Exception as e:
+        return {"final_report": f"Erro ao inicializar Banca Digital: {e}", "steps": {}}
+
+    logs = {}
+    
+    # === FASE 1: EXTRAÇÃO E TRIAGEM (GEMINI) ===
+    update("🕵️‍♂️ Fase 1: Gemini analisando Fatos e Requisitos Formais...")
+    
+    # Prompt de Fatos
+    msg_fatos = [SystemMessage(content=PROMPT_FATOS), HumanMessage(content=f"Autos:\n{text[:150000]}")]
+    res_fatos = analista_fatos.invoke(msg_fatos).content
+    logs['fatos'] = res_fatos
+    
+    # Prompt Formal
+    msg_formal = [SystemMessage(content=PROMPT_ANALISE_FORMAL), HumanMessage(content=f"Autos:\n{text[:100000]}")] # Menos contexto ok
+    res_formal = analista_fatos.invoke(msg_formal).content
+    logs['analise_formal'] = res_formal
+    
+    # === FASE 2: RACIOCÍNIO JURÍDICO (DEEPSEEK) ===
+    update("🧠 Fase 2: DeepSeek deliberando sobre o Mérito (Reasoning)...")
+    
+    # Monta o contexto para o Juiz
+    contexto_juiz = f"""
+    [RESUMO DOS FATOS]:
+    {res_fatos}
+    
+    [TRIAGEM FORMAL]:
+    {res_formal}
+    
+    [TRECHOS RELEVANTES DOS AUTOS]:
+    {text[:50000]} 
+    """
+    # Note: DeepSeek R1 tem contexto menor que Gemini, cuidado.
+    
+    msg_material = [SystemMessage(content=PROMPT_ANALISE_MATERIAL), HumanMessage(content=contexto_juiz)]
+    res_material = juiz_logico.invoke(msg_material).content
+    logs['analise_material'] = res_material
+    
+    # === FASE 3: REDAÇÃO DE MINUTA (CLAUDE) ===
+    update("✍️ Fase 3: Claude redigindo a Minuta Final...")
+    
+    # Se tiver Style Guide (RAG), injeta aqui
+    msg_redator_sys = PROMPT_RELATOR_FINAL.format(
+        fatos_texto=res_fatos,
+        formal_json=res_formal,
+        material_texto=res_material
+    )
+    
+    # Optional Style Injection
+    if template_files:
+        try:
+             # Re-uses process_templates logic... simplified for now
+             pass 
+        except: pass
+
+    msg_final = [SystemMessage(content="Você é um Assessor que redige minutas perfeitas."), HumanMessage(content=msg_redator_sys)]
+    res_final = redator_final.invoke(msg_final).content
+    logs['minuta_final'] = res_final
+    
+    return {
+        "final_report": res_final,
+        "auditor_dashboard": f"**Estratégia Adotada (DeepSeek):**\n\n{res_material}",
+        "style_report": "Ensemble Assembly Line (Sem Style Guide específico)",
+        "steps": logs
+    }
 
 def process_templates(files, api_key):
     """
@@ -321,132 +585,7 @@ def generate_style_report(documents, api_key):
     except Exception as e:
         return f"Erro ao gerar perfil de estilo: {str(e)}"
 
-def run_gemini_orchestration(text: str, api_key: str, status_callback=None, template_files=None):
-    """
-    Pipeline PROFUNDO usando Gemini 3.0 Pro ou Flash.
-    Segue a sequência complexa do usuário: Análise Integral -> Auditoria.
-    Suporta RAG (Retrieval Augmented Generation) se templates forem fornecidos.
-    """
-    if not HAS_GEMINI:
-        return {"final_report": "Erro: Pacote langchain-google-genai não instalado.", "steps": {}}
-    
-    if not api_key:
-        return {"final_report": "Erro: API Key do Google não fornecida.", "steps": {}}
-
-    # Instancia Gemini (modelo robusto para análise profunda)
-    # Trocando para gemini-3-pro-preview (Solicitado pelo usuário)
-    llm = ChatGoogleGenerativeAI(model="gemini-3.0-pro-preview", google_api_key=api_key, temperature=0.2)
-    
-    def update(msg):
-        if status_callback:
-            status_callback(msg)
-
-    # PROCESSAMENTO DE TEMPLATES (RAG)
-    rag_context = ""
-    if template_files:
-        update("📚 Indexando Modelos de Referência (RAG)...")
-        try:
-            retriever, all_docs = process_templates(template_files, api_key)
-            if retriever:
-                # 1. RAG (Busca por similaridade)
-                relevant_docs = retriever.invoke(text[:4000])
-                rag_context = "\n\n## MODELOS DE REFERÊNCIA (RAG)\n"
-                rag_context += "Use o ESTILO e ESTRUTURA visual destes modelos:\n"
-                for i, doc in enumerate(relevant_docs):
-                    rag_context += f"\n[MODELO {i+1} - {doc.metadata.get('source')}]:\n{doc.page_content}\n"
-                
-                # 2. STYLE ANALYZER (Flash)
-                update("🎨 Analisando Estilo Judicial (Profiling com Gemini Flash)...")
-                style_report = generate_style_report(all_docs, api_key)
-                if style_report:
-                    rag_context += f"\n\n## DIRETRIZES DE PERSONALIDADE (PERFIL DO JULGADOR)\nVocê deve emular estritamente o seguinte perfil:\n{style_report}\n"
-
-        except Exception as e:
-            update(f"⚠️ Erro ao processar modelos: {e}")
-
-    update("🧠 Iniciando Análise Profunda (Gemini 3.0 Pro)...")
-
-    # 1. ANÁLISE INTEGRAL (MÉRITO/MINUTA)
-    update("⚖️ Fase 1: Análise Integral e Minutagem (Analista Sênior)...")
-    
-    # --- LOAD KNOWLEDGE BASE (V4.5 Logic) ---
-    kb_summary = ""
-    try:
-        from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE
-        
-        # Carrega arquivos de vinculação
-        kb_text = ""
-        base_path = "data/knowledge_base"
-        
-        files_map = {
-            "sobrestamentos.txt": "ARQUIVO A (SOBRESTAMENTOS)",
-            "sumulas.txt": "ARQUIVO B (SÚMULAS)",
-            "qualificados.txt": "ARQUIVO C (QUALIFICADOS)"
-        }
-        
-        for fname, label in files_map.items():
-            fpath = os.path.join(base_path, fname)
-            if os.path.exists(fpath):
-                with open(fpath, "r") as f:
-                    content = f.read()
-                    if content.strip():
-                        kb_text += f"\n=== {label} ===\n{content}\n"
-        
-        # Constrói o Prompt Final V4.5 se houver KB, senão usa Default
-        # (Na verdade, usa o V4.5 sempre para garantir a autonomia V3)
-        final_prompt_integral = PROMPT_V3_MAGISTRATE_CORE
-        
-        if kb_text:
-            final_prompt_integral += f"\n\n## 6. BASE DE CONHECIMENTO VINCULANTE (CARREGADA)\n{kb_text}"
-            # update("📚 Base de Conhecimento (Súmulas/IRDR) carregada com sucesso!") # SILENT MODE
-        else:
-            pass # update("⚠️ Nenhuma Base de Conhecimento carregada (Operando com Conhecimento Geral)...") # SILENT MODE
-
-    except ImportError:
-        # Fallback para V1 se o arquivo novo não existir
-        final_prompt_integral = PROMPT_GEMINI_INTEGRAL 
-        update("⚠️ Usando Prompt V1 (Legacy)...")
-
-    # Injeta contexto RAG (Estilo)
-    if rag_context:
-        final_prompt_integral += rag_context
-
-    integral_messages = [
-        SystemMessage(content=final_prompt_integral),
-        HumanMessage(content=f"Realize a ANÁLISE INTEGRAL E MINUTAGEM deste processo:\n\n[AUTOS DO PROCESSO]: {text[:200000]}") # Increase context window
-    ]
-    integral_response = llm.invoke(integral_messages).content
-    
-    # 2. REVISOR (AUDITOR)
-    update("🛡️ Fase 2: Auditoria Final (Raio-X)...")
-    auditor_messages = [
-        SystemMessage(content=PROMPT_GEMINI_AUDITOR),
-        HumanMessage(content=f"Audite a Minuta abaixo com base nos autos:\n\n[DADOS DOS AUTOS]: {text[:150000]}\n\n[MINUTA A SER AUDITADA]: {integral_response}")
-    ]
-    auditor_response = llm.invoke(auditor_messages).content
-    
-    # Consolida tudo
-    final_output = f"""
-# 🧠 RELATÓRIO DE ANÁLISE PROFUNDA (GEMINI 3.0)
-
----
-## 1. PARECER JURÍDICO E MINUTA
-{integral_response}
-
----
-## 2. AUDITORIA DE CONFORMIDADE
-{auditor_response}
-    """
-    
-    return {
-        "final_report": final_output,
-        "auditor_dashboard": auditor_response,
-        "style_report": style_report if 'style_report' in locals() else None,
-        "steps": {
-            "integral": integral_response,
-            "auditor": auditor_response
-        }
-    }
+# OLD run_gemini_orchestration removed/replaced by run_standard_orchestration
 
 def process_batch(files, api_key):
     """
@@ -691,24 +830,48 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
                 clean_content = "Erro de decodificação de texto."
                 print(f"Erro no clean_text: {e_clean}")
         
-        # 2. Run Pipeline (V1 vs V2)
-        if mode == "v2" and keys:
-            # V2: Hybrid Orchestration (Gemini + DeepSeek + Claude + GPT)
+        # 2. Run Pipeline (V1 vs V2 vs V3)
+        if mode == "v3" and keys:
+            # V3: Autonomous Agent (Hybrid LangGraph Agents)
+            # Replaces old "v2" logic
             if run_hybrid_orchestration is None:
-                return {"error": "ERRO DE INSTALAÇÃO (V2): As bibliotecas da versão Agente (LangGraph) não estão instaladas no servidor. O modo V2 está indisponível.", "filename": filename}
+                return {"error": "ERRO DE INSTALAÇÃO (V3): Engine Agente não disponível.", "filename": filename}
 
             # Normalizar output para o formato esperado pelo front
-            v2_output = run_hybrid_orchestration(clean_content, keys)
+            v3_output = run_hybrid_orchestration(clean_content, keys)
             
             results = {
-                "final_report": v2_output.get("final_output", "Erro na geração V2"),
-                "auditor_dashboard": v2_output.get("audit_report", "Auditoria indisponível"),
-                "style_report": "Gerado via Agentic Style Guide",
-                "steps": v2_output.get("logs", {})
+                "final_report": v3_output.get("final_output", "Erro na geração V3"),
+                "auditor_dashboard": v3_output.get("audit_report", "Auditoria indisponível"),
+                "style_report": "Gerado via Agentic Style Guide (V3)",
+                "steps": v3_output.get("logs", {})
             }
+            
+        elif mode == "v2" and keys:
+            # V2: Ensemble Pipeline (Assembly Line)
+            # Gemini -> DeepSeek -> Claude
+            ensemble_output = run_ensemble_orchestration(clean_content, keys, template_files=template_files)
+            results = ensemble_output # Já retorna no formato certo
+            results["filename"] = filename # Garante filename
+            
         else:
-            # V1: Gemini Native Pipeline
-            results = run_gemini_orchestration(clean_content, api_key, status_callback=None, template_files=template_files)
+            # V1: Standard Pipeline (Flexible LLM)
+            # V1: Standard Pipeline (Flexible LLM)
+            # Precisamos mapear os parâmetros antigos para o novo formato de config
+            # Se chamou via process_single_case_pipeline, api_key é a chave Google (default V1 legacy)
+            # Para usar multi-model no batch, precisaremos passar 'keys' no futuro.
+            # Por compatibilidade, se 'keys' não existir, assume Google Default.
+            
+            if keys:
+                 # Novo formato: usa as chaves e modelos do keys se disponíveis
+                 main_cfg = keys.get('v1_main_config', {'provider': 'google', 'model': 'gemini-3.0-pro-preview', 'key': api_key})
+                 style_cfg = keys.get('v1_style_config', {'provider': 'google', 'model': 'gemini-3-flash-preview', 'key': api_key})
+            else:
+                 # Fallback legacy
+                 main_cfg = {'provider': 'google', 'model': 'gemini-3.0-pro-preview', 'key': api_key}
+                 style_cfg = {'provider': 'google', 'model': 'gemini-3-flash-preview', 'key': api_key}
+
+            results = run_standard_orchestration(clean_content, main_cfg, style_cfg, status_callback=None, template_files=template_files)
         
         # 3. Save Result
         report_id = hashlib.md5(f"{filename}_{time.time()}".encode()).hexdigest()

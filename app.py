@@ -6,7 +6,7 @@ import re
 import traceback
 import pandas as pd
 import plotly.express as px
-from backend import process_uploaded_file, run_gemini_orchestration, process_templates, generate_style_report, generate_batch_xray, process_batch_parallel, load_persistent_rag
+from backend import process_uploaded_file, run_standard_orchestration, run_ensemble_orchestration, process_templates, generate_style_report, generate_batch_xray, process_batch_parallel, load_persistent_rag
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 # from prompts import LEGAL_ASSISTANT_PROMPT # Obsoleto com multi-agentes
 
@@ -428,18 +428,83 @@ with st.sidebar:
             
         st.markdown("---")
         
-        # SELETOR DE MODO (V1 vs V2)
+        # SELETOR DE MODO (V1 vs V2 vs V3)
         mode_option = st.radio(
             "Modo de Operação:",
-            ["V1: Standard (Gemini)", "V2: Agentes Híbridos (SOTA)"],
+            ["V1: Standard (Multi-Model)", "V2: Linha de Montagem (Ensemble)", "V3: Agente Autônomo (SOTA)"],
             index=0,
-            help="V1: Rápido e Econômico (Gemini puro).\nV2: Qualidade Extrema (Orquestração entre Gemini, Claude, GPT e DeepSeek)."
+            help="V1: Rápido (1 LLM).\nV2: Potente (Gemini -> DeepSeek -> Claude).\nV3: Autônomo (Ferramentas + Python)."
         )
-        st.session_state.app_mode = "v2" if "V2" in mode_option else "v1"
+        
+        if "V1" in mode_option:
+            st.session_state.app_mode = "v1"
+        elif "V2" in mode_option:
+            st.session_state.app_mode = "v2"
+        else:
+            st.session_state.app_mode = "v3"
+        
+        # CONFIGURAÇÃO V1 (MULTI-MODELO)
+        if st.session_state.app_mode == "v1":
+             with st.expander("🛠️ Configuração do Motor (V1)", expanded=True):
+                 st.caption("Escolha a inteligência por trás do Analista Principal e do Analista de Estilo.")
+                 
+                 # Definição dos Modelos e Provedores
+                 model_options = {
+                     "Gemini 3.0 Pro": {"provider": "google", "model": "gemini-3.0-pro-preview"},
+                     "Gemini Flash (Rápido)": {"provider": "google", "model": "gemini-3-flash-preview"},
+                     "DeepSeek R1 (Lógica Extrema)": {"provider": "openai", "model": "deepseek-reasoner"}, # Via DeepSeek API (OpenAI compat)
+                     "GPT-5.1 Preview (Simulado/GPT-4o)": {"provider": "openai", "model": "gpt-4o"},
+                     "Claude 3.5 Sonnet": {"provider": "anthropic", "model": "claude-3-5-sonnet-20240620"}
+                 }
+                 
+                 # Seletores
+                 sel_main = st.selectbox("🧠 Modelo Principal (Mérito/Minuta)", list(model_options.keys()), index=0)
+                 sel_style = st.selectbox("🎨 Modelo de Estilo (Personalidade)", list(model_options.keys()), index=1)
+                 
+                 # Captura as configs escolhidas
+                 main_config = model_options[sel_main]
+                 style_config = model_options[sel_style]
+                 
+                 # INPUT DE CHAVES DINÂMICO
+                 st.divider()
+                 st.caption("Chaves de Acesso necessárias para os modelos escolhidos:")
+                 
+                 needed_providers = set([main_config['provider'], style_config['provider']])
+                 
+                 # Google (Já temos a session_state.google_api_key validada lá em cima)
+                 main_config['key'] = st.session_state.google_api_key
+                 style_config['key'] = st.session_state.google_api_key
+                 
+                 # OpenAI / DeepSeek
+                 if 'openai' in needed_providers:
+                     if "openai_key_v1" not in st.session_state: st.session_state.openai_key_v1 = ""
+                     
+                     # Verifica se é DeepSeek específico ou OpenAI
+                     is_deepseek = "DeepSeek" in sel_main or "DeepSeek" in sel_style
+                     label_key = "DeepSeek API Key" if is_deepseek else "OpenAI API Key"
+                     
+                     k_val = st.text_input(label_key, value=st.session_state.openai_key_v1, type="password", key="v1_oai_key")
+                     st.session_state.openai_key_v1 = k_val
+                     
+                     if main_config['provider'] == 'openai': main_config['key'] = k_val
+                     if style_config['provider'] == 'openai': style_config['key'] = k_val
+                     
+                 # Anthropic
+                 if 'anthropic' in needed_providers:
+                     if "anthropic_key_v1" not in st.session_state: st.session_state.anthropic_key_v1 = ""
+                     k_ant = st.text_input("Anthropic API Key", value=st.session_state.anthropic_key_v1, type="password", key="v1_ant_key")
+                     st.session_state.anthropic_key_v1 = k_ant
+                     
+                     if main_config['provider'] == 'anthropic': main_config['key'] = k_ant
+                     if style_config['provider'] == 'anthropic': style_config['key'] = k_ant
+                 
+                 # Salva no Session State para uso nos botões de ação
+                 st.session_state.v1_main_config = main_config
+                 st.session_state.v1_style_config = style_config
 
-        # CONFIGURAÇÃO V2 (Chaves Extras)
-        if st.session_state.app_mode == "v2":
-            with st.expander("⚙️ Configurar Banca Digital", expanded=True):
+        # CONFIGURAÇÃO V2/V3 (Chaves Extras)
+        if st.session_state.app_mode in ["v2", "v3"]:
+            with st.expander("⚙️ Configurar Banca Digital (V2/V3)", expanded=True):
                 st.caption("Insira as chaves para ativar a equipe completa.")
                 
                 # OpenAI (Input com validação visual)
@@ -467,7 +532,7 @@ with st.sidebar:
                     else: st.warning("Formato estranho...")
                 
                 if not (st.session_state.openai_key and st.session_state.anthropic_key and st.session_state.deepseek_key):
-                    st.warning("⚠️ Preencha todas as chaves para usar o Modo V2.")
+                    st.warning("⚠️ Preencha todas as chaves para usar o Modo V2/V3 (Ensemble/Agente).")
 
         # GESTÃO DE PRECEDENTES (VINCULAÇÃO)
         with st.expander("📚 Base Vicunlante (Knowledge)", expanded=False):
@@ -613,12 +678,19 @@ if uploaded_files:
                 else:
                     with st.spinner(f"Processando {len(uploaded_files)} casos em paralelo (Isso pode levar um tempo)..."):
                         # Processa em Paralelo e Salva JSONs
+                        
+                        # V2 Keys
                         keys_dict = {
                             "google": google_api_key,
                             "openai": st.session_state.get("openai_key"),
                             "anthropic": st.session_state.get("anthropic_key"),
                             "deepseek": st.session_state.get("deepseek_key")
                         }
+                        
+                        # V1 Configs (Inject if enabled)
+                        if st.session_state.get("app_mode") == "v1":
+                            keys_dict['v1_main_config'] = st.session_state.get('v1_main_config')
+                            keys_dict['v1_style_config'] = st.session_state.get('v1_style_config')
                         results = process_batch_parallel(
                             uploaded_files, 
                             google_api_key, 
@@ -687,6 +759,11 @@ if uploaded_files:
                                             "anthropic": st.session_state.get("anthropic_key"),
                                             "deepseek": st.session_state.get("deepseek_key")
                                         }
+                                        
+                                        # V1 Configs (Inject if enabled)
+                                        if st.session_state.get("app_mode") == "v1":
+                                            keys_dict['v1_main_config'] = st.session_state.get('v1_main_config')
+                                            keys_dict['v1_style_config'] = st.session_state.get('v1_style_config')
                                         results = process_batch_parallel(
                                             subset_files, 
                                             google_api_key, 
@@ -836,13 +913,56 @@ if uploaded_files:
                     status_box.write(msg)
                     
                 try:
-                    # Pipeline exclusiva do Gemini (Railway Deploy)
-                    results = run_gemini_orchestration(
-                        text=st.session_state.process_text,
-                        api_key=google_api_key,
-                        status_callback=update_status,
-                        template_files=template_files
-                    )
+                    # Pipeline de Execução (V1 / V2 / V3)
+                    
+                    if st.session_state.app_mode == "v3":
+                        # V3: AGENTE AUTÔNOMO (Agentic RLM)
+                        # Nota: Placeholder enquanto V3 não está 100% implementado
+                        from backend import run_hybrid_orchestration
+                        keys = {
+                            "openai": st.session_state.openai_key,
+                            "anthropic": st.session_state.anthropic_key,
+                            "deepseek": st.session_state.deepseek_key,
+                            "google": google_api_key
+                        }
+                        if run_hybrid_orchestration:
+                            results = run_hybrid_orchestration(st.session_state.process_text, keys)
+                            # Adaptação de output do agente
+                            if "final_output" in results: results["final_report"] = results["final_output"]
+                            if "audit_report" in results: results["auditor_dashboard"] = results["audit_report"]
+                            if "logs" in results: results["steps"] = results["logs"]
+                        else:
+                             st.error("Engine V3 não encontrada.")
+                             st.stop()
+                             
+                    elif st.session_state.app_mode == "v2":
+                        # V2: LINHA DE MONTAGEM (ENSEMBLE)
+                        # Requer keys carregadas
+                        keys = {
+                            "openai": st.session_state.openai_key,
+                            "anthropic": st.session_state.anthropic_key,
+                            "deepseek": st.session_state.deepseek_key,
+                            "google": google_api_key
+                        }
+                        results = run_ensemble_orchestration(
+                            text=st.session_state.process_text,
+                            keys=keys,
+                            status_callback=update_status,
+                            template_files=template_files
+                        )
+                        
+                    else:
+                        # V1: STANDARD (SIMPLIFICADO)
+                        main_conf = st.session_state.get('v1_main_config', {'provider': 'google', 'model': 'gemini-3.0-pro-preview', 'key': google_api_key})
+                        style_conf = st.session_state.get('v1_style_config', {'provider': 'google', 'model': 'gemini-3-flash-preview', 'key': google_api_key})
+                        
+                        results = run_standard_orchestration(
+                            text=st.session_state.process_text,
+                            main_llm_config=main_conf,
+                            style_llm_config=style_conf,
+                            status_callback=update_status,
+                            template_files=template_files
+                        )
                     
                     status_box.update(label="✅ Análise e Auditoria Concluídas!", state="complete", expanded=False)
                     
