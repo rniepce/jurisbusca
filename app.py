@@ -625,16 +625,23 @@ if uploaded_files:
                         st.caption(res['error'])
                     else:
                         # Substituindo link_button por button + callback para preservar Session State
-                        def open_report(rid):
-                            st.query_params["report_id"] = rid
-                            
-                        st.button(
-                            f"📄 {res['filename']}", 
-                            key=f"btn_open_{res['report_id']}",
-                            on_click=open_report,
-                            args=(res['report_id'],),
-                            use_container_width=True
-                        )
+                        # Substituindo por HTML Link para garantir Nova Aba (target="_blank")
+                        btn_html = f"""
+                        <a href="?report_id={res['report_id']}" target="_blank" style="text-decoration:none;">
+                            <div style="
+                                border: 1px solid rgba(250, 250, 250, 0.2);
+                                border-radius: 5px;
+                                padding: 10px;
+                                text-align: center;
+                                background-color: rgba(255, 255, 255, 0.05);
+                                color: inherit;
+                                transition: background 0.3s;
+                            " onmouseover="this.style.backgroundColor='rgba(255, 255, 255, 0.1)'" onmouseout="this.style.backgroundColor='rgba(255, 255, 255, 0.05)'">
+                                📄 <br> {res['filename'][:20]}...
+                            </div>
+                        </a>
+                        """
+                        st.markdown(btn_html, unsafe_allow_html=True)
 
 
     # 2. MODO INDIVIDUAL (Single File)
