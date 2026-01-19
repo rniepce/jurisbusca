@@ -24,7 +24,7 @@ def run_writer_agent(verdict_outline: str, style_guide: str, api_key: str):
 
         llm = ChatAnthropic(
             api_key=api_key,
-            model="claude-3-5-sonnet-20240620",
+            model="claude-3-5-sonnet-20241022",
             temperature=0.3
         )
         
