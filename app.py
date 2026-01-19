@@ -336,7 +336,14 @@ query_params = st.query_params
 if "report_id" in query_params:
     report_id = query_params["report_id"]
     try:
-        with open(f".gemini_cache/reports/{report_id}.json", "r") as f:
+        # Load from persistent storage
+        file_path = f"data/reports/{report_id}.json"
+        
+        if not os.path.exists(file_path):
+             st.error(f"Relatório não encontrado: {file_path}")
+             st.stop()
+             
+        with open(file_path, "r") as f:
             data = json.load(f)
             
         # Defensive fix for 'list' vs 'dict'
@@ -600,8 +607,18 @@ if uploaded_files:
                                     # Adiciona aos resultados existentes
                                     existing_ids = {r.get('filename') for r in st.session_state.batch_results}
                                     added_count = 0
+                                    
+                                    # Ensure directory exists
+                                    os.makedirs("data/reports", exist_ok=True)
+                                    
                                     for new_res in results:
                                         if new_res.get('filename') not in existing_ids:
+                                            # Save to disk for persistence
+                                            rid = new_res.get('report_id')
+                                            if rid:
+                                                with open(f"data/reports/{rid}.json", "w") as f:
+                                                    json.dump(new_res, f)
+                                            
                                             st.session_state.batch_results.append(new_res)
                                             added_count += 1
                                     
@@ -629,15 +646,17 @@ if uploaded_files:
                         btn_html = f"""
                         <a href="?report_id={res['report_id']}" target="_blank" style="text-decoration:none;">
                             <div style="
-                                border: 1px solid rgba(250, 250, 250, 0.2);
-                                border-radius: 5px;
-                                padding: 10px;
+                                border: none;
+                                border-radius: 12px;
+                                padding: 12px;
                                 text-align: center;
-                                background-color: rgba(255, 255, 255, 0.05);
-                                color: inherit;
-                                transition: background 0.3s;
-                            " onmouseover="this.style.backgroundColor='rgba(255, 255, 255, 0.1)'" onmouseout="this.style.backgroundColor='rgba(255, 255, 255, 0.05)'">
-                                📄 <br> {res['filename'][:20]}...
+                                background: linear-gradient(135deg, #4F46E5, #7C3AED);
+                                color: white;
+                                font-weight: 600;
+                                box-shadow: 0 4px 14px rgba(79, 70, 229, 0.3);
+                                transition: transform 0.2s, box-shadow 0.2s;
+                            " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(79, 70, 229, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 14px rgba(79, 70, 229, 0.3)'">
+                                📄 <br> {res['filename'][:15]}...
                             </div>
                         </a>
                         """
