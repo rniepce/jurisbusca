@@ -380,7 +380,7 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     Fluxo:
     1. Gemini 3 Pro -> Extração de Fatos e Análise Formal (Input Massivo).
     2. DeepSeek R1 -> Análise Material/Mérito e Lógica Jurídica (Reasoning).
-    3. Claude 3.5 Sonnet -> Redação Final (Minuta) com base nos insumos.
+    3. Claude 4.5 Sonnet -> Redação Final (Minuta) com base nos insumos.
     """
     def update(msg):
          if status_callback: status_callback(msg)
