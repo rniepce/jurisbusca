@@ -975,12 +975,14 @@ if uploaded_files:
                     status_box.update(label="✅ Análise e Auditoria Concluídas!", state="complete", expanded=False)
                     
                     # 1. PARSEAMENTO DO OUTPUT (Separar Diagnóstico vs Minuta)
-                    # Type guard: V3 sometimes returns list instead of dict
-                    if isinstance(results, list):
-                        # Convert list to dict format
-                        results = {"final_report": "\n".join([str(x) for x in results]), "steps": {}}
-                    elif not isinstance(results, dict):
-                        results = {"final_report": str(results), "steps": {}}
+                    # Type guard: Ensure results is always a dict
+                    print(f"DEBUG: results type = {type(results)}")  # Debug log
+                    if not isinstance(results, dict):
+                        if isinstance(results, list):
+                            results = {"final_report": "\n".join([str(x) for x in results]), "steps": {}}
+                        else:
+                            results = {"final_report": str(results) if results else "", "steps": {}}
+                        print(f"DEBUG: results converted to dict")
                     
                     full_text = results.get("steps", {}).get("integral", results.get("final_report", ""))
                     
