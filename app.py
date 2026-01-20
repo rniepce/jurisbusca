@@ -927,6 +927,13 @@ if uploaded_files:
                         }
                         if run_hybrid_orchestration:
                             results = run_hybrid_orchestration(st.session_state.process_text, keys)
+                            
+                            # Type guard: V3/LangGraph sometimes returns list instead of dict
+                            if isinstance(results, list):
+                                results = {"final_report": "\n".join([str(x) for x in results]), "logs": []}
+                            elif not isinstance(results, dict):
+                                results = {"final_report": str(results), "logs": []}
+                            
                             # Adaptação de output do agente
                             if "final_output" in results: results["final_report"] = results["final_output"]
                             if "audit_report" in results: results["auditor_dashboard"] = results["audit_report"]
