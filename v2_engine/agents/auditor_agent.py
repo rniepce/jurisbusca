@@ -63,7 +63,7 @@ def run_auditor_agent(draft_text: str, fatos_json: dict, style_guide: str, keys:
             # Gemini 3.0 Pro Preview (Fallback Robusto)
             llm_fallback = ChatGoogleGenerativeAI(
                 google_api_key=google_key,
-                model="gemini-3.0-pro-preview",
+                model="gemini-3-pro-preview",
                 temperature=0.1
             )
             response = llm_fallback.invoke(messages).content

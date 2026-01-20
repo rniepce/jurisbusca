@@ -6,7 +6,7 @@ import re
 import traceback
 import pandas as pd
 import plotly.express as px
-from backend import process_uploaded_file, run_standard_orchestration, run_ensemble_orchestration, process_templates, generate_style_report, generate_batch_xray, process_batch_parallel, load_persistent_rag
+from backend import process_uploaded_file, run_gemini_orchestration, process_templates, generate_style_report, generate_batch_xray, process_batch_parallel, load_persistent_rag
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 # from prompts import LEGAL_ASSISTANT_PROMPT # Obsoleto com multi-agentes
 
@@ -19,232 +19,6 @@ st.set_page_config(
 
 # Carrega variáveis de ambiente
 load_dotenv()
-
-
-# ==============================================================================
-# 0. ROTEAMENTO (ROUTER) - PARA ABAS NOVAS (PRIORIDADE ALTA)
-# ==============================================================================
-query_params = st.query_params
-if "report_id" in query_params:
-    report_id = query_params["report_id"]
-    try:
-        # Load from persistent storage
-        file_path = f"data/reports/{report_id}.json"
-        
-        if not os.path.exists(file_path):
-             st.error(f"Relatório não encontrado: {file_path}")
-             st.stop()
-             
-        with open(file_path, "r") as f:
-            data = json.load(f)
-            
-        # Defensive fix for 'list' vs 'dict'
-        if isinstance(data, list):
-            if len(data) > 0 and isinstance(data[0], dict):
-                data = data[0]
-            else:
-                 st.error(f"Formato de relatório inválido (Lista): {str(data)[:100]}")
-                 st.stop()
-        
-        # --- VIEW: PROCESSO INDIVIDUAL (NOVA ABA) ---
-        st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
-        
-        # Recupera dados
-        steps_data = data.get("steps", {})
-        if isinstance(steps_data, dict):
-            integral_text = steps_data.get("integral")
-        else:
-            integral_text = None
-            
-        full_text = integral_text if integral_text else data.get("final_report", "")
-        
-        if isinstance(full_text, list):
-            full_text = "\n".join([str(x) for x in full_text])
-        elif not isinstance(full_text, str):
-            full_text = str(full_text if full_text is not None else "")
-            
-        # Tenta separar a Minuta (múltiplos padrões possíveis) - SYNC COM LOGICA PRINCIPAL
-        patterns = [
-            r'##\s*3\.\s*MINUTA',
-            r'##\s*MINUTA',
-            r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
-            r'DO\s+ATO\s+JUDICIAL',
-            r'\*\*SENTENÇA\*\*',
-            r'\*\*DECISÃO\*\*',
-            r'##\s*SENTENÇA',
-            r'##\s*DECISÃO'
-        ]
-        
-        minuta_text = None
-        diagnostic_text = None
-        
-        for pattern in patterns:
-            parts = re.split(pattern, full_text, flags=re.IGNORECASE)
-            if len(parts) > 1:
-                diagnostic_text = parts[0].strip()
-                minuta_text = parts[1].strip()
-                break
-        
-        if not minuta_text:
-            diagnostic_text = "Diagnóstico integral."
-            minuta_text = full_text
-
-        # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
-        if minuta_text and isinstance(minuta_text, str):
-            minuta_text = minuta_text.replace("\\n", "\n")
-            if "'extras':" in minuta_text:
-                    minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
-            elif '"extras":' in minuta_text:
-                    minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
-            minuta_text = minuta_text.strip().strip("'").strip('"')
-
-        # Renderiza Decisão
-        st.subheader("📝 Minuta da Decisão")
-        st.text_area("Copie o texto abaixo:", value=minuta_text, height=600, label_visibility="collapsed")
-        
-        st.markdown("---")
-        st.write("🔎 **Painel de Controle:**")
-        
-        with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
-            st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
-            st.code(str(full_text)[:500])
-            
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            with st.popover("🧠 Diagnóstico", use_container_width=True):
-                st.markdown(diagnostic_text)
-        with c2:
-            if data.get("auditor_dashboard"):
-                with st.popover("🛡️ Auditoria", use_container_width=True):
-                    st.markdown(data["auditor_dashboard"])
-        with c3:
-            if data.get("style_report"):
-                with st.popover("🎨 Estilo", use_container_width=True):
-                    st.markdown(data["style_report"])
-        with c4:
-             with st.popover("⚙️ Logs", use_container_width=True):
-                st.json(data.get("steps", {}))
-        
-        st.markdown("---")
-        st.info("💬 Modo de Visualização Rápida (Sessão Simplificada)")
-        
-    except Exception as e:
-        st.error(f"Erro ao carregar relatório: {e}")
-    
-    st.stop() # PARA A EXECUÇÃO AQUI PARA ESTA ABA
-
-
-# ==============================================================================
-# 0. ROTEAMENTO (ROUTER) - PARA ABAS NOVAS (PRIORIDADE ALTA)
-# ==============================================================================
-query_params = st.query_params
-if "report_id" in query_params:
-    report_id = query_params["report_id"]
-    try:
-        # Load from persistent storage
-        file_path = f"data/reports/{report_id}.json"
-        
-        if not os.path.exists(file_path):
-             st.error(f"Relatório não encontrado: {file_path}")
-             st.stop()
-             
-        with open(file_path, "r") as f:
-            data = json.load(f)
-            
-        # Defensive fix for 'list' vs 'dict'
-        if isinstance(data, list):
-            if len(data) > 0 and isinstance(data[0], dict):
-                data = data[0]
-            else:
-                 st.error(f"Formato de relatório inválido (Lista): {str(data)[:100]}")
-                 st.stop()
-        
-        # --- VIEW: PROCESSO INDIVIDUAL (NOVA ABA) ---
-        st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
-        
-        # Recupera dados
-        steps_data = data.get("steps", {})
-        if isinstance(steps_data, dict):
-            integral_text = steps_data.get("integral")
-        else:
-            integral_text = None
-            
-        full_text = integral_text if integral_text else data.get("final_report", "")
-        
-        if isinstance(full_text, list):
-            full_text = "\n".join([str(x) for x in full_text])
-        elif not isinstance(full_text, str):
-            full_text = str(full_text if full_text is not None else "")
-            
-        # Tenta separar a Minuta (múltiplos padrões possíveis) - SYNC COM LOGICA PRINCIPAL
-        patterns = [
-            r'##\s*3\.\s*MINUTA',
-            r'##\s*MINUTA',
-            r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
-            r'DO\s+ATO\s+JUDICIAL',
-            r'\*\*SENTENÇA\*\*',
-            r'\*\*DECISÃO\*\*',
-            r'##\s*SENTENÇA',
-            r'##\s*DECISÃO'
-        ]
-        
-        minuta_text = None
-        diagnostic_text = None
-        
-        for pattern in patterns:
-            parts = re.split(pattern, full_text, flags=re.IGNORECASE)
-            if len(parts) > 1:
-                diagnostic_text = parts[0].strip()
-                minuta_text = parts[1].strip()
-                break
-        
-        if not minuta_text:
-            diagnostic_text = "Diagnóstico integral."
-            minuta_text = full_text
-
-        # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
-        if minuta_text and isinstance(minuta_text, str):
-            minuta_text = minuta_text.replace("\\n", "\n")
-            if "'extras':" in minuta_text:
-                    minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
-            elif '"extras":' in minuta_text:
-                    minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
-            minuta_text = minuta_text.strip().strip("'").strip('"')
-
-        # Renderiza Decisão
-        st.subheader("📝 Minuta da Decisão")
-        st.text_area("Copie o texto abaixo:", value=minuta_text, height=600, label_visibility="collapsed")
-        
-        st.markdown("---")
-        st.write("🔎 **Painel de Controle:**")
-        
-        with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
-            st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
-            st.code(str(full_text)[:500])
-            
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            with st.popover("🧠 Diagnóstico", use_container_width=True):
-                st.markdown(diagnostic_text)
-        with c2:
-            if data.get("auditor_dashboard"):
-                with st.popover("🛡️ Auditoria", use_container_width=True):
-                    st.markdown(data["auditor_dashboard"])
-        with c3:
-            if data.get("style_report"):
-                with st.popover("🎨 Estilo", use_container_width=True):
-                    st.markdown(data["style_report"])
-        with c4:
-             with st.popover("⚙️ Logs", use_container_width=True):
-                st.json(data.get("steps", {}))
-        
-        st.markdown("---")
-        st.info("💬 Modo de Visualização Rápida (Sessão Simplificada)")
-        
-    except Exception as e:
-        st.error(f"Erro ao carregar relatório: {e}")
-    
-    st.stop() # PARA A EXECUÇÃO AQUI PARA ESTA ABA
 
 # --- CSS Personalizado (Design Moderno) ---
 st.markdown("""
@@ -428,83 +202,18 @@ with st.sidebar:
             
         st.markdown("---")
         
-        # SELETOR DE MODO (V1 vs V2 vs V3)
+        # SELETOR DE MODO (V1 vs V2)
         mode_option = st.radio(
             "Modo de Operação:",
-            ["V1: Standard (Multi-Model)", "V2: Linha de Montagem (Ensemble)", "V3: Agente Autônomo (SOTA)"],
+            ["V1: Standard (Gemini)", "V2: Agentes Híbridos (SOTA)"],
             index=0,
-            help="V1: Rápido (1 LLM).\nV2: Potente (Gemini -> DeepSeek -> Claude).\nV3: Autônomo (Ferramentas + Python)."
+            help="V1: Rápido e Econômico (Gemini puro).\nV2: Qualidade Extrema (Orquestração entre Gemini, Claude, GPT e DeepSeek)."
         )
-        
-        if "V1" in mode_option:
-            st.session_state.app_mode = "v1"
-        elif "V2" in mode_option:
-            st.session_state.app_mode = "v2"
-        else:
-            st.session_state.app_mode = "v3"
-        
-        # CONFIGURAÇÃO V1 (MULTI-MODELO)
-        if st.session_state.app_mode == "v1":
-             with st.expander("🛠️ Configuração do Motor (V1)", expanded=True):
-                 st.caption("Escolha a inteligência por trás do Analista Principal e do Analista de Estilo.")
-                 
-                 # Definição dos Modelos e Provedores
-                 model_options = {
-                     "Gemini 3.0 Pro": {"provider": "google", "model": "gemini-3-pro-preview"},
-                     "Gemini Flash (Rápido)": {"provider": "google", "model": "gemini-3-flash-preview"},
-                     "DeepSeek R1 (Lógica Extrema)": {"provider": "openai", "model": "deepseek-reasoner"}, # Via DeepSeek API (OpenAI compat)
-                     "GPT-5.1 Preview (Simulado/GPT-4o)": {"provider": "openai", "model": "gpt-4o"},
-                     "Claude 3.5 Sonnet": {"provider": "anthropic", "model": "claude-3-5-sonnet-20240620"}
-                 }
-                 
-                 # Seletores
-                 sel_main = st.selectbox("🧠 Modelo Principal (Mérito/Minuta)", list(model_options.keys()), index=0)
-                 sel_style = st.selectbox("🎨 Modelo de Estilo (Personalidade)", list(model_options.keys()), index=1)
-                 
-                 # Captura as configs escolhidas
-                 main_config = model_options[sel_main]
-                 style_config = model_options[sel_style]
-                 
-                 # INPUT DE CHAVES DINÂMICO
-                 st.divider()
-                 st.caption("Chaves de Acesso necessárias para os modelos escolhidos:")
-                 
-                 needed_providers = set([main_config['provider'], style_config['provider']])
-                 
-                 # Google (Já temos a session_state.google_api_key validada lá em cima)
-                 main_config['key'] = st.session_state.google_api_key
-                 style_config['key'] = st.session_state.google_api_key
-                 
-                 # OpenAI / DeepSeek
-                 if 'openai' in needed_providers:
-                     if "openai_key_v1" not in st.session_state: st.session_state.openai_key_v1 = ""
-                     
-                     # Verifica se é DeepSeek específico ou OpenAI
-                     is_deepseek = "DeepSeek" in sel_main or "DeepSeek" in sel_style
-                     label_key = "DeepSeek API Key" if is_deepseek else "OpenAI API Key"
-                     
-                     k_val = st.text_input(label_key, value=st.session_state.openai_key_v1, type="password", key="v1_oai_key")
-                     st.session_state.openai_key_v1 = k_val
-                     
-                     if main_config['provider'] == 'openai': main_config['key'] = k_val
-                     if style_config['provider'] == 'openai': style_config['key'] = k_val
-                     
-                 # Anthropic
-                 if 'anthropic' in needed_providers:
-                     if "anthropic_key_v1" not in st.session_state: st.session_state.anthropic_key_v1 = ""
-                     k_ant = st.text_input("Anthropic API Key", value=st.session_state.anthropic_key_v1, type="password", key="v1_ant_key")
-                     st.session_state.anthropic_key_v1 = k_ant
-                     
-                     if main_config['provider'] == 'anthropic': main_config['key'] = k_ant
-                     if style_config['provider'] == 'anthropic': style_config['key'] = k_ant
-                 
-                 # Salva no Session State para uso nos botões de ação
-                 st.session_state.v1_main_config = main_config
-                 st.session_state.v1_style_config = style_config
+        st.session_state.app_mode = "v2" if "V2" in mode_option else "v1"
 
-        # CONFIGURAÇÃO V2/V3 (Chaves Extras)
-        if st.session_state.app_mode in ["v2", "v3"]:
-            with st.expander("⚙️ Configurar Banca Digital (V2/V3)", expanded=True):
+        # CONFIGURAÇÃO V2 (Chaves Extras)
+        if st.session_state.app_mode == "v2":
+            with st.expander("⚙️ Configurar Banca Digital", expanded=True):
                 st.caption("Insira as chaves para ativar a equipe completa.")
                 
                 # OpenAI (Input com validação visual)
@@ -532,7 +241,7 @@ with st.sidebar:
                     else: st.warning("Formato estranho...")
                 
                 if not (st.session_state.openai_key and st.session_state.anthropic_key and st.session_state.deepseek_key):
-                    st.warning("⚠️ Preencha todas as chaves para usar o Modo V2/V3 (Ensemble/Agente).")
+                    st.warning("⚠️ Preencha todas as chaves para usar o Modo V2.")
 
         # GESTÃO DE PRECEDENTES (VINCULAÇÃO)
         with st.expander("📚 Base Vicunlante (Knowledge)", expanded=False):
@@ -621,6 +330,131 @@ if "style_report_preview" in st.session_state and st.session_state.style_report_
     st.markdown("---")
 
 # ==============================================================================
+# 0. ROTEAMENTO (ROUTER) - PARA ABAS NOVAS
+# ==============================================================================
+query_params = st.query_params
+if "report_id" in query_params:
+    report_id = query_params["report_id"]
+    try:
+        # Load from persistent storage
+        file_path = f"data/reports/{report_id}.json"
+        
+        if not os.path.exists(file_path):
+             st.error(f"Relatório não encontrado: {file_path}")
+             st.stop()
+             
+        with open(file_path, "r") as f:
+            data = json.load(f)
+            
+        # Defensive fix for 'list' vs 'dict'
+        if isinstance(data, list):
+            if len(data) > 0 and isinstance(data[0], dict):
+                data = data[0]
+            else:
+                 st.error(f"Formato de relatório inválido (Lista): {str(data)[:100]}")
+                 st.stop()
+        
+        # --- VIEW: PROCESSO INDIVIDUAL (NOVA ABA) ---
+        st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
+        
+        # Recupera dados
+        steps_data = data.get("steps", {})
+        if isinstance(steps_data, dict):
+            integral_text = steps_data.get("integral")
+        else:
+            integral_text = None
+            
+        full_text = integral_text if integral_text else data.get("final_report", "")
+        
+        if isinstance(full_text, list):
+            full_text = "\n".join([str(x) for x in full_text])
+        elif not isinstance(full_text, str):
+            full_text = str(full_text if full_text is not None else "")
+            
+        # Tenta separar a Minuta (múltiplos padrões possíveis) - SYNC COM LOGICA PRINCIPAL
+        patterns = [
+            r'##\s*3\.\s*MINUTA',
+            r'##\s*MINUTA',
+            r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
+            r'DO\s+ATO\s+JUDICIAL',
+            r'\*\*SENTENÇA\*\*',
+            r'\*\*DECISÃO\*\*',
+            r'##\s*SENTENÇA',
+            r'##\s*DECISÃO'
+        ]
+        
+        minuta_text = None
+        diagnostic_text = None
+        
+        for pattern in patterns:
+            parts = re.split(pattern, full_text, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                diagnostic_text = parts[0].strip()
+                minuta_text = parts[1].strip()
+                # Não corta mais no rodapé '---', pois estava removendo conteúdo útil
+                # minuta_text = re.split(r'---', minuta_text)[0].strip()
+                break
+        
+        if not minuta_text:
+            diagnostic_text = "Diagnóstico integral."
+            minuta_text = full_text
+
+        # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
+        if minuta_text and isinstance(minuta_text, str):
+            # 1. Converte quebras de linha escapadas para reais
+            minuta_text = minuta_text.replace("\\n", "\n")
+            
+            # 2. Remove artefatos de dicionário Python/JSON vazando no final
+            # Solução "Nuclear" (Sync com Main View): Corta tudo a partir de 'extras':
+            if "'extras':" in minuta_text:
+                    minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
+            elif '"extras":' in minuta_text:
+                    minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
+            
+            # 3. Remove aspas de tupla se sobrarem no início/fim
+            minuta_text = minuta_text.strip().strip("'").strip('"')
+
+        # Renderiza Decisão
+        st.subheader("📝 Minuta da Decisão")
+        st.text_area("Copie o texto abaixo:", value=minuta_text, height=600, label_visibility="collapsed")
+        
+        st.markdown("---")
+        st.write("🔎 **Painel de Controle:**")
+        
+        # DEBUG AREA (Visível apenas se houver suspeita de erro)
+        with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
+            st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
+            st.text(f"Tipo do Texto: {type(full_text)}")
+            st.text(f"Início do Texto (500 chars):\n{str(full_text)[:500]}")
+            st.text(f"Fim do Texto (500 chars):\n{str(full_text)[-500:]}")
+            
+        # Alinha os botões à esquerda (compactos)
+        c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 2])
+        with c1:
+            with st.popover("🧠 Diagnóstico", use_container_width=True):
+                st.markdown(diagnostic_text)
+        with c2:
+            if data.get("auditor_dashboard"):
+                with st.popover("🛡️ Auditoria", use_container_width=True):
+                    st.markdown(data["auditor_dashboard"])
+        with c3:
+            if data.get("style_report"):
+                with st.popover("🎨 Estilo", use_container_width=True):
+                    st.markdown(data["style_report"])
+        with c4:
+             with st.popover("⚙️ Logs", use_container_width=True):
+                st.json(data.get("steps", {}))
+        
+        # Chat (Simulado - não persiste contexto longo por enquanto nesta view simples)
+        st.markdown("---")
+        st.info("💬 O chat interativo requer o contexto vetorial completo (não disponível nesta visualização rápida).")
+        
+    except Exception as e:
+        st.error(f"Erro ao carregar relatório: {e}")
+    
+    st.stop() # PARA A EXECUÇÃO AQUI PARA ESTA ABA
+
+# ==============================================================================
 # LÓGICA PRINCIPAL (DASHBOARD / GABINETE)
 # ==============================================================================
 
@@ -678,19 +512,12 @@ if uploaded_files:
                 else:
                     with st.spinner(f"Processando {len(uploaded_files)} casos em paralelo (Isso pode levar um tempo)..."):
                         # Processa em Paralelo e Salva JSONs
-                        
-                        # V2 Keys
                         keys_dict = {
                             "google": google_api_key,
                             "openai": st.session_state.get("openai_key"),
                             "anthropic": st.session_state.get("anthropic_key"),
                             "deepseek": st.session_state.get("deepseek_key")
                         }
-                        
-                        # V1 Configs (Inject if enabled)
-                        if st.session_state.get("app_mode") == "v1":
-                            keys_dict['v1_main_config'] = st.session_state.get('v1_main_config')
-                            keys_dict['v1_style_config'] = st.session_state.get('v1_style_config')
                         results = process_batch_parallel(
                             uploaded_files, 
                             google_api_key, 
@@ -759,11 +586,6 @@ if uploaded_files:
                                             "anthropic": st.session_state.get("anthropic_key"),
                                             "deepseek": st.session_state.get("deepseek_key")
                                         }
-                                        
-                                        # V1 Configs (Inject if enabled)
-                                        if st.session_state.get("app_mode") == "v1":
-                                            keys_dict['v1_main_config'] = st.session_state.get('v1_main_config')
-                                            keys_dict['v1_style_config'] = st.session_state.get('v1_style_config')
                                         results = process_batch_parallel(
                                             subset_files, 
                                             google_api_key, 
@@ -821,17 +643,6 @@ if uploaded_files:
                     else:
                         # Substituindo link_button por button + callback para preservar Session State
                         # Substituindo por HTML Link para garantir Nova Aba (target="_blank")
-                        
-                        # LAZY SAVE / SELF-HEALING: Garante que o arquivo existe antes de gerar o link
-                        # Isso corrige o erro de "Relatório não encontrado" para itens processados antes da persistence.
-                        rid = res.get('report_id')
-                        if rid:
-                            fpath = f"data/reports/{rid}.json"
-                            if not os.path.exists(fpath):
-                                os.makedirs("data/reports", exist_ok=True)
-                                with open(fpath, "w") as f:
-                                    json.dump(res, f)
-
                         btn_html = f"""
                         <a href="?report_id={res['report_id']}" target="_blank" style="text-decoration:none;">
                             <div style="
@@ -913,57 +724,13 @@ if uploaded_files:
                     status_box.write(msg)
                     
                 try:
-                    # Pipeline de Execução (V1 / V2 / V3)
-                    
-                    if st.session_state.app_mode == "v3":
-                        # V3: AGENTE AUTÔNOMO (Agentic RLM)
-                        # Nota: Placeholder enquanto V3 não está 100% implementado
-                        from backend import run_hybrid_orchestration
-                        keys = {
-                            "openai": st.session_state.openai_key,
-                            "anthropic": st.session_state.anthropic_key,
-                            "deepseek": st.session_state.deepseek_key,
-                            "google": google_api_key
-                        }
-                        if run_hybrid_orchestration:
-                            results = run_hybrid_orchestration(st.session_state.process_text, keys)
-                            # Adaptação de output do agente
-                            if "final_output" in results: results["final_report"] = results["final_output"]
-                            if "audit_report" in results: results["auditor_dashboard"] = results["audit_report"]
-                            if "logs" in results: results["steps"] = results["logs"]
-                        else:
-                             st.error("Engine V3 não encontrada.")
-                             st.stop()
-                             
-                    elif st.session_state.app_mode == "v2":
-                        # V2: LINHA DE MONTAGEM (ENSEMBLE)
-                        # Requer keys carregadas
-                        keys = {
-                            "openai": st.session_state.openai_key,
-                            "anthropic": st.session_state.anthropic_key,
-                            "deepseek": st.session_state.deepseek_key,
-                            "google": google_api_key
-                        }
-                        results = run_ensemble_orchestration(
-                            text=st.session_state.process_text,
-                            keys=keys,
-                            status_callback=update_status,
-                            template_files=template_files
-                        )
-                        
-                    else:
-                        # V1: STANDARD (SIMPLIFICADO)
-                        main_conf = st.session_state.get('v1_main_config', {'provider': 'google', 'model': 'gemini-3-pro-preview', 'key': google_api_key})
-                        style_conf = st.session_state.get('v1_style_config', {'provider': 'google', 'model': 'gemini-3-flash-preview', 'key': google_api_key})
-                        
-                        results = run_standard_orchestration(
-                            text=st.session_state.process_text,
-                            main_llm_config=main_conf,
-                            style_llm_config=style_conf,
-                            status_callback=update_status,
-                            template_files=template_files,
-                            google_key=google_api_key
-                        )
+                    # Pipeline exclusiva do Gemini (Railway Deploy)
+                    results = run_gemini_orchestration(
+                        text=st.session_state.process_text,
+                        api_key=google_api_key,
+                        status_callback=update_status,
+                        template_files=template_files
+                    )
                     
                     status_box.update(label="✅ Análise e Auditoria Concluídas!", state="complete", expanded=False)
                     

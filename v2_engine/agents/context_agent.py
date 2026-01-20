@@ -133,10 +133,43 @@ def smart_search(pattern, window=500):
         text_out = response.content
         if "```json" in text_out:
             cleaned = text_out.replace("```json", "").replace("```", "").strip()
-            return json.loads(cleaned)
+            data = json.loads(cleaned)
         else:
-            # Fallback se não retornou JSON limpo
-            return {"fatos_principais": text_out, "iso_mode": "raw_output"}
+            # Fallback se não retornou JSON limpo mas parece JSON
+            if text_out.strip().startswith("{"):
+                 data = json.loads(text_out.strip())
+            else:
+                 return {"fatos_principais": text_out, "iso_mode": "raw_output"}
+
+        # VALIDATION & FALLBACK RETRY (Crucial for V3 stability)
+        # If facts are empty, try a simple direct LLM call
+        if not data.get("fatos_principais") or len(str(data.get("fatos_principais"))) < 50:
+             print("⚠️ Agente V3 falhou em extrair fatos via Python. Tentando Fallback Direct (V1 style)...")
+             
+             fallback_prompt = f"""
+             Atenção. O método anterior falhou.
+             Seu objetivo é ler o texto abaixo e extrair os FATOS PRINCIPAIS e PEDIDOS.
+             
+             TEXTO:
+             {text_content[:30000]}
+             
+             Retorne APENAS um JSON:
+             {{
+                "fatos_principais": "Resumo...",
+                "pedidos_autor": [],
+                "teses_defesa": [],
+                "audit_warning": "Extraído via Fallback Direct"
+             }}
+             """
+             fallback_response = llm.invoke(fallback_prompt)
+             fallback_content = fallback_response.content.replace("```json", "").replace("```", "").strip()
+             try:
+                 return json.loads(fallback_content)
+             except:
+                 return {"fatos_principais": fallback_response.content, "audit_warning": "Fallback Failed JSON Parsing"}
+        
+        return data
 
     except Exception as e:
-        return {"error": str(e)}
+        print(f"❌ Erro Crítico Context Agent V3: {e}")
+        return {"fatos_principais": f"Erro de extração: {str(e)}", "error": str(e)}

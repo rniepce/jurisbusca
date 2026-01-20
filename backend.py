@@ -241,7 +241,7 @@ def get_llm(provider: str, model_name: str, api_key: str, temperature: float = 0
     else:
         raise ValueError(f"Provedor desconhecido: {provider}")
 
-def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_config: dict, status_callback=None, template_files=None):
+def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_config: dict, status_callback=None, template_files=None, google_key=None):
     """
     Pipeline Padrão (V1) FLEXÍVEL.
     Suporta qualquer LLM para Analista Principal e Analista de Estilo.
@@ -273,7 +273,7 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
             # HACK: Se main_llm não for google, precisamos de uma chave google para o RAG/Embeddings
             # ou refatorar process_templates para usar OpenAI Embeddings.
             # Por hora, vamos tentar usar a chave do main_llm_config se o provider for google.
-            rag_key = main_llm_config['key'] if main_llm_config['provider'] == 'google' else os.getenv("GOOGLE_API_KEY")
+            rag_key = main_llm_config['key'] if main_llm_config['provider'] == 'google' else (google_key or os.getenv("GOOGLE_API_KEY"))
             
             if not rag_key and (template_files or style_llm_config['provider'] == 'google'):
                  update("⚠️ Aviso: Chave Google necessária para RAG/Embeddings não encontrada. RAG pode falhar.")
@@ -333,8 +333,12 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
         for fname, label in files_map.items():
             fpath = os.path.join(base_path, fname)
             if os.path.exists(fpath):
-                with open(fpath, "r") as f:
-                    content = f.read()
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        content = f.read()
+                except UnicodeDecodeError:
+                    with open(fpath, "r", encoding="latin-1") as f:
+                        content = f.read()
                     if content.strip():
                         kb_text += f"\n=== {label} ===\n{content}\n"
         
@@ -384,7 +388,7 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     # 1. Setup Models
     try:
         # Step A: Analista de Triagem (Gemini - Context Window Grande e Barato)
-        analista_fatos = get_llm("google", "gemini-3.0-pro-preview", keys['google'], temperature=0.1)
+        analista_fatos = get_llm("google", "gemini-3-pro-preview", keys['google'], temperature=0.1)
         
         # Step B: Juiz Substituto (DeepSeek - Raciocínio Complexo)
         # Se deepseek key nao existir, fallback para openai ou google
@@ -864,14 +868,14 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
             
             if keys:
                  # Novo formato: usa as chaves e modelos do keys se disponíveis
-                 main_cfg = keys.get('v1_main_config', {'provider': 'google', 'model': 'gemini-3.0-pro-preview', 'key': api_key})
+                 main_cfg = keys.get('v1_main_config', {'provider': 'google', 'model': 'gemini-3-pro-preview', 'key': api_key})
                  style_cfg = keys.get('v1_style_config', {'provider': 'google', 'model': 'gemini-3-flash-preview', 'key': api_key})
             else:
                  # Fallback legacy
-                 main_cfg = {'provider': 'google', 'model': 'gemini-3.0-pro-preview', 'key': api_key}
+                 main_cfg = {'provider': 'google', 'model': 'gemini-3-pro-preview', 'key': api_key}
                  style_cfg = {'provider': 'google', 'model': 'gemini-3-flash-preview', 'key': api_key}
 
-            results = run_standard_orchestration(clean_content, main_cfg, style_cfg, status_callback=None, template_files=template_files)
+            results = run_standard_orchestration(clean_content, main_cfg, style_cfg, status_callback=None, template_files=template_files, google_key=api_key)
         
         # 3. Save Result
         report_id = hashlib.md5(f"{filename}_{time.time()}".encode()).hexdigest()
