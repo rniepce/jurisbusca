@@ -403,7 +403,7 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
         # Se claude key nao existir, fallback para openai
         cl_key = keys.get('anthropic')
         if cl_key:
-             redator_final = get_llm("anthropic", "claude-sonnet-4-5", cl_key, temperature=0.2)
+             redator_final = get_llm("anthropic", "claude-sonnet-4-5-20250929", cl_key, temperature=0.2)
         else:
              update("⚠️ Chave Anthropic não encontrada. Usando GPT-4o para redação.")
              redator_final = get_llm("openai", "gpt-4o", keys['openai'], temperature=0.2)

@@ -454,7 +454,7 @@ with st.sidebar:
                      "Gemini Flash (Rápido)": {"provider": "google", "model": "gemini-3-flash-preview"},
                      "DeepSeek R1 (Lógica Extrema)": {"provider": "openai", "model": "deepseek-reasoner"}, # Via DeepSeek API (OpenAI compat)
                      "GPT-5.1 Preview (Simulado/GPT-4o)": {"provider": "openai", "model": "gpt-4o"},
-                     "Claude 4.5 Sonnet": {"provider": "anthropic", "model": "claude-sonnet-4-5"}
+                     "Claude 4.5 Sonnet": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"}
                  }
                  
                  # Seletores
