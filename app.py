@@ -984,49 +984,77 @@ if uploaded_files:
                             results = {"final_report": str(results) if results else "", "steps": {}}
                         print(f"DEBUG: results converted to dict")
                     
-                    full_text = results.get("steps", {}).get("integral", results.get("final_report", ""))
+                    # === PARSEAMENTO ROBUSTO (V1/V2/V3) ===
                     
-                    # Fix defensive: Ensure full_text is string
-                    if isinstance(full_text, list):
-                        full_text = "\n".join([str(x) for x in full_text])
-                    elif not isinstance(full_text, str):
-                         full_text = str(full_text if full_text is not None else "")
+                    minuta_text = ""
+                    diagnostic_text = ""
                     
-                    # Tenta separar a Minuta (múltiplos padrões possíveis)
-                    # Padrões: "## 3. MINUTA", "## MINUTA", "DO ATO JUDICIAL", "SENTENÇA", "DECISÃO"
-                    patterns = [
-                        r'##\s*3\.\s*MINUTA',
-                        r'##\s*MINUTA',
-                        r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
-                        r'DO\s+ATO\s+JUDICIAL',
-                        r'\*\*SENTENÇA\*\*',
-                        r'\*\*DECISÃO\*\*',
-                        r'##\s*SENTENÇA',
-                        r'##\s*DECISÃO'
-                    ]
-                    
-                    minuta_text = None
-                    diagnostic_text = None
-                    
-                    for pattern in patterns:
-                        parts = re.split(pattern, full_text, flags=re.IGNORECASE)
-                        if len(parts) > 1:
-                            diagnostic_text = parts[0].strip()
-                            minuta_text = parts[1].strip()
-                            # Remove possível rodapé - REMOVIDO pois estava cortando minutas que usam "---"
-                            # minuta_text = re.split(r'---', minuta_text)[0].strip()
-                            break
-                    
-                    if not minuta_text:
-                        # Fallback final: se nenhum padrão bater, mostra tudo como minuta
-                        diagnostic_text = "Diagnóstico não identificado separadamente."
-                        minuta_text = full_text
+                    # CASO 1: V2 ou V3 (Já estruturado no dicionário)
+                    if st.session_state.app_mode in ["v2", "v3"]:
+                         print(f"DEBUG: Modo {st.session_state.app_mode} - Usando campos diretos.")
+                         minuta_text = results.get("final_report", "")
+                         
+                         # Diagnóstico vem dos steps/logs
+                         steps = results.get("steps", {})
+                         diagnostic_parts = []
+                         if "fatos" in steps: diagnostic_parts.append(f"**Fatos (Gemini):**\n{steps['fatos'][:500]}...")
+                         if "analise_material" in steps: diagnostic_parts.append(f"**Raciocínio (DeepSeek):**\n{steps['analise_material']}")
+                         if "verdict_outline" in steps: diagnostic_parts.append(f"**Esboço (DeepSeek):**\n{steps['verdict_outline']}")
+                         
+                         if diagnostic_parts:
+                             diagnostic_text = "\n\n".join(diagnostic_parts)
+                         else:
+                             diagnostic_text = "Sem diagnóstico detalhado nos logs."
+
+                    # CASO 2: V1 (Pode ser JSON ou Markdown Raw)
+                    else:
+                        print(f"DEBUG: Modo V1 - Tentando Parse JSON ou Regex.")
+                        raw_output = results.get("final_report", "")
+                        
+                        # Tenta Parse JSON (Prompt V3 Core)
+                        try:
+                            # Limpeza de markdown json wrapper
+                            cleaned_json = raw_output.replace("```json", "").replace("```", "").strip()
+                            data_v1 = json.loads(cleaned_json)
+                            
+                            if isinstance(data_v1, dict):
+                                minuta_text = data_v1.get("minuta_final", "")
+                                diag = data_v1.get("diagnostico", {})
+                                fund = data_v1.get("fundamentacao_logica", {})
+                                
+                                diagnostic_text = f"**Diagnóstico:**\n{json.dumps(diag, indent=2, ensure_ascii=False)}\n\n**Fundamentação:**\n{json.dumps(fund, indent=2, ensure_ascii=False)}"
+                                print("DEBUG: V1 JSON Parse Sucesso")
+                            else:
+                                raise ValueError("JSON não é dict")
+                                
+                        except Exception as e:
+                            print(f"DEBUG: V1 JSON Parse Falhou ({e}). Tentando Regex Legacy.")
+                            # Fallback: Regex Splitting (Legacy Prompt)
+                            full_text = raw_output
+                            
+                            patterns = [
+                                r'##\s*3\.\s*MINUTA', r'##\s*MINUTA',
+                                r'\*\*DO\s+ATO\s+JUDICIAL\*\*', r'DO\s+ATO\s+JUDICIAL',
+                                r'\*\*SENTENÇA\*\*', r'\*\*DECISÃO\*\*',
+                                r'##\s*SENTENÇA', r'##\s*DECISÃO'
+                            ]
+                            
+                            minuta_text = None
+                            for pattern in patterns:
+                                parts = re.split(pattern, full_text, flags=re.IGNORECASE)
+                                if len(parts) > 1:
+                                    diagnostic_text = parts[0].strip()
+                                    minuta_text = parts[1].strip()
+                                    break
+                            
+                            if not minuta_text:
+                                diagnostic_text = "Diagnóstico integral (Não foi possível separar minuta)."
+                                minuta_text = full_text
 
                     # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
-                    if minuta_text:
+                    if minuta_text and isinstance(minuta_text, str):
                         # 1. Converte quebras de linha escapadas para reais
-                        if isinstance(minuta_text, str):
-                            minuta_text = minuta_text.replace("\\n", "\n")
+                        minuta_text = minuta_text.replace("\\n", "\n")
                         
                         # 2. Remove artefatos de dicionário Python/JSON vazando no final
                         # Solução "Nuclear": Corta tudo a partir de 'extras': {'signature'
