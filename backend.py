@@ -199,8 +199,8 @@ def process_uploaded_file(file_obj, filename: str, api_key=None):
              return "Nenhum texto extraído.", None
 
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
+            chunk_size=2000,
+            chunk_overlap=400,
             separators=["\n\n", "\n", " ", ""]
         )
         splits = text_splitter.split_documents(docs)
