@@ -8,6 +8,7 @@ plotly
 
 # V1: Google Gemini (Native)
 langchain-google-genai
+google-generativeai
 
 # V2: Multi-Agent Orchestration
 langgraph

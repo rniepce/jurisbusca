@@ -6,7 +6,7 @@ import re
 import traceback
 import pandas as pd
 import plotly.express as px
-from backend import process_uploaded_file, run_standard_orchestration, run_ensemble_orchestration, process_templates, generate_style_report, generate_batch_xray, process_batch_parallel, load_persistent_rag, HAS_GEMINI
+from backend import process_uploaded_file, run_standard_orchestration, run_ensemble_orchestration, process_templates, generate_style_report, generate_batch_xray, process_batch_parallel, load_persistent_rag, HAS_GEMINI, GEMINI_IMPORT_ERROR
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 # from prompts import LEGAL_ASSISTANT_PROMPT # Obsoleto com multi-agentes
 
@@ -622,7 +622,7 @@ with st.sidebar:
                             st.session_state.style_report_preview = report
                         else:
                             if not HAS_GEMINI:
-                                st.error("⚠️ ERRO CRÍTICO: Bibliotecas do Google não instaladas (langchain-google-genai). Impossível extrair texto ou gerar embeddings.")
+                                st.error(f"⚠️ ERRO CRÍTICO: Bibliotecas do Google não instaladas (langchain-google-genai). Impossível extrair texto ou gerar embeddings.\nDetalhe do erro: {GEMINI_IMPORT_ERROR}")
                             else:
                                 st.warning("Não consegui extrair texto dos arquivos. Verifique se estão corrompidos ou vazios.")
                     except Exception as e:

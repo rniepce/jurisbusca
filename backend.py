@@ -30,8 +30,12 @@ try:
     import google.generativeai as genai
     from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
     HAS_GEMINI = True
-except ImportError:
+    GEMINI_IMPORT_ERROR = None
+except ImportError as e:
     HAS_GEMINI = False
+    GEMINI_IMPORT_ERROR = str(e)
+    ChatGoogleGenerativeAI = None
+    GoogleGenerativeAIEmbeddings = None
     ChatGoogleGenerativeAI = None
     GoogleGenerativeAIEmbeddings = None
 
