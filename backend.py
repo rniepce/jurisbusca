@@ -274,7 +274,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
     try:
         # Usa Gemini Flash para Auditoria (Rápido e Barato)
         # Note: Flash 1.5/2.0 é ótimo para ler long context
-        auditor_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key, temperature=0.0)
+        auditor_llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.0)
         
         # 1. Auditoria
         # Precisamos parsear o draft. Se for JSON (V1 atualizado), extraímos a 'minuta_final'.
@@ -317,7 +317,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
             print(f"❌ Auditoria Reprovou. Erros: {errors}. Iniciando Auto-Correção...")
             
             # 3. Fixer (Usa o mesmo modelo ou um mais capaz se quisesse, mas Flash serve)
-            fixer_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key, temperature=0.1)
+            fixer_llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.1)
             
             msg_fix = PROMPT_GEMINI_FIXER.format(
                 draft=draft_content,
@@ -370,7 +370,7 @@ def extract_text_with_gemini_flash(file_path, api_key):
              raise ValueError("Google File API processing failed.")
              
         # Generate Content (Vision)
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash") # Stable version
+        model = genai.GenerativeModel(model_name="gemini-3-flash-preview") # Version consistent with project
         
         prompt = """
         Aja como um transcritor jurídico de elite. 

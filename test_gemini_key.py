@@ -4,7 +4,7 @@ import sys
 def test_key(api_key):
     print(f"🔑 Testando API Key: {api_key}")
     try:
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key)
+        llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key)
         response = llm.invoke("Say 'Hello' if this works.")
         print("✅ SUCESSO! A chave retornou:")
         print(response.content)
