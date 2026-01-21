@@ -27,6 +27,7 @@ import gc
 
 # Provider Integrations
 try:
+    import google.generativeai as genai
     from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
     HAS_GEMINI = True
 except ImportError:
@@ -147,14 +148,24 @@ def process_uploaded_file(file_obj, filename: str, api_key=None):
             # Aumentei o threshold para 500 chars para ser mais seguro em docs grandes
             total_chars = sum(len(d.page_content) for d in docs)
             
-            # 2. Se falhar (PDF escaneado/imagem), tenta OCR
+            # 2. Se falhar (PDF escaneado/imagem) ou texto for muito curto, aciona SEMANTIC OCR (Gemini Vision)
             if total_chars < 500:
-                if HAS_OCR:
-                    print(f"Detectado PDF imagem (apenas {total_chars} chars). Iniciando OCR...")
-                    loader_ocr = RapidOCRPDFLoader(tmp_path)
-                    docs = loader_ocr.load()
+                print(f"📉 Texto insuficiente ({total_chars} chars). Acionando Semantic OCR (Gemini Flash)...")
+                # Usa chave do ambiente ou passada
+                g_key = api_key if api_key and api_key.startswith("AIza") else os.getenv("GOOGLE_API_KEY")
+                
+                if g_key:
+                    ocr_text = extract_text_with_gemini_flash(tmp_path, g_key)
+                    if "Erro" not in ocr_text:
+                         # Substitui o docs pelo resultado do OCR
+                         # Cria um documento único pois o OCR retorna tudo junto
+                         from langchain_core.documents import Document
+                         docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "semantic_flash"})]
+                         print("✅ Semantic OCR concluído com sucesso.")
+                    else:
+                         text += f"[ERRO OCR: {ocr_text}]\n"
                 else:
-                    text += "[AVISO: PDF parece ser imagem e biblioteca de OCR não encontrada.]\n"
+                     text += "[AVISO: PDF Imagem detectado, mas sem Chave Google para OCR Semântico.]\n"
         
         elif suffix == ".docx":
             from langchain_community.document_loaders import Docx2txtLoader
@@ -245,6 +256,59 @@ def get_llm(provider: str, model_name: str, api_key: str, temperature: float = 0
         
     else:
         raise ValueError(f"Provedor desconhecido: {provider}")
+
+def extract_text_with_gemini_flash(file_path, api_key):
+    """
+    SEMANTIC OCR (Vision API via Gemini Flash).
+    Lê o PDF como imagem/vídeo, extrai o texto e já faz a limpeza estrutural.
+    """
+    if not HAS_GEMINI:
+        return "Erro: Biblioteca Google GenAI não encontrada."
+
+    try:
+        # Config API
+        genai.configure(api_key=api_key)
+        
+        # Upload via File API (Mais robusto que converter para imagem localmente)
+        print(f"📤 Uploading {os.path.basename(file_path)} to Google File API...")
+        sample_file = genai.upload_file(path=file_path, display_name=os.path.basename(file_path))
+        
+        # Wait for processing
+        while sample_file.state.name == "PROCESSING":
+            time.sleep(1)
+            sample_file = genai.get_file(sample_file.name)
+            
+        if sample_file.state.name == "FAILED":
+             raise ValueError("Google File API processing failed.")
+             
+        # Generate Content (Vision)
+        model = genai.GenerativeModel(model_name="gemini-1.5-flash") # Stable version
+        
+        prompt = """
+        Aja como um transcritor jurídico de elite. 
+        Extraia o texto integral deste documento, preservando a formatação de tópicos. 
+        
+        ⚠️ REGRAS DE LIMPEZA (IGNORE TUDO ISSO):
+        1. Cabeçalhos repetitivos de cada página (ex: "Processo nº...").
+        2. Rodapés de sistema (ex: "PJe - Assinado eletronicamente...").
+        3. Carimbos, QR Codes e Assinaturas digitais (hash).
+        4. Margens laterais com números de linha.
+        
+        Retorne APENAS o texto limpo e estruturado.
+        """
+        
+        response = model.generate_content([sample_file, prompt])
+        
+        # Cleanup
+        try:
+            genai.delete_file(sample_file.name)
+        except:
+            pass
+            
+        return response.text
+        
+    except Exception as e:
+        return f"Erro no Semantic OCR: {str(e)}"
 
 def retrieve_mirror_context(text, api_key, template_files):
     """
