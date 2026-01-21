@@ -1024,9 +1024,16 @@ if uploaded_files:
                             if isinstance(data_v1, dict):
                                 minuta_text = data_v1.get("minuta_final", "")
                                 diag = data_v1.get("diagnostico", {})
-                                fund = data_v1.get("fundamentacao_logica", {})
+                                mirror = data_v1.get("compliance_espelho", {})
+                                fund = data_v1.get("fundamentacao_logica", "")
                                 
-                                diagnostic_text = f"**Diagnóstico:**\n{json.dumps(diag, indent=2, ensure_ascii=False)}\n\n**Fundamentação:**\n{json.dumps(fund, indent=2, ensure_ascii=False)}"
+                                # Formata Texto de Diagnóstico
+                                diagnostic_text = f"**Diagnóstico Estruturado:**\n{json.dumps(diag, indent=2, ensure_ascii=False)}"
+                                if mirror:
+                                     diagnostic_text += f"\n\n**Compliance Espelho:**\n{json.dumps(mirror, indent=2, ensure_ascii=False)}"
+                                if fund:
+                                     diagnostic_text += f"\n\n**Fundamentação Lógica:**\n{fund}"
+                                     
                                 print("DEBUG: V1 JSON Parse Sucesso")
                             else:
                                 raise ValueError("JSON não é dict")
