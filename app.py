@@ -1049,6 +1049,11 @@ if uploaded_files:
                         print(f"DEBUG: Modo V1 - Tentando Parse JSON ou Regex.")
                         raw_output = results.get("final_report", "")
                         
+                        # Fix for unexpected List type
+                        if isinstance(raw_output, list):
+                            print(f"DEBUG: raw_output is list, joining elements.")
+                            raw_output = "\n".join([str(x) for x in raw_output])
+                        
                         # Tenta Parse JSON (Prompt V3 Core)
                         try:
                             # Limpeza de markdown json wrapper
@@ -1076,6 +1081,8 @@ if uploaded_files:
                             print(f"DEBUG: V1 JSON Parse Falhou ({e}). Tentando Regex Legacy.")
                             # Fallback: Regex Splitting (Legacy Prompt)
                             full_text = raw_output
+                            if isinstance(full_text, list):
+                                full_text = "\n".join([str(x) for x in full_text])
                             
                             patterns = [
                                 r'##\s*3\.\s*MINUTA', r'##\s*MINUTA',
