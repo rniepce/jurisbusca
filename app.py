@@ -452,7 +452,7 @@ with st.sidebar:
                  model_options = {
                      "Gemini 3.0 Pro": {"provider": "google", "model": "gemini-3-pro-preview"},
                      "Gemini Flash (Rápido)": {"provider": "google", "model": "gemini-3-flash-preview"},
-                     "DeepSeek R1 (Lógica Extrema)": {"provider": "openai", "model": "deepseek-reasoner"}, # Via DeepSeek API (OpenAI compat)
+                     "DeepSeek R1 (Lógica Extrema)": {"provider": "deepseek", "model": "deepseek-reasoner"}, # Via DeepSeek API (OpenAI compat)
                      "GPT-5.1 Preview (Simulado/GPT-4o)": {"provider": "openai", "model": "gpt-4o"},
                      "Claude 4.5 Sonnet": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"}
                  }
@@ -475,19 +475,23 @@ with st.sidebar:
                  main_config['key'] = st.session_state.google_api_key
                  style_config['key'] = st.session_state.google_api_key
                  
-                 # OpenAI / DeepSeek
+                 # OpenAI
                  if 'openai' in needed_providers:
                      if "openai_key_v1" not in st.session_state: st.session_state.openai_key_v1 = ""
-                     
-                     # Verifica se é DeepSeek específico ou OpenAI
-                     is_deepseek = "DeepSeek" in sel_main or "DeepSeek" in sel_style
-                     label_key = "DeepSeek API Key" if is_deepseek else "OpenAI API Key"
-                     
-                     k_val = st.text_input(label_key, value=st.session_state.openai_key_v1, type="password", key="v1_oai_key")
+                     k_val = st.text_input("OpenAI API Key", value=st.session_state.openai_key_v1, type="password", key="v1_oai_key")
                      st.session_state.openai_key_v1 = k_val
                      
                      if main_config['provider'] == 'openai': main_config['key'] = k_val
                      if style_config['provider'] == 'openai': style_config['key'] = k_val
+                 
+                 # DeepSeek
+                 if 'deepseek' in needed_providers:
+                     if "deepseek_key_v1" not in st.session_state: st.session_state.deepseek_key_v1 = ""
+                     k_ds = st.text_input("DeepSeek API Key", value=st.session_state.deepseek_key_v1, type="password", key="v1_ds_key")
+                     st.session_state.deepseek_key_v1 = k_ds
+                     
+                     if main_config['provider'] == 'deepseek': main_config['key'] = k_ds
+                     if style_config['provider'] == 'deepseek': style_config['key'] = k_ds
                      
                  # Anthropic
                  if 'anthropic' in needed_providers:

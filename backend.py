@@ -228,11 +228,16 @@ def get_llm(provider: str, model_name: str, api_key: str, temperature: float = 0
     
     elif provider == "openai":
         if not HAS_OPENAI: raise ImportError("langchain-openai não instalado.")
-        # Suporte a DeepSeek via OpenAI compatível (base_url deve ser tratado no app.py ou aqui se necessário)
-        # Por enquanto, assumindo OpenAI padrão ou DeepSeek via ChatOpenAI com base_url custom
-        if "deepseek" in model_name.lower():
-             return ChatOpenAI(model=model_name, api_key=api_key, base_url="https://api.deepseek.com", temperature=temperature)
         return ChatOpenAI(model=model_name, api_key=api_key, temperature=temperature)
+
+    elif provider == "deepseek":
+        if not HAS_OPENAI: raise ImportError("langchain-openai não instalado (Necessário para DeepSeek).")
+        return ChatOpenAI(
+            model=model_name, 
+            api_key=api_key, 
+            base_url="https://api.deepseek.com", 
+            temperature=temperature
+        )
         
     elif provider == "anthropic":
         if not HAS_ANTHROPIC: raise ImportError("langchain-anthropic não instalado.")
