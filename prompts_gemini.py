@@ -154,7 +154,7 @@ Você recebeu o texto integral de uma lista de processos.
 Sua missão é agrupar os casos por similaridade (Clusterização) para tratamento em bloco.
 TAMBÉM RECEBEU (OPCIONALMENTE) MODELOS DE DECISÃO.
 
-## 2. FORMATO DE SAÍDA (STRICKT JSON)
+## 2. FORMATO DE SAÍDA (STRICT JSON)
 Você DEVE retornar um JSON válido (sem markdown, sem ```json).
 Estrutura:
 {
