@@ -32,6 +32,8 @@ try:
     HAS_GEMINI = True
 except ImportError:
     HAS_GEMINI = False
+    ChatGoogleGenerativeAI = None
+    GoogleGenerativeAIEmbeddings = None
 
 try:
     from langchain_openai import ChatOpenAI
@@ -696,6 +698,11 @@ def process_templates(files, api_key):
     Processa arquivos de template (PDF/DOCX/TXT) e cria um retriever.
     """
     documents = []
+    
+    if not HAS_GEMINI:
+        print("Aviso: Google Generative AI não instalado. Pulando processamento de templates.")
+        return None, []
+
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 
     for file in files:
@@ -754,6 +761,7 @@ def load_persistent_rag(api_key):
     Tenta carregar o banco de dados persistente (se existir).
     """
     try:
+        if not HAS_GEMINI: return None
         persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
         if os.path.exists(persist_dir):
             embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
@@ -775,6 +783,7 @@ def generate_style_report(documents, api_key):
     Usa um modelo rápido (Flash) para ler os templates e criar um perfil de estilo.
     """
     try:
+        if not HAS_GEMINI: return "Estilo não disponível (Bibliotecas Google ausentes)"
         # Gemini 3 Flash Preview (ID Correto: gemini-3-flash-preview)
         llm_flash = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.3)
         
