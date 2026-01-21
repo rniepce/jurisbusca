@@ -47,7 +47,7 @@ except ImportError:
 # from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
 # (Re-enabling imports for V2 Ensemble)
 from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
-from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH
+from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH, PROMPT_GEMINI_FIXER
 # V1 Imports
 # (Already imported above)
 
@@ -257,6 +257,86 @@ def get_llm(provider: str, model_name: str, api_key: str, temperature: float = 0
     else:
         raise ValueError(f"Provedor desconhecido: {provider}")
 
+def run_reflexion_loop(draft_text, source_text, api_key):
+    """
+    ACTIVE AUDITOR (REFLEXION LOOP):
+    1. Auditor: Critica a minuta (busca alucinações).
+    2. Fixer: Se houver erro, reescreve a minuta e devolve.
+    """
+    try:
+        # Usa Gemini Flash para Auditoria (Rápido e Barato)
+        # Note: Flash 1.5/2.0 é ótimo para ler long context
+        auditor_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key, temperature=0.0)
+        
+        # 1. Auditoria
+        # Precisamos parsear o draft. Se for JSON (V1 atualizado), extraímos a 'minuta_final'.
+        # Se for string (fallback), usamos ela mesma.
+        draft_content = draft_text
+        if isinstance(draft_text, str) and draft_text.strip().startswith("{"):
+            try:
+                import json
+                # Tenta limpar wrappers
+                clean = draft_text.replace("```json", "").replace("```", "").strip()
+                data = json.loads(clean)
+                if isinstance(data, dict):
+                    draft_content = data.get("minuta_final", draft_text)
+            except:
+                pass
+
+        print("🛡️ Iniciando Auditoria Ativa (Reflexion Loop)...")
+        msg_audit = [
+            SystemMessage(content=PROMPT_GEMINI_AUDITOR),
+            HumanMessage(content=f"DADOS DO PROCESSO:\n{source_text[:50000]}\n\nMINUTA PARA AUDITORIA:\n{draft_content}")
+        ]
+        
+        audit_resp = auditor_llm.invoke(msg_audit).content
+        audit_clean = audit_resp.replace("```json", "").replace("```", "").strip()
+        
+        audit_json = {}
+        try:
+            audit_json = json.loads(audit_clean)
+        except:
+            print(f"Erro parse auditoria: {audit_clean}")
+            return draft_text, "Falha no Parse da Auditoria"
+
+        # 2. Decisão: Aprova ou Corrige?
+        if audit_json.get("aprovado") is True:
+            print("✅ Auditoria Aprovada (Sem Alucinações).")
+            return draft_text, audit_resp # Retorna original
+            
+        else:
+            errors = audit_json.get("erros_criticos", [])
+            print(f"❌ Auditoria Reprovou. Erros: {errors}. Iniciando Auto-Correção...")
+            
+            # 3. Fixer (Usa o mesmo modelo ou um mais capaz se quisesse, mas Flash serve)
+            fixer_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key, temperature=0.1)
+            
+            msg_fix = PROMPT_GEMINI_FIXER.format(
+                draft=draft_content,
+                critique=json.dumps(errors, ensure_ascii=False)
+            )
+            
+            fix_resp = fixer_llm.invoke([HumanMessage(content=msg_fix)]).content
+            
+            # Se o input era JSON, precisamos reconstruir o JSON com a minuta corrigida?
+            # Sim, para mater compatibilidade com o frontend que espera JSON.
+            if isinstance(draft_text, str) and draft_text.strip().startswith("{"):
+                try:
+                    clean = draft_text.replace("```json", "").replace("```", "").strip()
+                    data = json.loads(clean)
+                    if isinstance(data, dict):
+                        data["minuta_final"] = fix_resp
+                        data["diagnostico"]["status_auditoria"] = "Corrigido Automaticamente"
+                        return json.dumps(data, ensure_ascii=False), audit_resp
+                except:
+                    pass
+            
+            return fix_resp, audit_resp
+
+    except Exception as e:
+        print(f"Erro no Reflexion Loop: {e}")
+        return draft_text, str(e)
+
 def extract_text_with_gemini_flash(file_path, api_key):
     """
     SEMANTIC OCR (Vision API via Gemini Flash).
@@ -416,7 +496,8 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
     # --- LOAD KNOWLEDGE BASE (V4.5 Logic) ---
     kb_text = ""
     try:
-        from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE
+        # NOTE: Mantendo Knowledge Base, mas REMOVENDO a substituição forçada de Prompt V3.
+        # Queremos usar PROMPT_GEMINI_INTEGRAL (JSON Mode)
         base_path = "data/knowledge_base"
         files_map = {
             "sobrestamentos.txt": "ARQUIVO A (SOBRESTAMENTOS)",
@@ -435,13 +516,14 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
                     if content.strip():
                         kb_text += f"\n=== {label} ===\n{content}\n"
         
-        final_prompt_integral = PROMPT_V3_MAGISTRATE_CORE
+        # GARANTE USO DO PROMPT V1 OTIMIZADO (JSON)
+        final_prompt_integral = PROMPT_GEMINI_INTEGRAL
         if kb_text:
             final_prompt_integral += f"\n\n## 6. BASE DE CONHECIMENTO VINCULANTE (CARREGADA)\n{kb_text}"
-
-    except ImportError:
+            
+    except Exception as e:
         final_prompt_integral = PROMPT_GEMINI_INTEGRAL 
-        update("⚠️ Usando Prompt V1 (Legacy)...")
+        print(f"Erro KB ou Prompt: {e}")
 
     # Injeta contexto RAG (Estilo)
     if rag_context:
@@ -453,15 +535,24 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
     ]
     integral_response = main_llm.invoke(integral_messages).content
     
-    # SIMPLIFICAÇÃO V1 (Pedido do Usuário):
-    # Sem auditoria automática obrigatória. Retorna direto a minuta.
+    # --- REFLEXION LOOP (ACTIVE AUDITOR) ---
+    update("🛡️ Rodando Auditoria Ativa (Verificando Alucinações)...")
+    # Usa a chave google disponível (preferência pela do main_llm se for google)
+    reflexion_key = main_llm_config['key'] if main_llm_config['provider'] == 'google' else (google_key or os.getenv("GOOGLE_API_KEY"))
+    
+    if reflexion_key:
+         # Loop de autocorreção
+         final_output, audit_log = run_reflexion_loop(integral_response, text, reflexion_key)
+    else:
+         final_output = integral_response
+         audit_log = "Auditoria ignorada (Sem chave Google)"
     
     return {
-        "final_report": integral_response,
-        "auditor_dashboard": None, # Auditoria removida do fluxo padrão
+        "final_report": final_output,
+        "auditor_dashboard": audit_log, 
         "style_report": style_report,
         "steps": {
-            "integral": integral_response
+            "integral": final_output
         }
     }
 
