@@ -1049,10 +1049,26 @@ if uploaded_files:
                         print(f"DEBUG: Modo V1 - Tentando Parse JSON ou Regex.")
                         raw_output = results.get("final_report", "")
                         
-                        # Fix for unexpected List type
+                        # Fix for unexpected List type (e.g. [{'type': 'text', 'text': ...}])
                         if isinstance(raw_output, list):
-                            print(f"DEBUG: raw_output is list, joining elements.")
-                            raw_output = "\n".join([str(x) for x in raw_output])
+                            print(f"DEBUG: raw_output is list. Extracting text.")
+                            cleaned_parts = []
+                            for part in raw_output:
+                                if isinstance(part, dict) and 'text' in part:
+                                    cleaned_parts.append(part['text'])
+                                else:
+                                    cleaned_parts.append(str(part))
+                            raw_output = "\n".join(cleaned_parts)
+
+                        # Fix for Stringified Dict (e.g. "{'type': 'text', ...}") behavior
+                        if isinstance(raw_output, str) and raw_output.strip().startswith("{'type': 'text'"):
+                            try:
+                                import ast
+                                parsed = ast.literal_eval(raw_output)
+                                if isinstance(parsed, dict) and 'text' in parsed:
+                                    raw_output = parsed['text']
+                            except:
+                                pass
                         
                         # Tenta Parse JSON (Prompt V3 Core)
                         try:
