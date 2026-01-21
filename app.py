@@ -89,6 +89,22 @@ if "report_id" in query_params:
             diagnostic_text = "Diagnóstico integral."
             minuta_text = full_text
 
+        # --- NOVA LÓGICA V3/V2: REASONING EXPLÍCITO ---
+        # Se o backend mandou "diagnostic_reasoning" (V2/V3), usa ele.
+        if data.get("diagnostic_reasoning"):
+            diagnostic_text = data.get("diagnostic_reasoning")
+        
+        # V1 Fallback semântico (Tenta extrair do JSON se for o caso)
+        if not diagnostic_text or diagnostic_text == "Diagnóstico integral.":
+             if isinstance(full_text, str) and '"fundamentacao_logica":' in full_text:
+                 try:
+                     import re
+                     match = re.search(r'"fundamentacao_logica":\s*"(.*?)"', full_text, re.DOTALL)
+                     if match:
+                         diagnostic_text = match.group(1).replace("\\n", "\n")
+                 except:
+                     pass
+
         # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
         if minuta_text and isinstance(minuta_text, str):
             minuta_text = minuta_text.replace("\\n", "\n")
@@ -201,6 +217,21 @@ if "report_id" in query_params:
         if not minuta_text:
             diagnostic_text = "Diagnóstico integral."
             minuta_text = full_text
+
+        # --- NOVA LÓGICA V3/V2 (NOVA ABA) ---
+        if data.get("diagnostic_reasoning"):
+            diagnostic_text = data.get("diagnostic_reasoning")
+
+        # V1 Fallback semântico
+        if not diagnostic_text or diagnostic_text == "Diagnóstico integral.":
+             if isinstance(full_text, str) and '"fundamentacao_logica":' in full_text:
+                 try:
+                     import re
+                     match = re.search(r'"fundamentacao_logica":\s*"(.*?)"', full_text, re.DOTALL)
+                     if match:
+                         diagnostic_text = match.group(1).replace("\\n", "\n")
+                 except:
+                     pass
 
         # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
         if minuta_text and isinstance(minuta_text, str):

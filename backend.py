@@ -46,7 +46,7 @@ except ImportError:
     HAS_ANTHROPIC = False
 # from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
 # (Re-enabling imports for V2 Ensemble)
-from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
+from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_JUIZ_DEEPSEEK, PROMPT_REDATOR_CLAUDE, PROMPT_AUDITOR_GPT
 from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH, PROMPT_GEMINI_FIXER
 # V1 Imports
 # (Already imported above)
@@ -54,10 +54,12 @@ from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT
 # V2 Imports (Agentic)
 try:
     from v2_engine.orchestrator_v2 import run_hybrid_orchestration
+    from v3_engine.orchestrator_v3 import run_autonomous_magistrate
 except ImportError as e:
     # Se falhar (ex: falta langgraph), apenas V2 ficará indisponível
-    print(f"Erro ao importar V2 Engine: {e}")
+    print(f"Erro ao importar V2/V3 Engine: {e}")
     run_hybrid_orchestration = None
+    run_autonomous_magistrate = None
 
 
 
@@ -617,6 +619,7 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     logs['analise_formal'] = res_formal
     
     # === FASE 2: RACIOCÍNIO JURÍDICO (DEEPSEEK) ===
+    # === FASE 2: RACIOCÍNIO JURÍDICO (DEEPSEEK) ===
     update("🧠 Fase 2: DeepSeek deliberando sobre o Mérito (Reasoning)...")
     
     # Monta o contexto para o Juiz
@@ -630,39 +633,60 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     [TRECHOS RELEVANTES DOS AUTOS]:
     {text[:50000]} 
     """
-    # Note: DeepSeek R1 tem contexto menor que Gemini, cuidado.
     
-    msg_material = [SystemMessage(content=PROMPT_ANALISE_MATERIAL), HumanMessage(content=contexto_juiz)]
-    res_material = juiz_logico.invoke(msg_material).content
-    logs['analise_material'] = res_material
-    
-    # === FASE 3: REDAÇÃO DE MINUTA (CLAUDE) ===
-    update("✍️ Fase 3: Claude redigindo a Minuta Final...")
-    
-    # Se tiver Rag Context (Mirror), injeta no lugar do style_guide ou soma
+    # Prepare Mirror Context if available
     final_style_guide = keys.get('style_guide', "")
     if rag_context:
         final_style_guide += rag_context
-        
-    msg_redator_sys = PROMPT_RELATOR_FINAL.format(
-        style_guide=final_style_guide or "Estilo Padrão (Sem guia específico).",
-        verdict_outline=res_material
+
+    msg_material = PROMPT_JUIZ_DEEPSEEK.format(
+        fatos_texto=res_fatos,
+        formal_json=res_formal,
+        style_guide=final_style_guide or "Estilo Padrão (Sem guia específico)."
     )
     
-    # Optional Style Injection
-    if template_files:
-        try:
-             # Re-uses process_templates logic... simplified for now
-             pass 
-        except: pass
-
-    msg_final = [SystemMessage(content="Você é um Assessor que redige minutas perfeitas."), HumanMessage(content=msg_redator_sys)]
-    res_final = redator_final.invoke(msg_final).content
+    # Use Invoke
+    res_material = juiz_logico.invoke([HumanMessage(content=contexto_juiz), SystemMessage(content=msg_material)]).content
+    logs['analise_material'] = res_material
+    
+    # === FASE 3: REDAÇÃO DE MINUTA (CLAUDE) ===
+    update("✍️ Fase 3: Claude redigindo a Minuta Final (Sentença)...")
+    
+    msg_redator = PROMPT_REDATOR_CLAUDE.format(
+        verdict_outline=res_material,
+        style_guide=final_style_guide or "Estilo Padrão (Sem guia específico)."
+    )
+    
+    res_final = redator_final.invoke([HumanMessage(content=msg_redator)]).content
     logs['minuta_final'] = res_final
     
+    # === FASE 4: AUDITORIA FINAL (GPT-4o) ===
+    final_output = res_final
+    audit_log = "Auditoria GPT ignorada (Sem chave ou desativado)"
+
+    # Check for OpenAI key availability
+    if keys.get('openai') and HAS_OPENAI:
+        update("🛡️ Fase 4: GPT-4o Auditando (Anti-Alucinação)...")
+        try:
+            auditor_gpt = ChatOpenAI(model="gpt-4o", api_key=keys['openai'], temperature=0.0)
+            msg_audit = [
+                SystemMessage(content=PROMPT_AUDITOR_GPT),
+                HumanMessage(content=f"MINUTA PARA REVISÃO:\n{res_final}\n\nAUTOS:\n{text[:20000]}")
+            ]
+            audit_resp = auditor_gpt.invoke(msg_audit).content
+            logs['auditoria_gpt'] = audit_resp
+            
+            if "ERRO:" in audit_resp or "REPROVADO" in audit_resp:
+                audit_log = f"⚠️ ALERTA DO AUDITOR:\n{audit_resp}"
+            else:
+                audit_log = "✅ Aprovado pelo GPT-4o."
+                
+        except Exception as e:
+            audit_log = f"Erro na auditoria GPT: {e}"
+
     return {
-        "final_report": res_final,
-        "auditor_dashboard": f"**Estratégia Adotada (DeepSeek):**\n\n{res_material}",
+        "final_report": final_output,
+        "auditor_dashboard": audit_log,
         "style_report": "Ensemble Assembly Line (Sem Style Guide específico)",
         "steps": logs
     }
@@ -1034,8 +1058,7 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
         # 2. Run Pipeline (V1 vs V2 vs V3)
         if mode == "v3" and keys:
             # V3: Autonomous Agent (Hybrid LangGraph Agents)
-            # Replaces old "v2" logic
-            if run_hybrid_orchestration is None:
+            if run_autonomous_magistrate is None:
                 return {"error": "ERRO DE INSTALAÇÃO (V3): Engine Agente não disponível.", "filename": filename}
             
             # --- MIRROR STRATEGY FOR V3 ---
@@ -1044,13 +1067,23 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
                  mirror_context = retrieve_mirror_context(clean_content, keys.get('google') or api_key, template_files)
 
             # Normalizar output para o formato esperado pelo front
-            v3_output = run_hybrid_orchestration(clean_content, keys, style_guide=mirror_context)
+            # returns (final_json, logs_list)
+            v3_json, v3_logs = run_autonomous_magistrate(clean_content, keys)
+            
+            # Extract content safely
+            final_minuta = v3_json.get("minuta_final", "Minuta não gerada.")
+            reasoning = v3_json.get("fundamentacao_logica", "Raciocínio não disponível.")
+            
+            # Format reasoning string if it's a dict
+            if isinstance(reasoning, dict):
+                 reasoning = "\n".join([f"**{k}:** {v}" for k,v in reasoning.items()])
             
             results = {
-                "final_report": v3_output.get("final_output", "Erro na geração V3"),
-                "auditor_dashboard": v3_output.get("audit_report", "Auditoria indisponível"),
+                "final_report": final_minuta,
+                "auditor_dashboard": "Auditoria Integrada ao Processo V3 (Ver Logs)",
                 "style_report": "Gerado via Agentic Style Guide (V3)",
-                "steps": v3_output.get("logs", {})
+                "steps": {"logs": v3_logs},
+                "diagnostic_reasoning": reasoning  # <--- NEW FIELD
             }
             
         elif mode == "v2" and keys:
@@ -1059,6 +1092,9 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
             ensemble_output = run_ensemble_orchestration(clean_content, keys, template_files=template_files)
             results = ensemble_output # Já retorna no formato certo
             results["filename"] = filename # Garante filename
+            
+            # EXPOSE REASONING V2 (DeepSeek)
+            results["diagnostic_reasoning"] = ensemble_output.get("steps", {}).get("analise_material", "Raciocínio não disponível.")
             
         else:
             # V1: Standard Pipeline (Flexible LLM)
