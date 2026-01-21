@@ -20,7 +20,11 @@ REGRAS DE OURO (RASTREABILIDADE):
 1. CITAÇÃO DE ID É OBRIGATÓRIA: Nunca mencione um documento (Contrato, Petição, Laudo) sem citar o ID do PJe.
    - Errado: "O contrato prevê..."
    - Certo: "O contrato de adesão anexado ao ID 123456 prevê..."
-2. Se o ID não foi fornecido no resumo, use "[ID NÃO LOCALIZADO]" para alertar, mas não invente.
+3. **ESTRATÉGIA DO ESPELHO (MIRROR STRATEGY - PRIORIDADE MÁXIMA):**
+   - Se o campo "ESTILO DO JUIZ" contiver um "CASO ESPELHO" ou "GOLDEN SAMPLE":
+   - **CLONE A ESTRUTURA VISUAL:** Copie os títulos, a ordem dos parágrafos e a formatação exata.
+   - **MIMETIZE O TOM:** Use os mesmos termos de transição e cacoetes de linguagem.
+   - **ADAPTE O CONTEÚDO:** Use apenas os fatos deste novo caso, mas encaixe-os no molde do espelho.
 """
 
 def run_writer_agent(verdict_outline: str, style_guide: str, api_key: str):

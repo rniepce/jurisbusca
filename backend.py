@@ -246,6 +246,44 @@ def get_llm(provider: str, model_name: str, api_key: str, temperature: float = 0
     else:
         raise ValueError(f"Provedor desconhecido: {provider}")
 
+def retrieve_mirror_context(text, api_key, template_files):
+    """
+    Função Auxiliar para implementar a Estratégia do Espelho (Mirror Strategy).
+    Recupera o 'Caso Espelho' (Top-1) e monta o contexto.
+    """
+    if not template_files: return ""
+    
+    try:
+        # Reutiliza process_templates (assume que ele lida com cache ou é rápido)
+        retriever, _ = process_templates(template_files, api_key)
+        
+        if not retriever: return ""
+        
+        # Busca documento mais relevante (Golden Sample)
+        relevant_docs = retriever.invoke(text[:6000])
+        
+        rag_context = ""
+        if relevant_docs:
+            mirror_doc = relevant_docs[0]
+            other_docs = relevant_docs[1:]
+            
+            rag_context += "\n\n## 💎 CASO ESPELHO (GOLDEN SAMPLE - GABARITO)\n"
+            rag_context += f"⚠️ INSTRUÇÃO DE CLONAGEM: O caso abaixo ({mirror_doc.metadata.get('source')}) é o seu GABARITO ESTRUTURAL OBRIGATÓRIO.\n"
+            rag_context += "1. Copie a estrutura de tópicos (titulação, numeração).\n"
+            rag_context += "2. Copie os jargões e frases de transição exatas.\n"
+            rag_context += "3. Se for o mesmo assunto, adapte apenas os fatos e nomes, mantendo a fundamentação jurídica.\n"
+            rag_context += f"\n--- INÍCIO DO CASO ESPELHO ---\n{mirror_doc.page_content}\n--- FIM DO CASO ESPELHO ---\n"
+            
+            if other_docs:
+                rag_context += "\n## OUTROS MODELOS DE REFERÊNCIA (CONTEXTO ADICIONAL)\n"
+                for i, doc in enumerate(other_docs):
+                    rag_context += f"\n[MODELO SECUNDÁRIO {i+2} - {doc.metadata.get('source')}]:\n{doc.page_content[:3000]}...\n"
+                    
+        return rag_context
+    except Exception as e:
+        print(f"Erro no retrieve_mirror_context: {e}")
+        return ""
+
 def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_config: dict, status_callback=None, template_files=None, google_key=None):
     """
     Pipeline Padrão (V1) FLEXÍVEL.
@@ -263,62 +301,48 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
     except Exception as e:
         return {"final_report": f"Erro na inicialização dos modelos: {str(e)}", "steps": {}}
 
-    # PROCESSAMENTO DE TEMPLATES (RAG)
+    # PROCESSAMENTO DE TEMPLATES (RAG MIRROR STRATEGY)
     rag_context = ""
     style_report = None
     
     if template_files:
-        update("📚 Indexando Modelos de Referência (RAG)...")
+        update("📚 Localizando Caso Espelho (Golden Sample)...")
+        # Define API Key para Embeddings (Google)
+        rag_key = main_llm_config['key'] if main_llm_config['provider'] == 'google' else (google_key or os.getenv("GOOGLE_API_KEY"))
+        
+        # 1. Retrieve Mirror Context
+        rag_context = retrieve_mirror_context(text, rag_key, template_files)
+        
+        # 2. Style Report (Legacy Sampling for 'Personality')
         try:
-            # Note: Embeddings ainda usam Google por padrão (definido em process_templates), 
-            # mas poderíamos parametrizar isso também no futuro.
-            # Para simplificar, assumimos que o usuário tem uma chave Google para embeddings se usar RAG,
-            # ou usamos a chave do main_llm se for Google.
+           update(f"🎨 Analisando Estilo Judicial ({style_llm_config['model']})...")
+           # We still need all_docs for style analysis, so process_templates is called again
+           _, all_docs = process_templates(template_files, rag_key)
+           
+           sample_text = ""
+           num_samples = min(5, len(all_docs))
+           selected_docs = random.sample(all_docs, num_samples) if num_samples > 0 else []
+           for doc in selected_docs: 
+               sample_text += f"\n--- AMOSTRA ({doc.metadata.get('source')}): ---\n{doc.page_content[:4000]}\n"
             
-            # HACK: Se main_llm não for google, precisamos de uma chave google para o RAG/Embeddings
-            # ou refatorar process_templates para usar OpenAI Embeddings.
-            # Por hora, vamos tentar usar a chave do main_llm_config se o provider for google.
-            rag_key = main_llm_config['key'] if main_llm_config['provider'] == 'google' else (google_key or os.getenv("GOOGLE_API_KEY"))
-            
-            if not rag_key and (template_files or style_llm_config['provider'] == 'google'):
-                 update("⚠️ Aviso: Chave Google necessária para RAG/Embeddings não encontrada. RAG pode falhar.")
-            
-            retriever, all_docs = process_templates(template_files, rag_key)
-            
-            if retriever:
-                # 1. RAG (Busca por similaridade)
-                relevant_docs = retriever.invoke(text[:4000])
-                rag_context = "\n\n## MODELOS DE REFERÊNCIA (RAG)\n"
-                rag_context += "Use o ESTILO e ESTRUTURA visual destes modelos:\n"
-                for i, doc in enumerate(relevant_docs):
-                    rag_context += f"\n[MODELO {i+1} - {doc.metadata.get('source')}]:\n{doc.page_content}\n"
-                
-                # 2. STYLE ANALYZER (Usando o modelo escolhido para estilo)
-                update(f"🎨 Analisando Estilo Judicial ({style_llm_config['model']})...")
-                
-                # Profile Generation Logic inline to support generic LLM
-                sample_text = ""
-                for doc in all_docs[:5]: 
-                    sample_text += f"\n--- AMOSTRA ({doc.metadata.get('source')}): ---\n{doc.page_content[:5000]}\n"
-                
-                style_msgs = [
-                    SystemMessage(content=PROMPT_STYLE_ANALYZER),
-                    HumanMessage(content=f"Aqui estão amostras de decisões do magistrado. Crie o Dossiê de Estilo:\n{sample_text}")
-                ]
-                style_resp = style_llm.invoke(style_msgs)
-                style_content = style_resp.content
-                
-                # Cleaning list artifacts if needed (common in Gemini)
-                if isinstance(style_content, list):
-                     style_content = "\n".join([x if isinstance(x, str) else str(x) for x in style_content])
-                
-                style_report = clean_text(str(style_content))
-                
-                if style_report:
-                    rag_context += f"\n\n## DIRETRIZES DE PERSONALIDADE (PERFIL DO JULGADOR)\nVocê deve emular estritamente o seguinte perfil:\n{style_report}\n"
+           style_msgs = [
+               SystemMessage(content=PROMPT_STYLE_ANALYZER),
+               HumanMessage(content=f"Aqui estão amostras de decisões do magistrado. Crie o Dossiê de Estilo:\n{sample_text}")
+           ]
+           style_resp = style_llm.invoke(style_msgs)
+           style_content = style_resp.content
+           
+           # Cleaning list artifacts if needed (common in Gemini)
+           if isinstance(style_content, list):
+                style_content = "\n".join([x if isinstance(x, str) else str(x) for x in style_content])
+           
+           style_report = clean_text(str(style_content))
+           
+           if style_report:
+                rag_context += f"\n\n## DIRETRIZES DE PERSONALIDADE (PERFIL DO JULGADOR)\nUse também este perfil:\n{style_report}\n"
 
         except Exception as e:
-            update(f"⚠️ Erro ao processar modelos/estilo: {e}")
+            print(f"Erro no Style Analysis: {e}")
 
     update(f"🧠 Iniciando Análise Profunda ({main_llm_config['model']})...")
 
@@ -399,7 +423,7 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
         # Se deepseek key nao existir, fallback para openai ou google
         ds_key = keys.get('deepseek')
         if ds_key:
-             juiz_logico = get_llm("openai", "deepseek-reasoner", ds_key, temperature=0.3) # Via OpenAI Compat
+             juiz_logico = get_llm("deepseek", "deepseek-reasoner", ds_key, temperature=0.3) # Updated provider
         else:
              update("⚠️ Chave DeepSeek não encontrada. Usando GPT-4o para raciocínio.")
              juiz_logico = get_llm("openai", "gpt-4o", keys['openai'], temperature=0.3)
@@ -418,6 +442,12 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
 
     logs = {}
     
+    # MIRROR STRATEGY FOR V2
+    rag_context = ""
+    if template_files:
+        update("📚 (V2) Localizando Caso Espelho...")
+        rag_context = retrieve_mirror_context(text, keys['google'], template_files)
+
     # === FASE 1: EXTRAÇÃO E TRIAGEM (GEMINI) ===
     update("🕵️‍♂️ Fase 1: Gemini analisando Fatos e Requisitos Formais...")
     
@@ -454,11 +484,14 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     # === FASE 3: REDAÇÃO DE MINUTA (CLAUDE) ===
     update("✍️ Fase 3: Claude redigindo a Minuta Final...")
     
-    # Se tiver Style Guide (RAG), injeta aqui
+    # Se tiver Rag Context (Mirror), injeta no lugar do style_guide ou soma
+    final_style_guide = keys.get('style_guide', "")
+    if rag_context:
+        final_style_guide += rag_context
+        
     msg_redator_sys = PROMPT_RELATOR_FINAL.format(
-        fatos_texto=res_fatos,
-        formal_json=res_formal,
-        material_texto=res_material
+        style_guide=final_style_guide or "Estilo Padrão (Sem guia específico).",
+        verdict_outline=res_material
     )
     
     # Optional Style Injection
@@ -566,10 +599,15 @@ def generate_style_report(documents, api_key):
         # Gemini 3 Flash Preview (ID Correto: gemini-3-flash-preview)
         llm_flash = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.3)
         
-        # Concatena amostras dos documentos (máx 30k chars para não gastar muito)
+        
+        # Concatena amostras dos documentos (Random Sampling)
         sample_text = ""
-        for doc in documents[:5]: # Pega primeiros 5 chunks
-            sample_text += f"\n--- AMOSTRA ({doc.metadata.get('source')}): ---\n{doc.page_content[:5000]}\n"
+        # Seleciona de 3 a 5 chunks aleatórios para ter variabilidade
+        num_samples = min(5, len(documents))
+        if num_samples > 0:
+            selected_docs = random.sample(documents, num_samples)
+            for doc in selected_docs:
+                sample_text += f"\n--- AMOSTRA ({doc.metadata.get('source')}): ---\n{doc.page_content[:5000]}\n"
             
         messages = [
             SystemMessage(content=PROMPT_STYLE_ANALYZER),
@@ -771,14 +809,13 @@ def generate_batch_xray(files, api_key, template_files=None):
         except json.JSONDecodeError:
             return {"error": "Falha ao decodificar JSON do Reduce", "raw_content": content}, text_cache
         
-    except Exception as e:
-        import traceback
         return {"error": f"Erro Geral no Pipeline: {str(e)}\n{traceback.format_exc()}"}, {}
 
 import concurrent.futures
-import hashlib
-import json
 import time
+import random
+import tempfile
+import retime
 
 def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None, mode="v1", keys=None):
     """
@@ -845,9 +882,14 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
             # Replaces old "v2" logic
             if run_hybrid_orchestration is None:
                 return {"error": "ERRO DE INSTALAÇÃO (V3): Engine Agente não disponível.", "filename": filename}
+            
+            # --- MIRROR STRATEGY FOR V3 ---
+            mirror_context = ""
+            if template_files:
+                 mirror_context = retrieve_mirror_context(clean_content, keys.get('google') or api_key, template_files)
 
             # Normalizar output para o formato esperado pelo front
-            v3_output = run_hybrid_orchestration(clean_content, keys)
+            v3_output = run_hybrid_orchestration(clean_content, keys, style_guide=mirror_context)
             
             results = {
                 "final_report": v3_output.get("final_output", "Erro na geração V3"),
