@@ -5,16 +5,24 @@ from typing import List, Optional, Any
 import pypdf
 import docx
 from langchain_community.document_loaders import PyPDFLoader
-# Tenta importar o loader com OCR; se não der, segue sem ele (ou avisa)
-# rapidocr-onnxruntime e rapidocr-pdf devem estar instalados
+# PaddleOCR Imports via ocr_engine
 try:
-    from langchain_community.document_loaders import RapidOCRPDFLoader
+    import ocr_engine
     HAS_OCR = True
+    # Import Hybrid Chunker
+    from chunking import HybridSemanticChunker
+    # Import RAPTOR
+    from raptor_engine import RaptorEngine
+    # Import Planning & Style
+    from planning_engine import PlanningEngine
+    from style_engine import StyleEngine
+    # Import Workflow
+    from agent_workflow import create_agent_workflow
 except ImportError:
     HAS_OCR = False
-except Exception: 
-    # Catch-all para erros de runtime do RapidOCR ou dependências faltantes
+except Exception:
     HAS_OCR = False
+
 
 from langchain_community.vectorstores import Chroma
 # from langchain_huggingface import HuggingFaceEmbeddings # Não usado (Railway usa Google Embeddings)
@@ -436,7 +444,8 @@ def retrieve_mirror_context(text, api_key, template_files):
         print(f"Erro no retrieve_mirror_context: {e}")
         return ""
 
-def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_config: dict, status_callback=None, template_files=None, google_key=None):
+
+def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_config: dict, status_callback=None, template_files=None, google_key=None, outline=None, style_prompt=None):
     """
     Pipeline Padrão (V1) FLEXÍVEL.
     Suporta qualquer LLM para Analista Principal e Analista de Estilo.
@@ -536,6 +545,24 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
     # Injeta contexto RAG (Estilo)
     if rag_context:
         final_prompt_integral += rag_context
+        
+    # INJEÇÃO DO OUTLINE (PLANEJAMENTO)
+    if outline:
+        final_prompt_integral += f"\n\n## 📋 ESQUELETO LÓGICO (PLANEJAMENTO OBRIGATÓRIO)\nSiga estritamente esta estrutura para redigir a decisão:\n{outline}"
+        
+    # INJEÇÃO DE ESTILO (FEW-SHOT)
+    # Se style_prompt for um FewShotTemplate, precisamos formatar.
+    # Por simplicidade, se style_prompt existir, extraímos o texto dos exemplos
+    few_shot_text = ""
+    if style_prompt:
+         try:
+             # Formatação manual rápida dos exemplos para injetar no system
+             for msg in style_prompt.format_messages(page_content=""):
+                 few_shot_text += f"\nExemplo: {msg.content}\n"
+             if few_shot_text:
+                 final_prompt_integral += f"\n\n## 🎭 CLONAGEM DE ESTILO (RAG DINÂMICO)\nEscreva NO MESMO TOM destes exemplos:\n{few_shot_text}"
+         except Exception as e:
+             print(f"Erro ao formatar Style Prompt: {e}")
 
     integral_messages = [
         SystemMessage(content=final_prompt_integral),
@@ -707,7 +734,22 @@ def process_templates(files, api_key):
         print("Aviso: Google Generative AI não instalado. Pulando processamento de templates.")
         return None, []
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    # Inicializa Hybrid Semantic Chunker
+    # Tenta usar OpenAI key se disponível (melhor qualidade), senão Google
+    # Como process_templates recebe apenas 'api_key' (que é google por padrão no código legado),
+    # vamos tentar inferir ou usar variável de ambiente.
+    openai_key = os.getenv("OPENAI_API_KEY")
+    
+    chunker = None
+    if openai_key:
+         print("Using OpenAI Embeddings for Chunking")
+         chunker = HybridSemanticChunker(api_key=openai_key, provider="openai")
+    else:
+         print("Using Google Embeddings for Chunking")
+         chunker = HybridSemanticChunker(api_key=api_key, provider="google")
+
+    # Fallback splitter if chunker fails to init
+    fallback_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 
     for file in files:
         # Salva temporariamente para processar
@@ -731,7 +773,15 @@ def process_templates(files, api_key):
                      with open(tmp_path, "r", encoding="latin-1") as f: text = f.read()
             
             # Adiciona metadados
-            doc_chunks = text_splitter.create_documents([text], metadatas=[{"source": file.name}])
+            if chunker:
+                try:
+                    doc_chunks = chunker.split_text(text, source_metadata={"source": file.name})
+                except Exception as e:
+                    print(f"Erro no Semantic Chunking do arquivo {file.name}: {e}. Usando fallback.")
+                    doc_chunks = fallback_splitter.create_documents([text], metadatas=[{"source": file.name}])
+            else:
+                 doc_chunks = fallback_splitter.create_documents([text], metadatas=[{"source": file.name}])
+                 
             documents.extend(doc_chunks)
         finally:
             os.remove(tmp_path)
@@ -1010,6 +1060,7 @@ import random
 import tempfile
 
 
+
 def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None, mode="v1", keys=None):
     """
     Função Worker para processar um único caso completo.
@@ -1035,16 +1086,25 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
                     docs = loader.load()
                     text_content = "\n".join([d.page_content for d in docs])
                     
-                    # Tentativa 2: OCR (se texto vazio e OCR habilitado)
-                    if len(text_content.strip()) < 50 and HAS_OCR:
+                    # Tentativa 2: OCR Avançado (se texto vazio e OCR habilitado)
+                    # Se tiver menos de 100 caracteres
+                    if len(text_content.strip()) < 100 and HAS_OCR:
+                        print(f"⚠️ Texto insuficiente ({len(text_content)} chars) em {filename}. Iniciando OCR Avançado (OpenCV + Paddle)...")
                         try:
-                            ocr_loader = RapidOCRPDFLoader(tmp_path)
-                            ocr_docs = ocr_loader.load()
-                            ocr_text = "\n".join([d.page_content for d in ocr_docs])
+                            # Chama o motor avançado
+                            ocr_text = ocr_engine.extract_text_from_pdf(tmp_path)
+                            
+                            # Se OCR retornou algo razoável, usa
                             if len(ocr_text) > len(text_content):
                                 text_content = ocr_text
+                                print(f"✅ OCR Avançado extraiu {len(text_content)} caracteres.")
+                            elif "[ERRO]" in ocr_text:
+                                print(f"Falha no OCR: {ocr_text}")
+                                
                         except Exception as e:
-                            print(f"Erro no OCR: {e}")
+                             print(f"Erro no OCR Pipeline: {e}")
+
+                             
                 elif suffix == ".docx":
                     from langchain_community.document_loaders import Docx2txtLoader
                     loader = Docx2txtLoader(tmp_path)
@@ -1069,7 +1129,70 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
                 clean_content = "Erro de decodificação de texto."
                 print(f"Erro no clean_text: {e_clean}")
         
-        # 2. Run Pipeline (V1 vs V2 vs V3)
+        # --- RAPTOR INTEGRATION (LONG CONTEXT) ---
+        # Se o texto for muito grande (> 150k chars), aciona o RAPTOR para resumir
+        if len(clean_content) > 150000:
+             print(f"🦖 RAPTOR ATIVADO: Texto Grande ({len(clean_content)} chars). Iniciando indexação hierárquica...")
+             try:
+                 # Decide key/provider
+                 raptor_key = keys.get('openai') if keys and keys.get('openai') else (keys.get('google') if keys else api_key)
+                 raptor_provider = "openai" if (keys and keys.get('openai')) else "google"
+                 
+                 raptor = RaptorEngine(api_key=raptor_key, provider=raptor_provider)
+                 
+                 # Gera Árvore de Resumos
+                 tree_summary = raptor.build_tree(clean_content)
+                 
+                 # Substitui o texto original pela Árvore (que é bem menor e focada)
+                 # Mantendo um prefixo identificando
+                 clean_content = f" [MODO RAPTOR ATIVADO]\nO texto a seguir é um RESUMO HIERÁRQUICO do processo original.\n\n{tree_summary}"
+                 print("✅ RAPTOR finalizado. Texto reduzido com sucesso.")
+                 
+             except Exception as e_raptor:
+                 print(f"⚠️ Erro ao executar RAPTOR: {e_raptor}. Usando texto original truncado.")
+        
+        # --- AGENTIC WORKFLOW (PLANNER -> WRITER -> CRITIC) ---
+        # Substitui a lógica manual anterior pelo Grafo do LangGraph
+        
+        final_draft = ""
+        
+        # Decide keys for agents
+        agent_key = keys.get('openai') if keys and keys.get('openai') else (keys.get('google') if keys else api_key)
+        agent_provider = "openai" if (keys and keys.get('openai')) else "google"
+
+        try:
+             print("🚀 Iniciando Workflow Agêntico (Planner -> Writer -> Critic)...")
+             app = create_agent_workflow()
+             
+             inputs = {
+                 "facts": clean_content,
+                 "api_key": agent_key,
+                 "provider": agent_provider,
+                 "revision_count": 0
+             }
+             
+             # Executa o Grafo
+             result_state = app.invoke(inputs)
+             final_draft = result_state.get("draft", "Erro na geração do draft.")
+             
+             print("✅ Workflow Completo com Sucesso!")
+             
+        except Exception as e_workflow:
+             print(f"⚠️ Erro no Workflow Agêntico: {e_workflow}. Caindo para pipeline legado.")
+             # Fallback logic could be here if needed, but for now allow flow to continue to standard orchestration if draft is empty
+             final_draft = None
+
+        if final_draft:
+            # Se o Workflow funcionou, retornamos direto (bypass legacy orchestration)
+             return {
+                "status": "success",
+                "filename": filename,
+                "analysis": final_draft,
+                "model_used": f"Agentic Workflow V3 ({agent_provider})",
+                "timestamp": time.time()
+            }
+
+        # 2. Run Pipeline (Legacy / Fallback)
         if mode == "v3" and keys:
             # V3: Autonomous Agent (Hybrid LangGraph Agents)
             if run_autonomous_magistrate is None:
@@ -1127,7 +1250,7 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
                  main_cfg = {'provider': 'google', 'model': 'gemini-3-pro-preview', 'key': api_key}
                  style_cfg = {'provider': 'google', 'model': 'gemini-3-flash-preview', 'key': api_key}
 
-            results = run_standard_orchestration(clean_content, main_cfg, style_cfg, status_callback=None, template_files=template_files, google_key=api_key)
+            results = run_standard_orchestration(clean_content, main_cfg, style_cfg, status_callback=None, template_files=template_files, google_key=api_key, outline=outline, style_prompt=style_prompt)
         
         # 3. Save Result
         report_id = hashlib.md5(f"{filename}_{time.time()}".encode()).hexdigest()

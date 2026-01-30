@@ -20,7 +20,11 @@ langchain-experimental
 pypdf
 python-docx
 chromadb
+langchain-chroma
 tiktoken
-rapidocr-onnxruntime
-rapidocr-pdf
+
 scikit-learn
+paddlepaddle
+paddleocr
+pymupdf
+opencv-contrib-python-headless
