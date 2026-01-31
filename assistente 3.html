@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistente TJMG 2.0 - Plataforma Integrada</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Merriweather:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* --- VARIÁVEIS GLOBAIS --- */
+        :root {
+            --tjmg-red: #980C1C;
+            --tjmg-red-dark: #6e0512;
+            --sei-blue: #005A9C;
+            --bg-light: #F4F6F8;
+            --text-dark: #2C3E50;
+            --text-grey: #7F8C8D;
+            --border-color: #E1E4E8;
+            --success: #27AE60;
+            --warning: #F1C40F;
+            --danger: #C0392B;
+            --info: #2980B9;
+            --stf-color: #0052CC;
+            --stj-color: #C0392B;
+            --tjmg-orange: #E67E22;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--bg-light);
+            color: var(--text-dark);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- SIDEBAR PRINCIPAL --- */
+        .sidebar {
+            width: 240px;
+            background-color: #fff;
+            border-right: 1px solid #e1e4e8;
+            display: flex;
+            flex-direction: column;
+            padding-top: 20px;
+            z-index: 100;
+            flex-shrink: 0;
+        }
+
+        .sidebar-logo {
+            text-align: center;
+            padding-bottom: 30px;
+            color: var(--tjmg-red);
+            font-weight: 700;
+            font-size: 1.1rem;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 10px;
+        }
+
+        .sidebar-logo i { font-size: 2rem; margin-bottom: 10px; display: block; }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 15px 25px;
+            color: var(--text-grey);
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s;
+            border-left: 4px solid transparent;
+            cursor: pointer;
+        }
+
+        .nav-link:hover { background-color: #fff5f5; color: var(--tjmg-red); }
+        
+        .nav-link.active {
+            background-color: #fff0f0;
+            color: var(--tjmg-red);
+            border-left-color: var(--tjmg-red);
+        }
+
+        .nav-link i { margin-right: 15px; width: 20px; text-align: center; }
+
+        /* --- ÁREA DE CONTEÚDO PRINCIPAL --- */
+        .main-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* --- TELAS (SCREENS) --- */
+        .screen-section {
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+            padding: 0;
+            height: 100%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .screen-section.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* --- COMPONENTES COMUNS --- */
+        .topbar {
+            background-color: var(--tjmg-red);
+            color: white;
+            padding: 0 30px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .btn-primary {
+            background-color: var(--tjmg-red);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-primary:hover { background-color: var(--tjmg-red-dark); }
+        
+        .btn-outline {
+            background-color: transparent;
+            color: var(--tjmg-red);
+            border: 1px solid var(--tjmg-red);
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-outline:hover { background-color: #fff5f5; }
+
+        /* --- ESTILOS ESPECÍFICOS: DASHBOARD --- */
+        .dashboard-container { padding: 30px; width: 100%; }
+        .grid-layout { display: grid; grid-template-columns: repeat(12, 1fr); gap: 20px; }
+        .card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-top: 3px solid transparent; }
+        .widget-triagem { grid-column: span 4; border-top-color: var(--tjmg-red); }
+        .widget-berna { grid-column: span 8; border-top-color: var(--info); }
+        .widget-jurisp { grid-column: span 6; border-top-color: var(--warning); }
+        .widget-metas { grid-column: span 6; border-top-color: var(--success); }
+        
+        .donut-chart { width: 100px; height: 100px; border-radius: 50%; background: conic-gradient(var(--danger) 0% 15%, var(--warning) 15% 40%, var(--success) 40% 100%); margin: 0 auto; display: flex; align-items: center; justify-content: center; }
+        .donut-inner { width: 70px; height: 70px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        
+        .cluster-cards { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px; }
+        .cluster-card { background: #F8F9FA; border: 1px solid #ddd; padding: 15px; min-width: 200px; border-radius: 6px; }
+
+        /* --- ESTILOS ESPECÍFICOS: ACERVO --- */
+        .acervo-header { padding: 20px 30px; background: white; border-bottom: 1px solid #ddd; }
+        .search-full { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 1rem; }
+        .acervo-table { width: 100%; border-collapse: collapse; background: white; margin-top: 20px; }
+        .acervo-table th, .acervo-table td { padding: 15px; border-bottom: 1px solid #eee; text-align: left; }
+        .acervo-table th { background: #f9f9f9; }
+
+        /* --- ESTILOS ESPECÍFICOS: MINUTAS --- */
+        .minutas-layout { display: flex; flex: 1; overflow: hidden; height: 100%; }
+        .process-list-col { width: 260px; background: white; border-right: 1px solid #ddd; overflow-y: auto; }
+        .editor-col { flex: 1; background: #eee; padding: 20px; overflow-y: auto; display: flex; justify-content: center; }
+        .context-col { width: 350px; background: white; border-left: 1px solid #ddd; display: flex; flex-direction: column; }
+        
+        .process-item { padding: 15px; border-bottom: 1px solid #eee; cursor: pointer; border-left: 4px solid transparent; }
+        .process-item.active { background: #fff5f5; border-left-color: var(--tjmg-red); }
+        .document-paper { width: 100%; max-width: 750px; background: white; min-height: 800px; padding: 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); font-family: 'Merriweather', serif; line-height: 1.8; }
+        .var-field { background: #FFF3CD; border-bottom: 2px solid #FFECB5; cursor: pointer; }
+
+        /* --- ESTILOS NOVOS DO CHATBOT E IA TOOLS --- */
+        .ai-tools-bar { padding: 15px; border-bottom: 1px solid #eee; display: flex; gap: 10px; background: #fafafa; }
+        .tool-btn { flex: 1; padding: 8px; background: white; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 0.85rem; color: #555; display: flex; align-items: center; justify-content: center; gap: 5px; transition: 0.2s; }
+        .tool-btn:hover { border-color: var(--tjmg-red); color: var(--tjmg-red); }
+        .suggestion-box { padding: 15px; background: #f0f7fb; border-bottom: 1px solid #eee; }
+        .sugg-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.85rem; }
+        .sugg-item .label { color: #7F8C8D; font-weight: 500; }
+        .sugg-item .value { font-weight: bold; color: var(--text-dark); }
+        .chat-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .chat-header { padding: 10px 15px; background: white; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.9rem; color: #333; }
+        .llm-select { padding: 4px 8px; border-radius: 12px; border: 1px solid #ccc; font-size: 0.75rem; background: white; color: #555; cursor: pointer; }
+        .chat-messages { flex: 1; padding: 15px; overflow-y: auto; background: #fff; display: flex; flex-direction: column; gap: 10px; }
+        .msg { max-width: 85%; padding: 10px; border-radius: 8px; font-size: 0.9rem; line-height: 1.4; }
+        .msg.ai { background-color: #f8f9fa; border: 1px solid #eee; align-self: flex-start; border-radius: 0 8px 8px 8px; }
+        .msg.user { background-color: #fff0f0; color: #333; align-self: flex-end; border-radius: 8px 0 8px 8px; border: 1px solid #ffdcdc; }
+        .chat-input-area { padding: 15px; border-top: 1px solid #eee; background: #fafafa; }
+        .input-group { display: flex; gap: 8px; }
+        .input-group input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; outline: none; }
+        .btn-send { background: var(--tjmg-red); color: white; border: none; padding: 0 15px; border-radius: 4px; cursor: pointer; }
+
+        /* --- ESTILOS ESPECÍFICOS: TELA DO PROCESSO (NOVO) --- */
+        .process-detail-grid { display: grid; grid-template-columns: 280px 1fr 300px; height: 100%; }
+        
+        /* Coluna Documentos */
+        .docs-sidebar { background: white; border-right: 1px solid #ddd; overflow-y: auto; padding: 20px; }
+        .doc-category { margin-bottom: 20px; }
+        .doc-cat-title { font-size: 0.85rem; font-weight: bold; color: #7F8C8D; text-transform: uppercase; margin-bottom: 10px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
+        .doc-item { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 4px; cursor: pointer; font-size: 0.9rem; color: var(--text-dark); transition: 0.2s; }
+        .doc-item:hover { background: #f0f0f0; }
+        .doc-item i { color: var(--tjmg-red); width: 16px; text-align: center; }
+        
+        /* Coluna Central (Análise e Performance) */
+        .analysis-main { background: #F4F6F8; padding: 30px; overflow-y: auto; }
+        .recommendation-box { background: white; border-left: 5px solid var(--success); padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .rec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .rec-title { font-size: 1.1rem; font-weight: bold; color: var(--text-dark); }
+        .performance-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .perf-row { margin-bottom: 15px; }
+        .perf-label { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 5px; color: #555; }
+        .perf-bar-bg { height: 10px; background: #eee; border-radius: 5px; overflow: hidden; }
+        .perf-bar-fill { height: 100%; border-radius: 5px; }
+
+        /* Coluna Contexto (Direita) */
+        .context-sidebar { background: white; border-left: 1px solid #ddd; padding: 20px; overflow-y: auto; }
+        .similar-item { padding: 10px; border: 1px solid #eee; border-radius: 6px; margin-bottom: 10px; font-size: 0.85rem; }
+        .similar-item:hover { border-color: var(--tjmg-red); cursor: pointer; }
+
+        /* --- ESTILOS ESPECÍFICOS: JURISPRUDÊNCIA --- */
+        .search-hero { max-width: 800px; margin: 20px auto; position: relative; }
+        .search-input-hero { width: 100%; padding: 15px 50px; border-radius: 30px; border: 2px solid #ddd; font-size: 1.1rem; }
+        .jurisp-grid { display: grid; grid-template-columns: 3fr 1fr; gap: 30px; padding: 20px 40px; }
+        .result-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 15px; border-left: 4px solid transparent; }
+        .border-stj { border-left-color: var(--stj-color); }
+        .border-doc { border-left-color: var(--success); }
+
+        /* --- ESTILOS ESPECÍFICOS: APOIO (TABAS) --- */
+        .module-tabs { background: white; padding: 0 40px; border-bottom: 1px solid #ddd; display: flex; gap: 20px; }
+        .tab-btn { padding: 20px 10px; border: none; background: none; cursor: pointer; color: #777; border-bottom: 3px solid transparent; font-weight: 500; font-size: 1rem; }
+        .tab-btn.active { color: var(--tjmg-red); border-bottom-color: var(--tjmg-red); }
+        .view-container { display: none; padding: 30px 40px; }
+        .view-container.active { display: block; }
+
+        /* UTILS */
+        .badge { padding: 3px 8px; border-radius: 4px; color: white; font-size: 0.75rem; font-weight: bold; }
+        .bg-stj { background: var(--stj-color); }
+        .bg-alert { background: var(--danger); }
+        .bg-success { background: var(--success); }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-logo">
+            <i class="fa-solid fa-scale-balanced"></i>
+            <div>ASSISTENTE<br>TJMG</div>
+        </div>
+        <nav>
+            <a class="nav-link active" onclick="goToScreen('screen-visao', this)">
+                <i class="fa-solid fa-chart-pie"></i> Visão Geral
+            </a>
+            <a class="nav-link" id="nav-acervo" onclick="goToScreen('screen-acervo', this)">
+                <i class="fa-solid fa-folder-open"></i> Acervo Digital
+            </a>
+            <a class="nav-link" id="nav-minutas" onclick="goToScreen('screen-minutas', this)">
+                <i class="fa-solid fa-file-pen"></i> Minutas
+            </a>
+            <a class="nav-link" onclick="goToScreen('screen-jurisp', this)">
+                <i class="fa-solid fa-gavel"></i> Jurisprudência
+            </a>
+            <a class="nav-link" onclick="goToScreen('screen-apoio', this)">
+                <i class="fa-solid fa-book-bookmark"></i> Apoio & Admin
+            </a>
+        </nav>
+    </div>
+
+    <div class="main-wrapper">
+
+        <header class="topbar">
+            <div style="font-weight: 500; font-size: 1.1rem;">Assistente de Gestão e Inteligência</div>
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <i class="fa-regular fa-bell"></i>
+                <div style="text-align: right; font-size: 0.9rem; line-height: 1.2;">
+                    <div>Dr. Magistrado</div>
+                    <small style="opacity: 0.8;">2ª Vara Cível</small>
+                </div>
+                <div style="width: 32px; height: 32px; background: white; color: var(--tjmg-red); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">M</div>
+            </div>
+        </header>
+
+        <div id="screen-visao" class="screen-section active">
+            <div class="dashboard-container">
+                <h2 style="margin-bottom: 20px;">Painel de Gestão Estratégica</h2>
+                
+                <div class="grid-layout">
+                    <div class="card widget-triagem">
+                        <h4 style="margin-bottom: 15px;">1. Triagem Inteligente</h4>
+                        <div style="display: flex; align-items: center; justify-content: space-around;">
+                            <div class="donut-chart"><div class="donut-inner">60%</div></div>
+                            <ul style="list-style: none; font-size: 0.9rem;">
+                                <li style="color: var(--danger)">● 15% Devolver (Secr.)</li>
+                                <li style="color: var(--warning)">● 25% Diligências</li>
+                                <li style="color: var(--success)">● 60% Aptos</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="card widget-berna">
+                        <h4 style="margin-bottom: 15px;">2. Radar Berna (Clusterização)</h4>
+                        <div class="cluster-cards">
+                            <div class="cluster-card">
+                                <span class="badge bg-stj" style="margin-bottom: 5px; display:inline-block;">CONSUMIDOR</span>
+                                <h5>Telefonia - Sinal</h5>
+                                <p style="font-size: 0.8rem; color: #777;">45 Processos • 98% Similar</p>
+                                <button class="btn-primary" style="width: 100%; margin-top: 10px;" onclick="goToScreen('screen-minutas', document.getElementById('nav-minutas'))">Minutar Bloco</button>
+                            </div>
+                            <div class="cluster-card" style="border-color: var(--warning);">
+                                <span class="badge bg-alert" style="margin-bottom: 5px; display:inline-block;">ALERTA STJ</span>
+                                <h5>Bancário - Tarifas</h5>
+                                <p style="font-size: 0.8rem; color: #777;">12 Processos • Tema 1.050</p>
+                                <button class="btn-primary" style="width: 100%; margin-top: 10px; background: var(--warning); color: #333;">Sobrestar</button>
+                            </div>
+                            <div class="cluster-card">
+                                <span class="badge bg-success" style="margin-bottom: 5px; display:inline-block;">SAÚDE</span>
+                                <h5>Medicamento</h5>
+                                <p style="font-size: 0.8rem; color: #777;">08 Processos • Urgente</p>
+                                <button class="btn-primary" style="width: 100%; margin-top: 10px;">Analisar</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card widget-jurisp">
+                        <h4 style="margin-bottom: 15px;">3. Alertas de Precedentes</h4>
+                        <div style="border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">
+                            <div style="color: var(--danger); font-weight: bold;"><i class="fa-solid fa-triangle-exclamation"></i> Tema 1.050 STJ (Superado)</div>
+                            <small style="color: #777;">Impacta 15 processos conclusos.</small>
+                        </div>
+                        <div>
+                            <div style="color: var(--tjmg-orange); font-weight: bold;"><i class="fa-solid fa-scale-unbalanced"></i> IRDR 1.234 TJMG</div>
+                            <small style="color: #777;">Ordem de suspensão detectada.</small>
+                        </div>
+                    </div>
+
+                    <div class="card widget-metas">
+                        <h4 style="margin-bottom: 15px;">4. Metas do Dia</h4>
+                        <div style="margin-bottom: 15px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                                <span>Sentenças Assinadas</span> <strong>5/20</strong>
+                            </div>
+                            <div style="background: #eee; height: 8px; border-radius: 4px; margin-top: 5px;">
+                                <div style="background: var(--success); width: 25%; height: 100%; border-radius: 4px;"></div>
+                            </div>
+                        </div>
+                        <button class="btn-primary" style="width: 100%;" onclick="goToScreen('screen-minutas', document.getElementById('nav-minutas'))"><i class="fa-solid fa-pen-nib"></i> Revisar 8 Minutas Prontas</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="screen-acervo" class="screen-section">
+            <div class="acervo-header">
+                <h2 style="margin-bottom: 15px;">Acervo Digital Inteligente</h2>
+                <input type="text" class="search-full" placeholder="🔍 Busque por termos nos documentos (Ex: 'Dano moral fila de banco' ou 'Depoimento arma de fogo')">
+                <div style="margin-top: 15px; display: flex; gap: 10px;">
+                    <span class="badge" style="background: #eee; color: #333; cursor: pointer;">Filtro: Aptos (85)</span>
+                    <span class="badge" style="background: #eee; color: #333; cursor: pointer;">Filtro: Devolver (15)</span>
+                    <span class="badge" style="background: #eee; color: #333; cursor: pointer;">Tema: Telefonia</span>
+                </div>
+            </div>
+            <div style="padding: 20px;">
+                <table class="acervo-table">
+                    <thead>
+                        <tr>
+                            <th>Status (IA)</th>
+                            <th>Processo / Parte</th>
+                            <th>Cluster / Tema</th>
+                            <th>Alertas</th>
+                            <th>Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="badge bg-success">🟢 APTO</span></td>
+                            <td><strong>5001234-88.2025...</strong><br><small>Autor: João Silva</small></td>
+                            <td>Consumidor (Telefonia)<br><small>Similaridade: 98%</small></td>
+                            <td>-</td>
+                            <td><button class="btn-primary" onclick="goToScreen('screen-minutas', document.getElementById('nav-minutas'))">Minutar</button></td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge bg-alert">🔴 DEVOLVER</span></td>
+                            <td><strong>0024987-12.2024...</strong><br><small>Autor: Maria Souza</small></td>
+                            <td>Bancário<br><small>Erro: Sem certidão</small></td>
+                            <td>-</td>
+                            <td><button style="border:1px solid #ccc; background:white; padding:5px;">Baixar</button></td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge" style="background: #F1C40F; color: #333;">🟡 DILIGÊN.</span></td>
+                            <td><strong>1122334-55.2023...</strong><br><small>Autor: Condomínio X</small></td>
+                            <td>Cível (Cobrança)<br><small>Aguard. Perícia</small></td>
+                            <td><i class="fa-solid fa-video"></i> Vídeo</td>
+                            <td><button style="border:1px solid #ccc; background:white; padding:5px;">Ver</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="screen-minutas" class="screen-section">
+            <div style="background: white; padding: 15px 20px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="font-size: 1rem;">
+                    <span style="background: #E8F0FE; color: #1967D2; padding: 3px 8px; border-radius: 4px;">CLUSTER</span> 
+                    Telefonia - Dano Moral (45 Processos Semelhantes)
+                </h3>
+                <div style="font-size: 0.9rem;">Editando <strong>3</strong> de 45</div>
+            </div>
+            
+            <div class="minutas-layout">
+                <div class="process-list-col">
+                    <div style="padding: 10px; background: #f1f1f1; font-size: 0.8rem; font-weight: bold; border-bottom: 1px solid #ddd; color: #555;">
+                        FILA DE PROCESSOS SEMELHANTES
+                    </div>
+                    <div class="process-item"><i class="fa-solid fa-check" style="color: green;"></i> Proc. 5001001...</div>
+                    <div class="process-item"><i class="fa-solid fa-check" style="color: green;"></i> Proc. 5001002...</div>
+                    <div class="process-item active">
+                        <strong style="color:var(--tjmg-red); text-decoration: underline; cursor: pointer;" onclick="event.stopPropagation(); goToScreen('screen-processo', null)">Proc. 5001234...</strong><br>
+                        <small style="color: var(--tjmg-red);">Em edição atual</small>
+                    </div>
+                    <div class="process-item">Proc. 5001235...</div>
+                    <div class="process-item">Proc. 5001236...</div>
+                    <div class="process-item">Proc. 5001237...</div>
+                </div>
+
+                <div class="editor-col">
+                    <div class="document-paper" contenteditable="true">
+                        <p align="center"><strong>SENTENÇA</strong></p>
+                        <br>
+                        <p>Trata-se de ação proposta por <span class="var-field">ANA PEREIRA</span> em face de <span class="var-field">TELEFONIA S.A.</span>.</p>
+                        <p>A parte autora alega interrupção indevida da linha <span class="var-field">(31) 99988-7766</span> em <span class="var-field">15/02/2025</span>.</p>
+                        <br>
+                        <p><strong>FUNDAMENTAÇÃO</strong></p>
+                        <p>Aplica-se o CDC. A ré não comprovou a regularidade. Dano moral configurado <i>in re ipsa</i>.</p>
+                        <p>Fixo a indenização em <span class="var-field">R$ 5.000,00</span>.</p>
+                        <br>
+                        <p><strong>DISPOSITIVO</strong></p>
+                        <p>JULGO PROCEDENTE o pedido.</p>
+                        <p>Belo Horizonte, <span class="var-field">20/12/2025</span>.</p>
+                    </div>
+                </div>
+
+                <div class="context-col">
+                    <div class="ai-tools-bar">
+                        <button class="tool-btn"><i class="fa-solid fa-robot"></i> Agentes</button>
+                        <button class="tool-btn"><i class="fa-solid fa-book"></i> Prompts</button>
+                    </div>
+
+                    <div class="suggestion-box">
+                        <div class="sugg-item">
+                            <span class="label">Modelo Sugerido:</span>
+                            <span class="value">Sentença Padrão - Dano Moral</span>
+                            <i class="fa-solid fa-rotate" style="cursor:pointer; color:var(--tjmg-red);" title="Trocar Modelo"></i>
+                        </div>
+                        <div class="sugg-item">
+                            <span class="label">Prompt Usado:</span>
+                            <span class="value">Análise Fática + Dispositivo</span>
+                            <i class="fa-solid fa-rotate" style="cursor:pointer; color:var(--tjmg-red);" title="Trocar Prompt"></i>
+                        </div>
+                    </div>
+
+                    <div class="chat-container">
+                        <div class="chat-header">
+                            <span><i class="fa-solid fa-wand-magic-sparkles"></i> Chat IA</span>
+                            <select class="llm-select">
+                                <option>Gemini 2.5 Pro</option>
+                                <option>GPT-4o</option>
+                                <option>Claude 3.5 Sonnet</option>
+                            </select>
+                        </div>
+
+                        <div class="chat-messages">
+                            <div class="msg ai">
+                                <strong>Assistente:</strong> Identifiquei que a Contestação não apresenta B.O. Deseja adicionar um parágrafo sobre falha probatória?
+                            </div>
+                            <div class="msg user">Sim, adicione citando Turma Recursal.</div>
+                            <div class="msg ai">Feito.</div>
+                        </div>
+
+                        <div class="chat-input-area">
+                            <div class="input-group">
+                                <input type="text" placeholder="Digite sua instrução...">
+                                <button class="btn-send"><i class="fa-regular fa-paper-plane"></i></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="padding: 15px; border-top: 1px solid #ddd; background: #fff;">
+                        <button class="btn-primary" style="width: 100%;">Aprovar e Próximo ></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="screen-processo" class="screen-section">
+            <div style="background: white; padding: 15px 30px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <button class="btn-outline" style="font-size: 0.8rem; margin-bottom: 5px;" onclick="goToScreen('screen-minutas', document.getElementById('nav-minutas'))"><i class="fa-solid fa-arrow-left"></i> Voltar para Minutas</button>
+                    <h2 style="font-size: 1.3rem;">Proc. 5001234-88.2025.8.13.0024</h2>
+                    <div style="font-size: 0.9rem; color: #7F8C8D;">Indenização por Danos Morais • Autor: Ana Pereira • Réu: Telefonia S.A.</div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-weight: bold; color: var(--tjmg-red);">Concluso para Sentença</div>
+                    <small>Há 15 dias no Gabinete</small>
+                </div>
+            </div>
+
+            <div class="process-detail-grid">
+                
+                <aside class="docs-sidebar">
+                    <h3 style="margin-bottom: 20px;">Autos do Processo</h3>
+                    
+                    <div class="doc-category">
+                        <div class="doc-cat-title">Manifestações das Partes</div>
+                        <div class="doc-item"><i class="fa-regular fa-file-pdf"></i> Petição Inicial (ID 123)</div>
+                        <div class="doc-item"><i class="fa-regular fa-file-pdf"></i> Contestação (ID 456)</div>
+                        <div class="doc-item"><i class="fa-regular fa-file-pdf"></i> Impugnação (ID 789)</div>
+                    </div>
+
+                    <div class="doc-category">
+                        <div class="doc-cat-title">Provas Produzidas</div>
+                        <div class="doc-item"><i class="fa-solid fa-video"></i> Audiência Instrução (Link)</div>
+                        <div class="doc-item"><i class="fa-solid fa-file-contract"></i> Fatura Telefônica</div>
+                    </div>
+
+                    <div class="doc-category">
+                        <div class="doc-cat-title">Secretaria</div>
+                        <div class="doc-item"><i class="fa-solid fa-stamp"></i> Certidão de Triagem</div>
+                        <div class="doc-item"><i class="fa-solid fa-calendar-check"></i> Decurso de Prazo</div>
+                    </div>
+                </aside>
+
+                <main class="analysis-main">
+                    
+                    <div class="recommendation-box">
+                        <div class="rec-header">
+                            <span class="rec-title"><i class="fa-solid fa-robot"></i> Recomendação da IA</span>
+                            <span class="badge bg-success">Alta Confiança</span>
+                        </div>
+                        <p style="margin-bottom: 15px;">Considerando a revelia parcial da ré (falta de impugnação específica sobre o protocolo) e a jurisprudência dominante:</p>
+                        <div style="font-size: 1.1rem; font-weight: bold; margin-bottom: 15px; color: var(--text-dark);">
+                            SUGESTÃO: JULGAR PROCEDENTE O PEDIDO
+                        </div>
+                        <div style="background: #fafafa; border: 1px solid #eee; padding: 15px; border-radius: 4px; font-family: 'Merriweather', serif; font-size: 0.9rem; color: #555;">
+                            <strong>Proposta de Dispositivo:</strong><br>
+                            "Ante o exposto, JULGO PROCEDENTE o pedido para condenar a ré ao pagamento de R$ 5.000,00 a título de danos morais..."
+                        </div>
+                        <button class="btn-primary" style="margin-top: 15px; width: 100%;">Aceitar e Ir para Editor</button>
+                    </div>
+
+                    <div class="performance-card">
+                        <h4 style="margin-bottom: 20px;">Razoável Duração do Processo</h4>
+                        
+                        <div class="perf-row">
+                            <div class="perf-label"><span>Este Processo (180 dias)</span> <span>Rápido</span></div>
+                            <div class="perf-bar-bg"><div class="perf-bar-fill" style="width: 40%; background: var(--success);"></div></div>
+                        </div>
+
+                        <div class="perf-row">
+                            <div class="perf-label"><span>Média da Unidade - Casos Semelhantes (210 dias)</span></div>
+                            <div class="perf-bar-bg"><div class="perf-bar-fill" style="width: 55%; background: var(--info);"></div></div>
+                        </div>
+
+                        <div class="perf-row">
+                            <div class="perf-label"><span>Média Cluster TJMG (Varas Cíveis Capital) (300 dias)</span></div>
+                            <div class="perf-bar-bg"><div class="perf-bar-fill" style="width: 80%; background: #ccc;"></div></div>
+                        </div>
+                    </div>
+
+                </main>
+
+                <aside class="context-sidebar">
+                    <h3 style="font-size: 1rem; margin-bottom: 15px;">Contexto do Cluster</h3>
+                    <p style="font-size: 0.85rem; color: #666; margin-bottom: 20px;">
+                        Este processo pertence ao Cluster <strong>"Telefonia - Sinal"</strong>. Existem outros 44 processos com fatos e teses idênticas.
+                    </p>
+
+                    <h4 style="font-size: 0.9rem; margin-bottom: 10px;">Processos Semelhantes</h4>
+                    
+                    <div class="similar-item">
+                        <strong>Proc. 5001001-22...</strong><br>
+                        Status: <span style="color: var(--success);">Julgado (Procedente)</span>
+                    </div>
+                    <div class="similar-item">
+                        <strong>Proc. 5001002-33...</strong><br>
+                        Status: <span style="color: var(--success);">Julgado (Procedente)</span>
+                    </div>
+                    <div class="similar-item">
+                        <strong>Proc. 5001235-99...</strong><br>
+                        Status: <span style="color: var(--warning);">Pendente</span>
+                    </div>
+
+                    <button class="btn-outline" style="width: 100%; margin-top: 10px;">Ver todos os 45</button>
+                </aside>
+
+            </div>
+        </div>
+
+        <div id="screen-jurisp" class="screen-section">
+            <div style="text-align: center; padding: 40px 20px;">
+                <h1>Jurisprudência Integrada</h1>
+                <div class="search-hero">
+                    <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 20px; top: 18px; color: #999;"></i>
+                    <input type="text" class="search-input-hero" placeholder="Pergunte à IA: Qual o entendimento atual sobre dano moral em espera de banco?">
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <span class="badge" style="background: #333; cursor: pointer;">Todos</span>
+                    <span class="badge" style="background: #eee; color: #333; cursor: pointer;">Vinculantes</span>
+                    <span class="badge" style="background: #eee; color: #333; cursor: pointer;">Doutrina (RAG)</span>
+                    <span class="badge" style="background: #eee; color: #333; cursor: pointer;">Meus Modelos</span>
+                </div>
+            </div>
+
+            <div class="jurisp-grid">
+                <div>
+                    <div style="background: #FFF3CD; border: 1px solid #FFEeba; color: #856404; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        <strong><i class="fa-solid fa-bell"></i> Atualização Crítica:</strong> O STJ cancelou a Súmula X referente a juros.
+                    </div>
+
+                    <div class="result-card border-stj">
+                        <div><span class="badge bg-stj">STJ • REPETITIVO</span> <span style="font-size: 0.8rem; color: #777;">15/10/2025</span></div>
+                        <h3 style="margin: 10px 0;">Tema 1.050 - Inversão do ônus em telefonia</h3>
+                        <p style="color: #555; font-size: 0.95rem;">"A inversão do ônus da prova nas ações que versam sobre falha na prestação..."</p>
+                        <div style="margin-top: 10px; font-size: 0.9rem; color: var(--tjmg-red); cursor: pointer;">
+                            <i class="fa-solid fa-copy"></i> Copiar Ementa
+                        </div>
+                    </div>
+
+                    <div class="result-card border-doc">
+                        <div><span class="badge bg-success">DOUTRINA • BIBLIOTECA</span></div>
+                        <h3 style="margin: 10px 0;">Dano Moral In Re Ipsa</h3>
+                        <p style="color: #555; font-size: 0.95rem; background: #fafafa; padding: 10px; font-style: italic;">"...conforme ensina Tartuce (p. 450), dispensa comprovação de dor..."</p>
+                    </div>
+                </div>
+
+                <div>
+                    <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                        <h4><i class="fa-solid fa-brain"></i> Meus Modelos</h4>
+                        <p style="font-size: 0.8rem; color: #777; margin-bottom: 15px;">IA comparando com jurisprudência atual.</p>
+                        
+                        <div style="padding: 10px; border: 1px solid #F1C40F; background: #FFFCF5; border-radius: 4px; margin-bottom: 10px;">
+                            <div style="font-weight: bold; font-size: 0.9rem;">Sentença Banco</div>
+                            <div style="color: var(--danger); font-size: 0.8rem;"><i class="fa-solid fa-rotate"></i> Atualizar (STJ)</div>
+                        </div>
+
+                        <div style="padding: 10px; border: 1px solid #eee; border-radius: 4px;">
+                            <div style="font-weight: bold; font-size: 0.9rem; color: var(--success);">Sentença Tráfico</div>
+                            <div style="color: var(--success); font-size: 0.8rem;"><i class="fa-solid fa-check"></i> Alinhado STF</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="screen-apoio" class="screen-section">
+            <div style="padding: 30px;">
+                <h2 style="margin-bottom: 20px;">Módulos de Apoio</h2>
+                <div class="module-tabs">
+                    <button class="tab-btn active" onclick="openSubTab('tab-doutrina')">Doutrina</button>
+                    <button class="tab-btn" onclick="openSubTab('tab-normas')">Atos Normativos</button>
+                    <button class="tab-btn" onclick="openSubTab('tab-sei')">SEI (Admin)</button>
+                </div>
+
+                <div id="tab-doutrina" class="view-container active">
+                    <h3>Biblioteca Digital</h3>
+                    <p>Busque nos livros licenciados.</p>
+                    <div class="result-card border-doc" style="margin-top: 20px;">
+                        <strong>Manual de Direito Civil (2025)</strong>
+                        <p style="font-style: italic;">"...o Pix possui natureza jurídica de arranjo de pagamento..."</p>
+                    </div>
+                </div>
+
+                <div id="tab-normas" class="view-container">
+                    <h3>Atos Normativos</h3>
+                    <table class="acervo-table">
+                        <tr><td><span class="badge bg-success">VIGENTE</span></td><td>Resolução CNJ 481</td></tr>
+                        <tr><td><span class="badge bg-alert">REVOGADO</span></td><td>Portaria Conjunta 1.000</td></tr>
+                    </table>
+                </div>
+
+                <div id="tab-sei" class="view-container">
+                    <div style="background: var(--sei-blue); color: white; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                        <strong>Gestão SEI</strong> - 5 processos aguardando assinatura.
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px;">
+                        <div class="card" style="border-top: 4px solid var(--sei-blue);">
+                            <strong>Férias - Servidora Mariana</strong>
+                            <p style="font-size: 0.9rem; color: #555; margin: 10px 0;">Solicita 10 dias em Fev/25.</p>
+                            <button class="btn-primary" style="width: 100%; background: var(--sei-blue);">Assinar</button>
+                        </div>
+                        <div class="card" style="border-top: 4px solid var(--sei-blue);">
+                            <strong>Material de Escritório</strong>
+                            <p style="font-size: 0.9rem; color: #555; margin: 10px 0;">Compra de Papel A4.</p>
+                            <button class="btn-primary" style="width: 100%; background: var(--sei-blue);">Assinar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Função principal de navegação
+        function goToScreen(screenId, navElement) {
+            // 1. Atualizar links da sidebar
+            document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+            
+            // Se o elemento de navegação foi passado (clique no menu), ativa ele
+            if (navElement) {
+                navElement.classList.add('active');
+            } else {
+                // Se não foi passado (clique interno), busca pelo ID na sidebar para ativar
+                if(screenId === 'screen-minutas') document.getElementById('nav-minutas').classList.add('active');
+                else if(screenId === 'screen-acervo') document.getElementById('nav-acervo').classList.add('active');
+            }
+
+            // 2. Trocar a tela
+            document.querySelectorAll('.screen-section').forEach(screen => screen.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        // Função para sub-abas (Tela de Apoio)
+        function openSubTab(tabId) {
+            document.querySelectorAll('#screen-apoio .view-container').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>

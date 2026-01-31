@@ -5,23 +5,63 @@ from typing import List, Optional, Any
 import pypdf
 import docx
 from langchain_community.document_loaders import PyPDFLoader
-# PaddleOCR Imports via ocr_engine
+
+# --- Imports Condicionais (podem falhar no Railway sem certas dependências) ---
+
+# OCR Engine
+HAS_OCR = False
 try:
     import ocr_engine
     HAS_OCR = True
-    # Import Hybrid Chunker
+except ImportError:
+    print("⚠️ ocr_engine não disponível. OCR desativado.")
+except Exception as e:
+    print(f"⚠️ Erro ao importar ocr_engine: {e}")
+
+# Hybrid Chunker
+HybridSemanticChunker = None
+try:
     from chunking import HybridSemanticChunker
-    # Import RAPTOR
+except ImportError:
+    print("⚠️ HybridSemanticChunker não disponível.")
+except Exception as e:
+    print(f"⚠️ Erro ao importar HybridSemanticChunker: {e}")
+
+# RAPTOR Engine
+RaptorEngine = None
+try:
     from raptor_engine import RaptorEngine
-    # Import Planning & Style
+except ImportError:
+    print("⚠️ RaptorEngine não disponível.")
+except Exception as e:
+    print(f"⚠️ Erro ao importar RaptorEngine: {e}")
+
+# Planning Engine
+PlanningEngine = None
+try:
     from planning_engine import PlanningEngine
+except ImportError:
+    print("⚠️ PlanningEngine não disponível.")
+except Exception as e:
+    print(f"⚠️ Erro ao importar PlanningEngine: {e}")
+
+# Style Engine
+StyleEngine = None
+try:
     from style_engine import StyleEngine
-    # Import Workflow
+except ImportError:
+    print("⚠️ StyleEngine não disponível.")
+except Exception as e:
+    print(f"⚠️ Erro ao importar StyleEngine: {e}")
+
+# Agent Workflow
+create_agent_workflow = None
+try:
     from agent_workflow import create_agent_workflow
 except ImportError:
-    HAS_OCR = False
-except Exception:
-    HAS_OCR = False
+    print("⚠️ create_agent_workflow não disponível.")
+except Exception as e:
+    print(f"⚠️ Erro ao importar create_agent_workflow: {e}")
 
 
 from langchain_community.vectorstores import Chroma
@@ -1160,27 +1200,32 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
         agent_key = keys.get('openai') if keys and keys.get('openai') else (keys.get('google') if keys else api_key)
         agent_provider = "openai" if (keys and keys.get('openai')) else "google"
 
-        try:
-             print("🚀 Iniciando Workflow Agêntico (Planner -> Writer -> Critic)...")
-             app = create_agent_workflow()
-             
-             inputs = {
-                 "facts": clean_content,
-                 "api_key": agent_key,
-                 "provider": agent_provider,
-                 "revision_count": 0
-             }
-             
-             # Executa o Grafo
-             result_state = app.invoke(inputs)
-             final_draft = result_state.get("draft", "Erro na geração do draft.")
-             
-             print("✅ Workflow Completo com Sucesso!")
-             
-        except Exception as e_workflow:
-             print(f"⚠️ Erro no Workflow Agêntico: {e_workflow}. Caindo para pipeline legado.")
-             # Fallback logic could be here if needed, but for now allow flow to continue to standard orchestration if draft is empty
-             final_draft = None
+        # Verifica se o workflow está disponível
+        if create_agent_workflow is not None:
+            try:
+                 print("🚀 Iniciando Workflow Agêntico (Planner -> Writer -> Critic)...")
+                 app = create_agent_workflow()
+                 
+                 inputs = {
+                     "facts": clean_content,
+                     "api_key": agent_key,
+                     "provider": agent_provider,
+                     "revision_count": 0
+                 }
+                 
+                 # Executa o Grafo
+                 result_state = app.invoke(inputs)
+                 final_draft = result_state.get("draft", "Erro na geração do draft.")
+                 
+                 print("✅ Workflow Completo com Sucesso!")
+                 
+            except Exception as e_workflow:
+                 print(f"⚠️ Erro no Workflow Agêntico: {e_workflow}. Caindo para pipeline legado.")
+                 # Fallback logic could be here if needed, but for now allow flow to continue to standard orchestration if draft is empty
+                 final_draft = None
+        else:
+            print("⚠️ Workflow não disponível. Usando pipeline legado.")
+            final_draft = None
 
         if final_draft:
             # Se o Workflow funcionou, retornamos direto (bypass legacy orchestration)
