@@ -967,28 +967,46 @@ def map_process_individual(text_content, filename, api_key):
     ETAPA MAP: Analisa um único processo e retorna JSON estruturado.
     Usa Gemini Flash para rapidez.
     """
-    try:
-        # Trocando para Gemini 1.5 Flash (Versão Estável e Amplamente Disponível)
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key, temperature=0.1)
-        messages = [
-            SystemMessage(content=PROMPT_XRAY_MAP),
-            HumanMessage(content=f"Arquivo: {filename}\n\n{text_content[:20000]}")
-        ]
-        response = llm.invoke(messages).content
-        
-        # Limpa JSON
-        cleaned = response.replace("```json", "").replace("```", "").strip()
-        data = json.loads(cleaned)
-        data["filename"] = filename # Garante que o nome do arquivo persista
-        return data
-    except Exception as e:
-        print(f"Erro no Map de {filename}: {e}")
-        return {
-            "filename": filename, 
-            "error": "Falha na leitura", 
-            "sintese_fatos": "Erro de leitura", 
-            "tags_juridicas": ["ERRO"]
-        }
+    # Lista de modelos para tentar (Fallback Strategy)
+    # Motivo: Erros 404 (Not Found) variam por região/conta e versão do SDK
+    candidate_models = ["gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-1.5-flash-latest", "gemini-pro"]
+    
+    last_error = None
+    
+    for model_name in candidate_models:
+        try:
+            # print(f"Tentando modelo: {model_name}...") # Debug
+            llm = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=0.1)
+            messages = [
+                SystemMessage(content=PROMPT_XRAY_MAP),
+                HumanMessage(content=f"Arquivo: {filename}\n\n{text_content[:20000]}")
+            ]
+            response = llm.invoke(messages).content
+            
+            # Limpa JSON
+            cleaned = response.replace("```json", "").replace("```", "").strip()
+            data = json.loads(cleaned)
+            data["filename"] = filename # Garante que o nome do arquivo persista
+            return data
+            
+        except Exception as e:
+            last_error = e
+            # Se for erro de API (404/Not Found), tenta o próximo
+            if "NOT_FOUND" in str(e) or "404" in str(e):
+                continue
+            else:
+                # Se for outro erro (ex: Overload), falha logo
+                print(f"Erro no Map de {filename} ({model_name}): {e}")
+                break
+    
+    # Se saiu do loop, falhou em todos
+    print(f"Falha total no Map de {filename}. Último erro: {last_error}")
+    return {
+        "filename": filename, 
+        "error": f"Falha na leitura (Modelos Esgotados). Err: {str(last_error)}", 
+        "sintese_fatos": "Erro de leitura", 
+        "tags_juridicas": ["ERRO"]
+    }
 
 def generate_batch_xray(files, api_key, template_files=None):
     """
@@ -1066,9 +1084,6 @@ def generate_batch_xray(files, api_key, template_files=None):
             if model_texts:
                  models_context = "\n\n## MODELOS DE REFERÊNCIA DISPONÍVEIS:\n" + "\n".join(model_texts)
         
-        # Trocando para Gemini 1.5 Flash (Versão Estável e Amplamente Disponível)
-        llm_flash = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key, temperature=0.1)
-        
         human_msg = f"""
         Aqui estão as FICHAS TÉCNICAS dos processos processados individualmente.
         Agrupe-os e gere o relatório de Raio-X.
@@ -1084,8 +1099,37 @@ def generate_batch_xray(files, api_key, template_files=None):
             HumanMessage(content=human_msg)
         ]
         
-        response = llm_flash.invoke(messages)
-        content = response.content
+        # Lista de modelos para tentar no Reduce
+        candidate_models = ["gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-1.5-flash-latest", "gemini-pro"]
+        
+        content = None
+        last_error = None
+
+        for model_name in candidate_models:
+            try:
+                # print(f"Tentando Reduce com: {model_name}...")
+                llm_flash = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=0.1)
+                response = llm_flash.invoke(messages)
+                content = response.content
+                
+                # Se chegou aqui, funcionou
+                break
+                
+            except Exception as e:
+                last_error = e
+                if "NOT_FOUND" in str(e) or "404" in str(e):
+                    continue
+                else:
+                    print(f"Erro no Reduce ({model_name}): {e}")
+                    # Se não for 404, pode ser erro de contexto (token limit) ou server overload.
+                    # Vamos tentar o proximo mesmo assim? Para 1.5 flash o contexto é grande. 
+                    # Se for token limit, trocar de modelo não ajuda se forem todos flash.
+                    # Mas se for server overload, ajuda.
+                    continue
+
+        if content is None:
+             return {"error": f"Falha no Reduce (Todos modelos falharam). Err: {str(last_error)}", "raw_content": ""}, text_cache
+
         
         # Garante que content é string (algumas versões retornam lista)
         if isinstance(content, list):
