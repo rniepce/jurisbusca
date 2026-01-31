@@ -81,14 +81,66 @@ html {
 
 body {
     font-family: 'Roboto', sans-serif;
-    background-color: var(--bg-body);
-    color: var(--text-primary);
+    background-color: #f8fafc !important;
+    /* Force Light BG */
+    color: #1e293b !important;
+    /* Force Dark Text */
     display: flex;
     height: 100vh;
     overflow: hidden;
     line-height: 1.5;
-    /* Força cores explícitas para evitar herança de tema escuro */
-    -webkit-text-fill-color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* RESETS & OVERRIDES FOR DARK MODE PREVENTION */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+span,
+div,
+li,
+td,
+th {
+    color: inherit;
+    /* Infer inheritance from body/parent, do not use system default */
+}
+
+input,
+textarea,
+select,
+button {
+    color: #1e293b !important;
+    /* Force dark text in inputs */
+    background-color: #ffffff !important;
+    /* Force white background in inputs */
+}
+
+::placeholder {
+    color: #94a3b8 !important;
+    /* Explicit placeholder color */
+}
+
+/* SCROLLBAR STYLING (Clean Look) */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
 }
 
 /* --- SIDEBAR PRINCIPAL (AGORA ESCURA) --- */
@@ -192,8 +244,9 @@ body {
 
 /* --- TOPBAR --- */
 .topbar {
-    background-color: var(--bg-surface);
-    color: var(--text-primary);
+    background-color: #ffffff !important;
+    /* Force White */
+    color: #1e293b !important;
     padding: 0 var(--spacing-xl);
     height: 64px;
     display: flex;
@@ -312,7 +365,9 @@ body {
 
 /* Cards Genéricos */
 .card {
-    background: var(--bg-surface);
+    background: #ffffff !important;
+    /* Force White */
+    color: #1e293b !important;
     border-radius: 12px;
     padding: var(--spacing-lg);
     box-shadow: var(--shadow-sm);
@@ -366,7 +421,8 @@ input[type="text"],
     border-radius: 8px;
     font-size: 1rem;
     transition: var(--transition-fast);
-    background: var(--bg-body);
+    background: #ffffff;
+    color: #1e293b;
     /* Fundo sutil */
 }
 
@@ -517,8 +573,8 @@ input:focus,
 
 .process-list-col {
     width: 280px;
-    background: var(--bg-surface);
-    border-right: 1px solid var(--border-color);
+    background: #ffffff !important;
+    border-right: 1px solid #e2e8f0;
     overflow-y: auto;
 }
 
@@ -533,8 +589,8 @@ input:focus,
 
 .context-col {
     width: 380px;
-    background: var(--bg-surface);
-    border-left: 1px solid var(--border-color);
+    background: #ffffff !important;
+    border-left: 1px solid #e2e8f0;
     display: flex;
     flex-direction: column;
 }
@@ -562,13 +618,13 @@ input:focus,
 .document-paper {
     width: 100%;
     max-width: 800px;
-    background: white;
+    background: #ffffff !important;
     min-height: 900px;
     padding: 60px;
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     font-family: 'Merriweather', serif;
     line-height: 1.8;
-    color: #374151;
+    color: #000000 !important;
 }
 
 .var-field {
@@ -617,8 +673,8 @@ input:focus,
     top: 100%;
     left: 0;
     width: 100%;
-    background: white;
-    border: 1px solid var(--border-color);
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0;
     border-radius: 6px;
     box-shadow: var(--shadow-md);
     display: none;
@@ -834,7 +890,8 @@ input:focus,
     right: 0;
     width: 400px;
     height: 100vh;
-    background: white;
+    background: #ffffff !important;
+    color: #1e293b !important;
     box-shadow: -5px 0 25px rgba(0, 0, 0, 0.15);
     z-index: 3000;
     transform: translateX(100%);
