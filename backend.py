@@ -1,5 +1,6 @@
 import os
 import re
+import traceback
 import tempfile
 from typing import List, Optional, Any
 import pypdf
