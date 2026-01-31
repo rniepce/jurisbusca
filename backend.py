@@ -2,6 +2,8 @@ import os
 import re
 import traceback
 import tempfile
+import hashlib
+import time
 from typing import List, Optional, Any
 import pypdf
 import docx
@@ -1197,6 +1199,7 @@ import concurrent.futures
 import time
 import random
 import tempfile
+import hashlib
 
 
 

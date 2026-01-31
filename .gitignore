@@ -16,4 +16,5 @@ chroma_db/
 venv/
 adapters/
 data/
-*.txt
+!data/knowledge_base/
+!data/knowledge_base/*.txt

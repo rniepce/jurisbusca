@@ -419,183 +419,159 @@ with st.sidebar:
     if "uploader_key" not in st.session_state:
         st.session_state.uploader_key = 0
 
-    # API KEY logo no início para liberar funções
+    # API KEY carregada automaticamente do .env
     if "google_api_key" not in st.session_state:
-        st.session_state.google_api_key = ""
+        st.session_state.google_api_key = os.getenv("GOOGLE_API_KEY", "")
 
-    # Se a chave NÃO estiver definida, mostra input + botão
+    # Verifica se a chave está configurada
     if not st.session_state.google_api_key:
-        with st.container(border=True):
-            st.markdown("### 🔑 Acesso")
-            with st.form("login_form"):
-                key_input = st.text_input("Cole sua Google API Key:", type="password", key="input_key_temp")
-                submitted = st.form_submit_button("🔓 Validar Acesso", type="primary", use_container_width=True)
-            
-            if submitted:
-                if key_input.startswith("AIza"):
-                    st.session_state.google_api_key = key_input
-                    # Tenta carregar RAG persistente ao logar
-                    retriever = load_persistent_rag(key_input)
-                    if retriever:
-                        st.session_state.retriever = retriever
-                        st.toast("Banco de Modelos (RAG) Carregado!", icon="📚")
-                    st.toast("Chave Validada! Acesso Liberado.", icon="🎉")
-                    st.rerun()
-                else:
-                    st.error("Chave inválida. Deve começar com 'AIza'.")
-        
-    else:
-        # Tenta carregar RAG se ainda não tiver (reload de página)
-        if st.session_state.get("retriever") is None and st.session_state.google_api_key:
-             retriever = load_persistent_rag(st.session_state.google_api_key)
-             if retriever:
-                 st.session_state.retriever = retriever
-        # Se JÁ tem chave, mostra status discreto com opção de sair
-        cols = st.columns([1.8, 1])
-        cols[0].success("🔑 Google Conectado", icon="✅")
-        if cols[1].button("Sair", type="secondary", use_container_width=True, help="Trocar chave de acesso"):
-            st.session_state.google_api_key = ""
-            st.rerun()
-            
-        st.markdown("---")
-        
-        # SELETOR DE MODO (V1 vs V2 vs V3)
-        mode_option = st.radio(
-            "Modo de Operação:",
-            ["V1: Standard (Multi-Model)", "V2: Linha de Montagem (Ensemble)", "V3: Agente Autônomo (SOTA)"],
-            index=0,
-            help="V1: Rápido (1 LLM).\nV2: Potente (Gemini -> DeepSeek -> Claude).\nV3: Autônomo (Ferramentas + Python)."
-        )
-        
-        if "V1" in mode_option:
-            st.session_state.app_mode = "v1"
-        elif "V2" in mode_option:
-            st.session_state.app_mode = "v2"
-        else:
-            st.session_state.app_mode = "v3"
-        
-        # CONFIGURAÇÃO V1 (MULTI-MODELO)
-        if st.session_state.app_mode == "v1":
-             with st.expander("🛠️ Configuração do Motor (V1)", expanded=True):
-                 st.caption("Escolha a inteligência por trás do Analista Principal e do Analista de Estilo.")
-                 
-                 # Definição dos Modelos e Provedores
-                 model_options = {
-                     "Gemini 3.0 Pro": {"provider": "google", "model": "gemini-3-pro-preview"},
-                     "Gemini Flash (Rápido)": {"provider": "google", "model": "gemini-3-flash-preview"},
-                     "DeepSeek R1 (Lógica Extrema)": {"provider": "deepseek", "model": "deepseek-reasoner"}, # Via DeepSeek API (OpenAI compat)
-                     "GPT-5.1 Preview (Simulado/GPT-4o)": {"provider": "openai", "model": "gpt-4o"},
-                     "Claude 4.5 Sonnet": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"}
-                 }
-                 
-                 # Seletores
-                 sel_main = st.selectbox("🧠 Modelo Principal (Mérito/Minuta)", list(model_options.keys()), index=0)
-                 sel_style = st.selectbox("🎨 Modelo de Estilo (Personalidade)", list(model_options.keys()), index=1)
-                 
-                 # Captura as configs escolhidas
-                 main_config = model_options[sel_main]
-                 style_config = model_options[sel_style]
-                 
-                 # INPUT DE CHAVES DINÂMICO
-                 st.divider()
-                 st.caption("Chaves de Acesso necessárias para os modelos escolhidos:")
-                 
-                 needed_providers = set([main_config['provider'], style_config['provider']])
-                 
-                 # Google (Já temos a session_state.google_api_key validada lá em cima)
-                 main_config['key'] = st.session_state.google_api_key
-                 style_config['key'] = st.session_state.google_api_key
-                 
-                 # OpenAI
-                 if 'openai' in needed_providers:
-                     if "openai_key_v1" not in st.session_state: st.session_state.openai_key_v1 = ""
-                     k_val = st.text_input("OpenAI API Key", value=st.session_state.openai_key_v1, type="password", key="v1_oai_key")
-                     st.session_state.openai_key_v1 = k_val
-                     
-                     if main_config['provider'] == 'openai': main_config['key'] = k_val
-                     if style_config['provider'] == 'openai': style_config['key'] = k_val
-                 
-                 # DeepSeek
-                 if 'deepseek' in needed_providers:
-                     if "deepseek_key_v1" not in st.session_state: st.session_state.deepseek_key_v1 = ""
-                     k_ds = st.text_input("DeepSeek API Key", value=st.session_state.deepseek_key_v1, type="password", key="v1_ds_key")
-                     st.session_state.deepseek_key_v1 = k_ds
-                     
-                     if main_config['provider'] == 'deepseek': main_config['key'] = k_ds
-                     if style_config['provider'] == 'deepseek': style_config['key'] = k_ds
-                     
-                 # Anthropic
-                 if 'anthropic' in needed_providers:
-                     if "anthropic_key_v1" not in st.session_state: st.session_state.anthropic_key_v1 = ""
-                     k_ant = st.text_input("Anthropic API Key", value=st.session_state.anthropic_key_v1, type="password", key="v1_ant_key")
-                     st.session_state.anthropic_key_v1 = k_ant
-                     
-                     if main_config['provider'] == 'anthropic': main_config['key'] = k_ant
-                     if style_config['provider'] == 'anthropic': style_config['key'] = k_ant
-                 
-                 # Salva no Session State para uso nos botões de ação
-                 st.session_state.v1_main_config = main_config
-                 st.session_state.v1_style_config = style_config
-
-        # CONFIGURAÇÃO V2/V3 (Chaves Extras)
-        if st.session_state.app_mode in ["v2", "v3"]:
-            with st.expander("⚙️ Configurar Banca Digital (V2/V3)", expanded=True):
-                st.caption("Insira as chaves para ativar a equipe completa.")
-                
-                # OpenAI (Input com validação visual)
-                if "openai_key" not in st.session_state: st.session_state.openai_key = ""
-                o_key = st.text_input("OpenAI API Key (Auditor GPT-4o)", value=st.session_state.openai_key, type="password", key="input_openai")
-                if o_key: 
-                    st.session_state.openai_key = o_key
-                    if o_key.startswith("sk-"): st.success("Válida!", icon="✅")
-                    else: st.warning("Formato estranho...")
-
-                # Anthropic
-                if "anthropic_key" not in st.session_state: st.session_state.anthropic_key = ""
-                a_key = st.text_input("Anthropic API Key (Redator Claude)", value=st.session_state.anthropic_key, type="password", key="input_anthropic")
-                if a_key:
-                    st.session_state.anthropic_key = a_key
-                    if a_key.startswith("sk-ant"): st.success("Válida!", icon="✅")
-                    else: st.warning("Formato estranho...")
-
-                # DeepSeek
-                if "deepseek_key" not in st.session_state: st.session_state.deepseek_key = ""
-                d_key = st.text_input("DeepSeek API Key (Juiz Reasoning)", value=st.session_state.deepseek_key, type="password", key="input_deepseek")
-                if d_key:
-                    st.session_state.deepseek_key = d_key
-                    if d_key.startswith("sk-"): st.success("Válida!", icon="✅")
-                    else: st.warning("Formato estranho...")
-                
-                if not (st.session_state.openai_key and st.session_state.anthropic_key and st.session_state.deepseek_key):
-                    st.warning("⚠️ Preencha todas as chaves para usar o Modo V2/V3 (Ensemble/Agente).")
-
-        # GESTÃO DE PRECEDENTES (VINCULAÇÃO)
-        with st.expander("📚 Base Vicunlante (Knowledge)", expanded=False):
-            st.caption("Arquivos de consulta obrigatória do Prompt V4.5")
-            
-            # Arquivo A: Sobrestamentos
-            f_sobre = st.file_uploader("Arquivo A: Sobrestamentos", type=["txt"], key="upload_sobre")
-            if f_sobre:
-                with open("data/knowledge_base/sobrestamentos.txt", "wb") as f: f.write(f_sobre.getbuffer())
-                # st.toast("Sobrestamentos Atualizados!", icon="💾") # SILENT MODE
-            
-            # Arquivo B: Súmulas
-            f_sumula = st.file_uploader("Arquivo B: Súmulas", type=["txt"], key="upload_sumula")
-            if f_sumula:
-                 with open("data/knowledge_base/sumulas.txt", "wb") as f: f.write(f_sumula.getbuffer())
-                 # st.toast("Súmulas Atualizadas!", icon="💾") # SILENT MODE
-
-            # Arquivo C: Qualificados
-            f_qualif = st.file_uploader("Arquivo C: Qualificados", type=["txt"], key="upload_qualif")
-            if f_qualif:
-                 with open("data/knowledge_base/qualificados.txt", "wb") as f: f.write(f_qualif.getbuffer())
-                 # st.toast("Qualificados Atualizados!", icon="💾") # SILENT MODE
-        
-    google_api_key = st.session_state.google_api_key
-    
-    if not google_api_key:
-        st.info("👈 Por favor, insira sua Google API Key na barra lateral para liberar o sistema.")
+        st.error("⚠️ GOOGLE_API_KEY não encontrada no arquivo .env")
+        st.info("Configure a variável GOOGLE_API_KEY no arquivo .env na raiz do projeto.")
         st.stop()
+    
+    # Tenta carregar RAG se ainda não tiver (reload de página)
+    if st.session_state.get("retriever") is None and st.session_state.google_api_key:
+        retriever = load_persistent_rag(st.session_state.google_api_key)
+        if retriever:
+            st.session_state.retriever = retriever
+    
+    # Status discreto da conexão
+    st.success("🔑 Google API Conectada", icon="✅")
+    st.markdown("---")
+    
+    # SELETOR DE MODO (V1 vs V2 vs V3)
+    mode_option = st.radio(
+        "Modo de Operação:",
+        ["V1: Standard (Multi-Model)", "V2: Linha de Montagem (Ensemble)", "V3: Agente Autônomo (SOTA)"],
+        index=0,
+        help="V1: Rápido (1 LLM).\nV2: Potente (Gemini -> DeepSeek -> Claude).\nV3: Autônomo (Ferramentas + Python)."
+    )
+    
+    if "V1" in mode_option:
+        st.session_state.app_mode = "v1"
+    elif "V2" in mode_option:
+        st.session_state.app_mode = "v2"
+    else:
+        st.session_state.app_mode = "v3"
+    
+    # CONFIGURAÇÃO V1 (MULTI-MODELO)
+    if st.session_state.app_mode == "v1":
+         with st.expander("🛠️ Configuração do Motor (V1)", expanded=True):
+             st.caption("Escolha a inteligência por trás do Analista Principal e do Analista de Estilo.")
+             
+             # Definição dos Modelos e Provedores
+             model_options = {
+                 "Gemini 3.0 Pro": {"provider": "google", "model": "gemini-3-pro-preview"},
+                 "Gemini Flash (Rápido)": {"provider": "google", "model": "gemini-3-flash-preview"},
+                 "DeepSeek R1 (Lógica Extrema)": {"provider": "deepseek", "model": "deepseek-reasoner"}, # Via DeepSeek API (OpenAI compat)
+                 "GPT-5.1 Preview (Simulado/GPT-4o)": {"provider": "openai", "model": "gpt-4o"},
+                 "Claude 4.5 Sonnet": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"}
+             }
+             
+             # Seletores
+             sel_main = st.selectbox("🧠 Modelo Principal (Mérito/Minuta)", list(model_options.keys()), index=0)
+             sel_style = st.selectbox("🎨 Modelo de Estilo (Personalidade)", list(model_options.keys()), index=1)
+             
+             # Captura as configs escolhidas
+             main_config = model_options[sel_main]
+             style_config = model_options[sel_style]
+             
+             # INPUT DE CHAVES DINÂMICO
+             st.divider()
+             st.caption("Chaves de Acesso necessárias para os modelos escolhidos:")
+             
+             needed_providers = set([main_config['provider'], style_config['provider']])
+             
+             # Google (Já temos a session_state.google_api_key validada lá em cima)
+             main_config['key'] = st.session_state.google_api_key
+             style_config['key'] = st.session_state.google_api_key
+             
+             # OpenAI
+             if 'openai' in needed_providers:
+                 if "openai_key_v1" not in st.session_state: st.session_state.openai_key_v1 = ""
+                 k_val = st.text_input("OpenAI API Key", value=st.session_state.openai_key_v1, type="password", key="v1_oai_key")
+                 st.session_state.openai_key_v1 = k_val
+                 
+                 if main_config['provider'] == 'openai': main_config['key'] = k_val
+                 if style_config['provider'] == 'openai': style_config['key'] = k_val
+             
+             # DeepSeek
+             if 'deepseek' in needed_providers:
+                 if "deepseek_key_v1" not in st.session_state: st.session_state.deepseek_key_v1 = ""
+                 k_ds = st.text_input("DeepSeek API Key", value=st.session_state.deepseek_key_v1, type="password", key="v1_ds_key")
+                 st.session_state.deepseek_key_v1 = k_ds
+                 
+                 if main_config['provider'] == 'deepseek': main_config['key'] = k_ds
+                 if style_config['provider'] == 'deepseek': style_config['key'] = k_ds
+                 
+             # Anthropic
+             if 'anthropic' in needed_providers:
+                 if "anthropic_key_v1" not in st.session_state: st.session_state.anthropic_key_v1 = ""
+                 k_ant = st.text_input("Anthropic API Key", value=st.session_state.anthropic_key_v1, type="password", key="v1_ant_key")
+                 st.session_state.anthropic_key_v1 = k_ant
+                 
+                 if main_config['provider'] == 'anthropic': main_config['key'] = k_ant
+                 if style_config['provider'] == 'anthropic': style_config['key'] = k_ant
+             
+             # Salva no Session State para uso nos botões de ação
+             st.session_state.v1_main_config = main_config
+             st.session_state.v1_style_config = style_config
+
+    # CONFIGURAÇÃO V2/V3 (Chaves Extras)
+    if st.session_state.app_mode in ["v2", "v3"]:
+        with st.expander("⚙️ Configurar Banca Digital (V2/V3)", expanded=True):
+            st.caption("Insira as chaves para ativar a equipe completa.")
+            
+            # OpenAI (Input com validação visual)
+            if "openai_key" not in st.session_state: st.session_state.openai_key = ""
+            o_key = st.text_input("OpenAI API Key (Auditor GPT-4o)", value=st.session_state.openai_key, type="password", key="input_openai")
+            if o_key: 
+                st.session_state.openai_key = o_key
+                if o_key.startswith("sk-"): st.success("Válida!", icon="✅")
+                else: st.warning("Formato estranho...")
+
+            # Anthropic
+            if "anthropic_key" not in st.session_state: st.session_state.anthropic_key = ""
+            a_key = st.text_input("Anthropic API Key (Redator Claude)", value=st.session_state.anthropic_key, type="password", key="input_anthropic")
+            if a_key:
+                st.session_state.anthropic_key = a_key
+                if a_key.startswith("sk-ant"): st.success("Válida!", icon="✅")
+                else: st.warning("Formato estranho...")
+
+            # DeepSeek
+            if "deepseek_key" not in st.session_state: st.session_state.deepseek_key = ""
+            d_key = st.text_input("DeepSeek API Key (Juiz Reasoning)", value=st.session_state.deepseek_key, type="password", key="input_deepseek")
+            if d_key:
+                st.session_state.deepseek_key = d_key
+                if d_key.startswith("sk-"): st.success("Válida!", icon="✅")
+                else: st.warning("Formato estranho...")
+            
+            if not (st.session_state.openai_key and st.session_state.anthropic_key and st.session_state.deepseek_key):
+                st.warning("⚠️ Preencha todas as chaves para usar o Modo V2/V3 (Ensemble/Agente).")
+
+    # GESTÃO DE PRECEDENTES (VINCULAÇÃO)
+    with st.expander("📚 Base Vicunlante (Knowledge)", expanded=False):
+        st.caption("Arquivos de consulta obrigatória do Prompt V4.5")
+        
+        # Arquivo A: Sobrestamentos
+        f_sobre = st.file_uploader("Arquivo A: Sobrestamentos", type=["txt"], key="upload_sobre")
+        if f_sobre:
+            with open("data/knowledge_base/sobrestamentos.txt", "wb") as f: f.write(f_sobre.getbuffer())
+            # st.toast("Sobrestamentos Atualizados!", icon="💾") # SILENT MODE
+        
+        # Arquivo B: Súmulas
+        f_sumula = st.file_uploader("Arquivo B: Súmulas", type=["txt"], key="upload_sumula")
+        if f_sumula:
+             with open("data/knowledge_base/sumulas.txt", "wb") as f: f.write(f_sumula.getbuffer())
+             # st.toast("Súmulas Atualizadas!", icon="💾") # SILENT MODE
+
+        # Arquivo C: Qualificados
+        f_qualif = st.file_uploader("Arquivo C: Qualificados", type=["txt"], key="upload_qualif")
+        if f_qualif:
+             with open("data/knowledge_base/qualificados.txt", "wb") as f: f.write(f_qualif.getbuffer())
+             # st.toast("Qualificados Atualizados!", icon="💾") # SILENT MODE
+    
+    google_api_key = st.session_state.google_api_key
 
     st.header("1. Banco de Modelos (RAG)")
     template_files = st.file_uploader(
