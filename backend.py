@@ -968,8 +968,8 @@ def map_process_individual(text_content, filename, api_key):
     Usa Gemini Flash para rapidez.
     """
     try:
-        # Trocando para Gemini 2.0 Flash (Mais estável que o 3 preview para JSON)
-        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-exp", google_api_key=api_key, temperature=0.1)
+        # Trocando para Gemini 1.5 Flash (Versão Estável e Amplamente Disponível)
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key, temperature=0.1)
         messages = [
             SystemMessage(content=PROMPT_XRAY_MAP),
             HumanMessage(content=f"Arquivo: {filename}\n\n{text_content[:20000]}")
@@ -1066,8 +1066,8 @@ def generate_batch_xray(files, api_key, template_files=None):
             if model_texts:
                  models_context = "\n\n## MODELOS DE REFERÊNCIA DISPONÍVEIS:\n" + "\n".join(model_texts)
         
-        # Trocando para Gemini 2.0 Flash (Mais estável que o 3 preview para JSON)
-        llm_flash = ChatGoogleGenerativeAI(model="gemini-2.0-flash-exp", google_api_key=api_key, temperature=0.1)
+        # Trocando para Gemini 1.5 Flash (Versão Estável e Amplamente Disponível)
+        llm_flash = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key, temperature=0.1)
         
         human_msg = f"""
         Aqui estão as FICHAS TÉCNICAS dos processos processados individualmente.
