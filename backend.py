@@ -1084,6 +1084,16 @@ def generate_batch_xray(files, api_key, template_files=None):
         response = llm_flash.invoke(messages)
         content = response.content
         
+        # Garante que content é string (algumas versões retornam lista)
+        if isinstance(content, list):
+            # Se for lista de strings ou objetos com text, tenta converter
+            try:
+                content = "".join([str(c) for c in content])
+            except:
+                content = str(content)
+        elif not isinstance(content, str):
+            content = str(content)
+        
         # Limpeza do JSON
         try:
             cleaned_json = content.replace("```json", "").replace("```", "").strip()
