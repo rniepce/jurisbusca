@@ -1128,6 +1128,9 @@ def generate_batch_xray(files, api_key, template_files=None):
                  
                  # Se tudo falhar, retorna erro
                  return {"error": "Falha ao decodificar JSON do Reduce", "raw_content": content}, text_cache
+
+        except Exception as inner_e:
+             return {"error": f"Erro interno JSON: {str(inner_e)}", "raw_content": content}, text_cache
         
     except Exception as e:
         return {"error": f"Erro Geral no Pipeline: {str(e)}\n{traceback.format_exc()}"}, {}
