@@ -1103,17 +1103,31 @@ def generate_batch_xray(files, api_key, template_files=None):
                 cleaned_json = json_match.group(1).strip()
             else:
                 # Fallback: Tenta encontrar o maior bloco JSON possível ({...} ou [...])
-                # Procura pelo primeiro '[' ou '{' e vai até o conteúdo
                 match = re.search(r"(\[.*\]|\{.*\})", content, re.DOTALL)
                 if match:
                     cleaned_json = match.group(1).strip()
                 else:
-                     # Remove backticks simples se existirem e tenta parsear tudo
                     cleaned_json = content.replace("```json", "").replace("```", "").strip()
 
-            return json.loads(cleaned_json), text_cache
-        except json.JSONDecodeError:
-            return {"error": "Falha ao decodificar JSON do Reduce", "raw_content": content}, text_cache
+            try:
+                return json.loads(cleaned_json), text_cache
+            except json.JSONDecodeError:
+                # Tenta corrigir JSON malformado (ex: aspas simples, trailing commas)
+                 try:
+                     import ast
+                     # ast.literal_eval consegue parsear dicts python stringficados ({'key': 'val'})
+                     repaired = ast.literal_eval(cleaned_json)
+                     return repaired, text_cache
+                 except:
+                     # Última tentativa: regex replace de aspas simples
+                     try:
+                         repaired_str = cleaned_json.replace("'", '"').replace("Mm.", "Mm").replace("Exa.", "Exa") # Hacks comuns
+                         return json.loads(repaired_str), text_cache
+                     except:
+                        pass
+                 
+                 # Se tudo falhar, retorna erro
+                 return {"error": "Falha ao decodificar JSON do Reduce", "raw_content": content}, text_cache
         
     except Exception as e:
         return {"error": f"Erro Geral no Pipeline: {str(e)}\n{traceback.format_exc()}"}, {}
