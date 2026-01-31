@@ -1294,6 +1294,8 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
         # Substitui a lógica manual anterior pelo Grafo do LangGraph
         
         final_draft = ""
+        outline = None       # Inicialização para evitar NameError no fallback V1
+        style_prompt = None  # Idem
         
         # Decide keys for agents
         agent_key = keys.get('openai') if keys and keys.get('openai') else (keys.get('google') if keys else api_key)
