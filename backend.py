@@ -1097,7 +1097,20 @@ def generate_batch_xray(files, api_key, template_files=None):
         
         # Limpeza do JSON
         try:
-            cleaned_json = content.replace("```json", "").replace("```", "").strip()
+            # Tenta extrair bloco JSON delimitado por markdown
+            json_match = re.search(r"```json\s*(.*?)```", content, re.DOTALL)
+            if json_match:
+                cleaned_json = json_match.group(1).strip()
+            else:
+                # Fallback: Tenta encontrar o maior bloco JSON possível ({...} ou [...])
+                # Procura pelo primeiro '[' ou '{' e vai até o conteúdo
+                match = re.search(r"(\[.*\]|\{.*\})", content, re.DOTALL)
+                if match:
+                    cleaned_json = match.group(1).strip()
+                else:
+                     # Remove backticks simples se existirem e tenta parsear tudo
+                    cleaned_json = content.replace("```json", "").replace("```", "").strip()
+
             return json.loads(cleaned_json), text_cache
         except json.JSONDecodeError:
             return {"error": "Falha ao decodificar JSON do Reduce", "raw_content": content}, text_cache
