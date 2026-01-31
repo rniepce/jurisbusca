@@ -1370,34 +1370,81 @@ def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=
         except Exception as e:
             results_list.append({"error": f"Erro de Leitura (Upload): {str(e)}", "filename": f.name})
 
-    def _worker(data):
-        return process_single_case_pipeline(
-            pdf_bytes=data["bytes"], 
-            filename=data["name"], 
-            api_key=api_key, 
-            template_files=template_files,
-            cached_text=data["cached_text"],
-            mode=mode,
-            keys=keys
-        )
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        future_to_file = {
-            executor.submit(_worker, d): d["name"]
-            for d in files_data
-        }
-        
-        completed_count = 0
-        for future in concurrent.futures.as_completed(future_to_file):
-            fname = future_to_file[future]
-            try:
-                res = future.result()
-                results_list.append(res)
-            except Exception as exc:
-                results_list.append({"error": str(exc), "filename": fname})
+    # --- UPGRADE: BATCH DEEP ANALYSIS (SÉRIE) ---
+    # Implementação robusta que chama process_single_case_pipeline para cada arquivo.
+    # Garante a mesma qualidade da análise individual (OCR + RAG + Agentes).
+    
+    files_data = []
+    # Pré-carrega bytes para evitar problemas de thread/cursor
+    for f in files:
+        f.seek(0)
+        c_text = None
+        if text_cache_dict and f.name in text_cache_dict:
+            c_text = text_cache_dict[f.name]
             
-            completed_count += 1
+        files_data.append({
+            "name": f.name,
+            "bytes": f.read(),
+            "cached_text": c_text
+        })
+
+    results_list = []
+    total_files = len(files_data)
+    
+    print(f"🚀 Iniciando Batch Profundo (Série) para {total_files} arquivos...")
+    os.makedirs("data/reports", exist_ok=True)
+
+    # Execução em SÉRIE (Loop)
+    # Motivo: Evitar Rate Limit do Google/OpenAI e uso excessivo de RAM com ChromaDB múltiplos
+    for i, data in enumerate(files_data):
+        try:
+            filename = data["name"]
+            print(f"🔄 Processando {i+1}/{total_files}: {filename}")
+            
             if progress_callback:
-                progress_callback(completed_count, total_files, fname)
+                 progress_callback(i, total_files, filename) # 0-indexed start
+            
+            # Chama o Pipeline Completo (OCR -> RAG -> Agentes)
+            res = process_single_case_pipeline(
+                pdf_bytes=data["bytes"], 
+                filename=filename, 
+                api_key=api_key, 
+                template_files=template_files,
+                cached_text=data["cached_text"],
+                mode=mode,
+                keys=keys
+            )
+            
+            # Persistência
+            report_id = f"{int(time.time())}_{random.randint(1000,9999)}"
+            res['report_id'] = report_id
+            res['timestamp'] = time.strftime("%Y-%m-%d %H:%M:%S")
+            res['mode'] = mode
+            res['filename'] = filename
+            
+            # Salva JSON
+            try:
+                with open(f"data/reports/{report_id}.json", "w") as f:
+                    json.dump(res, f, ensure_ascii=False, indent=2)
+            except Exception as e_io:
+                print(f"⚠️ Erro IO ao salvar {filename}: {e_io}")
+
+            results_list.append(res)
+            
+            # Opcional: Pausa curta para aliviar API
+            time.sleep(1)
+
+        except Exception as e:
+            print(f"❌ Erro Crítico em {data['name']}: {e}")
+            traceback.print_exc()
+            results_list.append({
+                "filename": data['name'],
+                "error": str(e),
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+            
+    # Final Callback
+    if progress_callback:
+        progress_callback(total_files, total_files, "Concluído!")
                 
     return results_list
