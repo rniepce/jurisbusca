@@ -968,8 +968,14 @@ def map_process_individual(text_content, filename, api_key):
     Usa Gemini Flash para rapidez.
     """
     # Lista de modelos para tentar (Fallback Strategy)
-    # Motivo: Erros 404 (Not Found) variam por região/conta e versão do SDK
-    candidate_models = ["gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-1.5-flash-latest", "gemini-pro"]
+    # ATENÇÃO: Usuário tem acesso a modelos bleeding-edge (2.0/2.5/3.0) e NÃO tem 1.5.
+    candidate_models = [
+        "gemini-2.0-flash", 
+        "gemini-2.5-flash", 
+        "gemini-3-flash-preview",
+        "models/gemini-2.0-flash",
+        "gemini-1.5-flash" # Fallback legado
+    ]
     
     last_error = None
     
@@ -1100,7 +1106,13 @@ def generate_batch_xray(files, api_key, template_files=None):
         ]
         
         # Lista de modelos para tentar no Reduce
-        candidate_models = ["gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-1.5-flash-latest", "gemini-pro"]
+        candidate_models = [
+             "gemini-2.0-flash", 
+             "gemini-2.5-flash", 
+             "gemini-3-flash-preview",
+             "models/gemini-2.0-flash",
+             "gemini-1.5-flash"
+        ]
         
         content = None
         last_error = None
