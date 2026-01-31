@@ -560,9 +560,9 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
         # Queremos usar PROMPT_GEMINI_INTEGRAL (JSON Mode)
         base_path = "data/knowledge_base"
         files_map = {
-            "sobrestamentos.txt": "ARQUIVO A (SOBRESTAMENTOS)",
-            "sumulas.txt": "ARQUIVO B (SÚMULAS)",
-            "qualificados.txt": "ARQUIVO C (QUALIFICADOS)"
+            "ARQUIVO A (Sobrestamento) 30.10.2025.txt": "ARQUIVO A (SOBRESTAMENTOS)",
+            "ARQUIVO B (Súmulas) - 30.12.2025.txt": "ARQUIVO B (SÚMULAS)",
+            "ARQUIVO C (Qualificados) - 30.12.2025.txt": "ARQUIVO C (QUALIFICADOS)"
         }
         for fname, label in files_map.items():
             fpath = os.path.join(base_path, fname)
