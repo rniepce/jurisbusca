@@ -28,3 +28,9 @@ paddlepaddle
 paddleocr
 pymupdf
 opencv-contrib-python-headless
+# OCR - DeepSeek
+transformers
+torch
+accelerate
+pillow
+einops

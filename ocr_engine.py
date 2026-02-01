@@ -11,13 +11,82 @@ from paddleocr import PaddleOCR
 MODEL_URL = "https://github.com/Saafke/EDSR_Tensorflow/raw/master/models/ESPCN_x2.pb"
 MODEL_PATH = "data/models/ESPCN_x2.pb"
 
-# Initialize Global Paddle Engine
-try:
-    # use_angle_cls=True detects rotation
-    PADDLE_ENGINE = PaddleOCR(use_angle_cls=True, lang='pt', show_log=False)
-except Exception as e:
-    print(f"⚠️ Erro ao iniciar PaddleOCR Engine: {e}")
-    PADDLE_ENGINE = None
+# Lazy Global Engines (initialized on demand)
+PADDLE_ENGINE = None
+
+def get_paddle_engine():
+    global PADDLE_ENGINE
+    if PADDLE_ENGINE is None:
+        try:
+            # use_angle_cls=True detects rotation
+            PADDLE_ENGINE = PaddleOCR(use_angle_cls=True, lang='pt', show_log=False)
+        except Exception as e:
+            print(f"⚠️ Erro ao iniciar PaddleOCR Engine: {e}")
+            PADDLE_ENGINE = None
+    return PADDLE_ENGINE
+
+class DeepSeekOCREngine:
+    def __init__(self, model_path="deepseek-ai/DeepSeek-OCR-2"):
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except ImportError:
+            raise ImportError("DeepSeek OCR requires 'transformers', 'torch', 'accelerate' and 'pillow'. Please install them.")
+
+        print(f"🚀 Loading DeepSeek-OCR-2 from {model_path}...")
+        # Carrega o tokenizer e o modelo com suporte a GPU
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_path, 
+            torch_dtype=torch.bfloat16, 
+            trust_remote_code=True,
+            device_map="auto" # Distribui automaticamente na GPU disponível
+        ).eval()
+
+    def process_image(self, image_path):
+        from PIL import Image
+        import torch
+        
+        image = Image.open(image_path).convert("RGB")
+        
+        # Prompt específico para o DeepSeek-OCR-2 (extração estruturada)
+        prompt = "<image>\n<|grounding|>Convert the document to markdown."
+        
+        messages = [{"role": "user", "content": prompt}]
+        
+        # Processamento visual e geração de texto
+        # O modelo identifica automaticamente tabelas e estrutura jurídica
+        inputs = self.tokenizer.apply_chat_template(
+            messages, 
+            add_generation_prompt=True, 
+            tokenize=True, 
+            return_tensors="pt", 
+            return_dict=True
+        ).to(self.model.device)
+
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=2048,
+                do_sample=False, # Para OCR, queremos precisão determinística
+                temperature=0.0
+            )
+        
+        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+# Global singleton for DeepSeek (to avoid reloading heavy model)
+DEEPSEEK_ENGINE = None
+
+def get_deepseek_engine():
+    global DEEPSEEK_ENGINE
+    if DEEPSEEK_ENGINE is None:
+        try:
+            DEEPSEEK_ENGINE = DeepSeekOCREngine()
+        except Exception as e:
+            print(f"⚠️ Erro ao iniciar DeepSeekOCREngine: {e}")
+            DEEPSEEK_ENGINE = None
+    return DEEPSEEK_ENGINE
+
 
 def download_model():
     """Baixa o modelo de Super-Reolução se não existir."""
@@ -50,7 +119,7 @@ def get_superres_model():
 
 def preprocess_image(image_cv, apply_superres=False):
     """
-    Pipeline de Pré-processamento:
+    Pipeline de Pré-processamento (Usado pelo PaddleOCR):
     1. Super-Resolução (se DPI baixo)
     2. Conversão B/W (Binarização Otimizada)
     3. Redução de Ruído
@@ -97,57 +166,88 @@ def preprocess_image(image_cv, apply_superres=False):
 
     return binary
 
-def extract_text_from_pdf(pdf_path):
+def extract_text_from_pdf(pdf_path, engine="paddle"):
     """
-    Função Principal: PDF -> Imagens -> Tratamento -> OCR
+    Função Principal: PDF -> Imagens -> OCR text
+    
+    Args:
+        pdf_path: Caminho para o PDF.
+        engine: "paddle" (OCR local/CPU friendly) ou "deepseek" (GPU required, Markdown rich).
     """
-    if not PADDLE_ENGINE:
-        return "[ERRO] Motor OCR não disponível."
-
     full_text = ""
     
+    # Seleciona Engine
+    if engine == "deepseek":
+        ocr_engine = get_deepseek_engine()
+        if not ocr_engine:
+            return "[ERRO] DeepSeek Engine não disponível (gpu/transformers error?)."
+    else:
+        ocr_engine = get_paddle_engine()
+        if not ocr_engine:
+            return "[ERRO] Paddle Engine não disponível."
+
     try:
         doc = fitz.open(pdf_path)
         
         for i, page in enumerate(doc):
-            # Obtém imagem da página
-            # Zoom=2 eqivale a ~144 DPI (padrão 72). Para garantir leitura, vamos usar 2.5 (aprox 180 DPI base) e aplicar SR se precisar.
-            # Se usarmos zoom muito alto, SR fica muito lento. Zoom 2.0 é um bom equilíbrio.
-            zoom = 2.0 
-            mat = fitz.Matrix(zoom, zoom)
-            pix = page.get_pixmap(matrix=mat)
-            
-            # Convert fitz Pixmap to numpy array (OpenCV format)
-            img_data = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
-            if pix.n == 4: # RGBA -> RGB
-                img_data = cv2.cvtColor(img_data, cv2.COLOR_RGBA2BGR)
+            # --- FLUXO DEEPSEEK ---
+            if engine == "deepseek":
+                # Renderiza com alta qualidade
+                zoom = 2.0 
+                mat = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=mat)
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+                    pix.save(tmp_img.name)
+                    tmp_path = tmp_img.name
+                
+                try:
+                    # DeepSeek lida com preprocessamento internamente
+                    page_txt = ocr_engine.process_image(tmp_path)
+                    full_text += f"\n--- Pag {i+1} (DeepSeek) ---\n{page_txt}"
+                except Exception as e:
+                    print(f"Erro DeepSeek Pag {i}: {e}")
+                finally:
+                    if os.path.exists(tmp_path): os.remove(tmp_path)
+
+            # --- FLUXO PADDLE (LEGADO) ---
             else:
-                img_data = cv2.cvtColor(img_data, cv2.COLOR_RGB2BGR)
-            
-            # Check DPI/Details
-            # Se a imagem for muito pequena (ex: thumbnail), aciona SuperRes
-            apply_sr = False
-            if pix.w < 1000 or pix.h < 1000:
-                apply_sr = True
+                # Zoom=2 eqivale a ~144 DPI (padrão 72). Para garantir leitura, vamos usar 2.5 (aprox 180 DPI base) e aplicar SR se precisar.
+                zoom = 2.0 
+                mat = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=mat)
                 
-            # Pré-processamento
-            final_img = preprocess_image(img_data, apply_superres=apply_sr)
-            
-            # Salva temp para Paddle (ele prefere path)
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
-                cv2.imwrite(tmp_img.name, final_img)
-                tmp_path = tmp_img.name
+                # Convert fitz Pixmap to numpy array (OpenCV format)
+                img_data = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+                if pix.n == 4: # RGBA -> RGB
+                    img_data = cv2.cvtColor(img_data, cv2.COLOR_RGBA2BGR)
+                else:
+                    img_data = cv2.cvtColor(img_data, cv2.COLOR_RGB2BGR)
                 
-            # OCR Execution
-            try:
-                result = PADDLE_ENGINE.ocr(tmp_path, cls=True)
-                if result and result[0]:
-                    page_txt = "\n".join([line[1][0] for line in result[0]])
-                    full_text += f"\n--- Pag {i+1} ---\n{page_txt}"
-            except Exception as e:
-                print(f"Erro OCR Pag {i}: {e}")
-            finally:
-                if os.path.exists(tmp_path): os.remove(tmp_path)
+                # Check DPI/Details
+                # Se a imagem for muito pequena (ex: thumbnail), aciona SuperRes
+                apply_sr = False
+                if pix.w < 1000 or pix.h < 1000:
+                    apply_sr = True
+                    
+                # Pré-processamento
+                final_img = preprocess_image(img_data, apply_superres=apply_sr)
+                
+                # Salva temp para Paddle (ele prefere path)
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+                    cv2.imwrite(tmp_img.name, final_img)
+                    tmp_path = tmp_img.name
+                    
+                # OCR Execution
+                try:
+                    result = ocr_engine.ocr(tmp_path, cls=True)
+                    if result and result[0]:
+                        page_txt = "\n".join([line[1][0] for line in result[0]])
+                        full_text += f"\n--- Pag {i+1} ---\n{page_txt}"
+                except Exception as e:
+                    print(f"Erro OCR Pag {i}: {e}")
+                finally:
+                    if os.path.exists(tmp_path): os.remove(tmp_path)
                 
     except Exception as e:
         return f"Erro Fatal no OCR Engine: {str(e)}"

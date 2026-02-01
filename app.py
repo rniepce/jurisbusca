@@ -123,6 +123,8 @@ if "report_id" in query_params:
         
         with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
             st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
+            st.write("JSON COMPLETO (DEBUG):")
+            st.json(data)
             st.code(str(full_text)[:500])
             
         c1, c2, c3, c4 = st.columns(4)
@@ -581,6 +583,24 @@ with st.sidebar:
         key="rag_templates_uploader" # Key fixa para não resetar
     )
     
+    st.markdown("---")
+    st.header("🔤 Configuração de OCR")
+    st.caption("Escolha como o sistema deve ler PDFs de imagem (digitalizados).")
+    
+    ocr_option = st.radio(
+        "Motor de Leitura:",
+        ["Gemini 2.0 Flash (Nuvem/Rápido)", "PaddleOCR (Local/CPU)", "DeepSeek-OCR-2 (Local/GPU)"],
+        index=0,
+        help="Gemini: Usa API Vision (Melhor Geral). Paddle: Leve. DeepSeek: Requer GPU (Ótimo para tabelas)."
+    )
+    
+    ocr_map = {
+        "Gemini 2.0 Flash (Nuvem/Rápido)": "gemini_flash",
+        "PaddleOCR (Local/CPU)": "paddle", 
+        "DeepSeek-OCR-2 (Local/GPU)": "deepseek"
+    }
+    st.session_state.ocr_engine_choice = ocr_map[ocr_option]
+    
     if template_files:
         st.success(f"✅ {len(template_files)} modelos recebidos!")
         
@@ -785,7 +805,8 @@ if uploaded_files:
                                             text_cache_dict=st.session_state.file_text_cache,
                                             progress_callback=update_progress,
                                             mode=st.session_state.get("app_mode", "v1"),
-                                            keys=keys_dict
+                                            keys=keys_dict,
+                                            ocr_engine_choice=st.session_state.ocr_engine_choice
                                         )
                                     except Exception as e:
                                         st.error(f"Erro no processamento em lote: {e}")
@@ -891,7 +912,12 @@ if uploaded_files:
                 uploaded_file.seek(0)
                 
                 # Chama backend para OCR e Vetorização
-                text, retriever = process_uploaded_file(uploaded_file, uploaded_file.name, api_key=google_api_key)
+                text, retriever = process_uploaded_file(
+                    uploaded_file, 
+                    uploaded_file.name, 
+                    api_key=google_api_key,
+                    ocr_engine_choice=st.session_state.ocr_engine_choice
+                )
                 
                 if text.startswith("Erro") or text.startswith("Formato"):
                     st.error(text)

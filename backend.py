@@ -183,7 +183,7 @@ def get_embedding_function(api_key=None):
     raise ValueError("Nenhum provedor de Embeddings configurado. Por favor, insira a Google API Key.")
     # return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") # REMOVIDO PARA EVITAR ERRO
 
-def process_uploaded_file(file_obj, filename: str, api_key=None):
+def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="gemini_flash"):
     """
     Salva arquivo temp, faz OCR se necessário, vetoriza e retorna (full_text, retriever).
     """
@@ -213,18 +213,30 @@ def process_uploaded_file(file_obj, filename: str, api_key=None):
                 # Usa chave do ambiente ou passada
                 g_key = api_key if api_key and api_key.startswith("AIza") else os.getenv("GOOGLE_API_KEY")
                 
-                if g_key:
-                    ocr_text = extract_text_with_gemini_flash(tmp_path, g_key)
-                    if "Erro" not in ocr_text:
-                         # Substitui o docs pelo resultado do OCR
-                         # Cria um documento único pois o OCR retorna tudo junto
-                         from langchain_core.documents import Document
-                         docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "semantic_flash"})]
-                         print("✅ Semantic OCR concluído com sucesso.")
+                if ocr_engine_choice == "gemini_flash":
+                    if g_key:
+                        ocr_text = extract_text_with_gemini_flash(tmp_path, g_key)
+                        if "Erro" not in ocr_text:
+                                # Substitui o docs pelo resultado do OCR
+                                # Cria um documento único pois o OCR retorna tudo junto
+                                from langchain_core.documents import Document
+                                docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "semantic_flash"})]
+                                print("✅ Semantic OCR (Gemini) concluído com sucesso.")
+                        else:
+                                text += f"[ERRO OCR: {ocr_text}]\n"
                     else:
-                         text += f"[ERRO OCR: {ocr_text}]\n"
-                else:
-                     text += "[AVISO: PDF Imagem detectado, mas sem Chave Google para OCR Semântico.]\n"
+                        text += "[AVISO: PDF Imagem detectado, mas sem Chave Google para OCR Semântico.]\n"
+                
+                elif ocr_engine_choice in ["paddle", "deepseek"]:
+                    import ocr_engine
+                    print(f"📉 Texto insuficiente. Acionando OCR Engine ({ocr_engine_choice})...")
+                    ocr_text = ocr_engine.extract_text_from_pdf(tmp_path, engine=ocr_engine_choice)
+                    if ocr_text and "[ERRO]" not in ocr_text:
+                         from langchain_core.documents import Document
+                         docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": ocr_engine_choice})]
+                         print(f"✅ OCR ({ocr_engine_choice}) concluído com sucesso.")
+                    else:
+                        text += f"[ERRO OCR {ocr_engine_choice}]: {ocr_text}\n"
         
         elif suffix == ".docx":
             from langchain_community.document_loaders import Docx2txtLoader
@@ -1203,7 +1215,7 @@ import hashlib
 
 
 
-def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None, mode="v1", keys=None):
+def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None, mode="v1", keys=None, ocr_engine_choice="paddle"):
     """
     Função Worker para processar um único caso completo.
     Suporta V1 (Gemini Only) e V2 (Hybrid Agents).
@@ -1233,8 +1245,8 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
                     if len(text_content.strip()) < 100 and HAS_OCR:
                         print(f"⚠️ Texto insuficiente ({len(text_content)} chars) em {filename}. Iniciando OCR Avançado (OpenCV + Paddle)...")
                         try:
-                            # Chama o motor avançado
-                            ocr_text = ocr_engine.extract_text_from_pdf(tmp_path)
+                            # Chama o motor escolhido
+                            ocr_text = ocr_engine.extract_text_from_pdf(tmp_path, engine=ocr_engine_choice)
                             
                             # Se OCR retornou algo razoável, usa
                             if len(ocr_text) > len(text_content):
@@ -1420,7 +1432,7 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
     except Exception as e:
         return {"error": str(e), "filename": filename}
 
-def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None, mode="v1", keys=None):
+def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None, mode="v1", keys=None, ocr_engine_choice="gemini_flash"):
     """
     Processa lista de arquivos EM PARALELO.
     Suporta V1/V2 via worker.
@@ -1492,7 +1504,8 @@ def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=
                 template_files=template_files,
                 cached_text=data["cached_text"],
                 mode=mode,
-                keys=keys
+                keys=keys,
+                ocr_engine_choice=ocr_engine_choice
             )
             
             # Persistência
