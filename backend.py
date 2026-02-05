@@ -324,6 +324,18 @@ def get_llm(provider: str, model_name: str, api_key: str, temperature: float = 0
     elif provider == "anthropic":
         if not HAS_ANTHROPIC: raise ImportError("langchain-anthropic não instalado.")
         return ChatAnthropic(model=model_name, api_key=api_key, temperature=temperature)
+    
+    elif provider == "amazonia":
+        # Amazônia IA - API compatível com OpenAI
+        # Modelo: rodrigomalossi/amazonia-a
+        # Endpoint: https://amazonia-a.amazoniaia.com.br/v1
+        if not HAS_OPENAI: raise ImportError("langchain-openai não instalado (Necessário para Amazônia IA).")
+        return ChatOpenAI(
+            model=model_name,
+            api_key=api_key,
+            base_url="https://amazonia-a.amazoniaia.com.br/v1",
+            temperature=temperature
+        )
         
     else:
         raise ValueError(f"Provedor desconhecido: {provider}")
@@ -1413,6 +1425,22 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
 
             results = run_standard_orchestration(clean_content, main_cfg, style_cfg, status_callback=None, template_files=template_files, google_key=api_key, outline=outline, style_prompt=style_prompt)
         
+        # === NORMALIZAÇÃO DO FINAL_REPORT ===
+        # Garante que final_report seja sempre string (alguns modelos retornam lista)
+        if results.get("final_report"):
+            fr = results["final_report"]
+            if isinstance(fr, list):
+                # Extrai texto de estruturas como [{'type': 'text', 'text': '...'}]
+                text_parts = []
+                for item in fr:
+                    if isinstance(item, dict) and 'text' in item:
+                        text_parts.append(item['text'])
+                    else:
+                        text_parts.append(str(item))
+                results["final_report"] = "\n".join(text_parts)
+            elif not isinstance(fr, str):
+                results["final_report"] = str(fr)
+        
         # 3. Save Result
         report_id = hashlib.md5(f"{filename}_{time.time()}".encode()).hexdigest()
         
@@ -1425,7 +1453,7 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
         os.makedirs("data/reports", exist_ok=True)
         
         with open(f"data/reports/{report_id}.json", "w") as f:
-            json.dump(results, f)
+            json.dump(results, f, ensure_ascii=False)
             
         return {"report_id": report_id, "filename": filename, "status": "success"}
 
@@ -1434,51 +1462,35 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
 
 def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None, mode="v1", keys=None, ocr_engine_choice="gemini_flash"):
     """
-    Processa lista de arquivos EM PARALELO.
-    Suporta V1/V2 via worker.
+    Processa lista de arquivos EM SÉRIE (para evitar Rate Limit).
+    Suporta V1/V2/V3 via worker.
     """
-    results_list = []
-    total_files = len(files)
-    
-    # Prepara dados para threads
+    # Pré-carrega bytes para evitar problemas de thread/cursor
     files_data = []
     for f in files:
         try:
-            cached = text_cache_dict.get(f.name) if text_cache_dict else None
-            if cached:
-                files_data.append({"name": f.name, "bytes": None, "cached_text": cached})
-            else:
-                f.seek(0)
-                # Defensive Read: Ensure bytes
-                content = f.read()
-                if isinstance(content, str):
-                    content = content.encode('utf-8', errors='replace')
-                
-                files_data.append({
-                    "bytes": content,
-                    "name": f.name,
-                    "cached_text": None
-                })
-        except Exception as e:
-            results_list.append({"error": f"Erro de Leitura (Upload): {str(e)}", "filename": f.name})
-
-    # --- UPGRADE: BATCH DEEP ANALYSIS (SÉRIE) ---
-    # Implementação robusta que chama process_single_case_pipeline para cada arquivo.
-    # Garante a mesma qualidade da análise individual (OCR + RAG + Agentes).
-    
-    files_data = []
-    # Pré-carrega bytes para evitar problemas de thread/cursor
-    for f in files:
-        f.seek(0)
-        c_text = None
-        if text_cache_dict and f.name in text_cache_dict:
-            c_text = text_cache_dict[f.name]
+            f.seek(0)
+            c_text = None
+            if text_cache_dict and f.name in text_cache_dict:
+                c_text = text_cache_dict[f.name]
             
-        files_data.append({
-            "name": f.name,
-            "bytes": f.read(),
-            "cached_text": c_text
-        })
+            # Leitura robusta de bytes
+            content = f.read()
+            if isinstance(content, str):
+                content = content.encode('utf-8', errors='replace')
+                
+            files_data.append({
+                "name": f.name,
+                "bytes": content,
+                "cached_text": c_text
+            })
+        except Exception as e:
+            files_data.append({
+                "name": f.name,
+                "bytes": None,
+                "cached_text": None,
+                "error": f"Erro de Leitura (Upload): {str(e)}"
+            })
 
     results_list = []
     total_files = len(files_data)
@@ -1495,6 +1507,15 @@ def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=
             
             if progress_callback:
                  progress_callback(i, total_files, filename) # 0-indexed start
+            
+            # Verifica se houve erro de leitura prévia
+            if "error" in data:
+                results_list.append({
+                    "filename": filename,
+                    "error": data["error"],
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+                continue
             
             # Chama o Pipeline Completo (OCR -> RAG -> Agentes)
             res = process_single_case_pipeline(

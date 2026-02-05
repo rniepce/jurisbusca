@@ -22,6 +22,85 @@ load_dotenv()
 
 
 # ==============================================================================
+# FUNÇÃO UTILITÁRIA: EXTRAÇÃO ROBUSTA DE MINUTA
+# ==============================================================================
+def extract_minuta_from_report(data: dict) -> tuple:
+    """
+    Extrai minuta e diagnóstico de um relatório de forma robusta.
+    Retorna (minuta_text, diagnostic_text).
+    """
+    steps_data = data.get("steps", {})
+    if isinstance(steps_data, dict):
+        integral_text = steps_data.get("integral")
+    else:
+        integral_text = None
+        
+    full_text = integral_text if integral_text else data.get("final_report", "")
+    
+    # Normaliza para string
+    if isinstance(full_text, list):
+        text_parts = []
+        for item in full_text:
+            if isinstance(item, dict) and 'text' in item:
+                text_parts.append(item['text'])
+            else:
+                text_parts.append(str(item))
+        full_text = "\n".join(text_parts)
+    elif not isinstance(full_text, str):
+        full_text = str(full_text if full_text is not None else "")
+    
+    # Tenta JSON parse primeiro (V1 modo estruturado)
+    minuta_text = None
+    diagnostic_text = None
+    
+    try:
+        cleaned_json = full_text.replace("```json", "").replace("```", "").strip()
+        data_json = json.loads(cleaned_json)
+        if isinstance(data_json, dict):
+            minuta_text = data_json.get("minuta_final", "")
+            diag = data_json.get("diagnostico", {})
+            fund = data_json.get("fundamentacao_logica", "")
+            if diag or fund:
+                diagnostic_text = f"**Diagnóstico:** {json.dumps(diag, indent=2, ensure_ascii=False)}\n\n**Fundamentação:** {fund}"
+    except:
+        pass
+    
+    # Fallback: Regex patterns
+    if not minuta_text:
+        patterns = [
+            r'##\s*3\.\s*MINUTA', r'##\s*MINUTA',
+            r'\*\*DO\s+ATO\s+JUDICIAL\*\*', r'DO\s+ATO\s+JUDICIAL',
+            r'\*\*SENTENÇA\*\*', r'\*\*DECISÃO\*\*',
+            r'##\s*SENTENÇA', r'##\s*DECISÃO'
+        ]
+        for pattern in patterns:
+            parts = re.split(pattern, full_text, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                diagnostic_text = parts[0].strip()
+                minuta_text = parts[1].strip()
+                break
+        
+        if not minuta_text:
+            diagnostic_text = "Diagnóstico integral."
+            minuta_text = full_text
+    
+    # V2/V3: diagnostic_reasoning explícito
+    if data.get("diagnostic_reasoning"):
+        diagnostic_text = data.get("diagnostic_reasoning")
+    
+    # Limpeza final
+    if minuta_text and isinstance(minuta_text, str):
+        minuta_text = minuta_text.replace("\\n", "\n")
+        if "'extras':" in minuta_text:
+            minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
+        elif '"extras":' in minuta_text:
+            minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
+        minuta_text = minuta_text.strip().strip("'").strip('"')
+    
+    return minuta_text or "", diagnostic_text or ""
+
+
+# ==============================================================================
 # 0. ROTEAMENTO (ROUTER) - PARA ABAS NOVAS (PRIORIDADE ALTA)
 # ==============================================================================
 query_params = st.query_params
@@ -49,70 +128,8 @@ if "report_id" in query_params:
         # --- VIEW: PROCESSO INDIVIDUAL (NOVA ABA) ---
         st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
         
-        # Recupera dados
-        steps_data = data.get("steps", {})
-        if isinstance(steps_data, dict):
-            integral_text = steps_data.get("integral")
-        else:
-            integral_text = None
-            
-        full_text = integral_text if integral_text else data.get("final_report", "")
-        
-        if isinstance(full_text, list):
-            full_text = "\n".join([str(x) for x in full_text])
-        elif not isinstance(full_text, str):
-            full_text = str(full_text if full_text is not None else "")
-            
-        # Tenta separar a Minuta (múltiplos padrões possíveis) - SYNC COM LOGICA PRINCIPAL
-        patterns = [
-            r'##\s*3\.\s*MINUTA',
-            r'##\s*MINUTA',
-            r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
-            r'DO\s+ATO\s+JUDICIAL',
-            r'\*\*SENTENÇA\*\*',
-            r'\*\*DECISÃO\*\*',
-            r'##\s*SENTENÇA',
-            r'##\s*DECISÃO'
-        ]
-        
-        minuta_text = None
-        diagnostic_text = None
-        
-        for pattern in patterns:
-            parts = re.split(pattern, full_text, flags=re.IGNORECASE)
-            if len(parts) > 1:
-                diagnostic_text = parts[0].strip()
-                minuta_text = parts[1].strip()
-                break
-        
-        if not minuta_text:
-            diagnostic_text = "Diagnóstico integral."
-            minuta_text = full_text
-
-        # --- NOVA LÓGICA V3/V2: REASONING EXPLÍCITO ---
-        # Se o backend mandou "diagnostic_reasoning" (V2/V3), usa ele.
-        if data.get("diagnostic_reasoning"):
-            diagnostic_text = data.get("diagnostic_reasoning")
-        
-        # V1 Fallback semântico (Tenta extrair do JSON se for o caso)
-        if not diagnostic_text or diagnostic_text == "Diagnóstico integral.":
-             if isinstance(full_text, str) and '"fundamentacao_logica":' in full_text:
-                 try:
-                     import re
-                     match = re.search(r'"fundamentacao_logica":\s*"(.*?)"', full_text, re.DOTALL)
-                     if match:
-                         diagnostic_text = match.group(1).replace("\\n", "\n")
-                 except:
-                     pass
-
-        # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
-        if minuta_text and isinstance(minuta_text, str):
-            minuta_text = minuta_text.replace("\\n", "\n")
-            if "'extras':" in minuta_text:
-                    minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
-            elif '"extras":' in minuta_text:
-                    minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
-            minuta_text = minuta_text.strip().strip("'").strip('"')
+        # Usa função utilitária centralizada
+        minuta_text, diagnostic_text = extract_minuta_from_report(data)
 
         # Renderiza Decisão
         st.subheader("📝 Minuta da Decisão")
@@ -122,138 +139,9 @@ if "report_id" in query_params:
         st.write("🔎 **Painel de Controle:**")
         
         with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
-            st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
+            st.text(f"Tamanho do Texto Original: {len(data.get('final_report', ''))}")
             st.write("JSON COMPLETO (DEBUG):")
             st.json(data)
-            st.code(str(full_text)[:500])
-            
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            with st.popover("🧠 Diagnóstico", use_container_width=True):
-                st.markdown(diagnostic_text)
-        with c2:
-            if data.get("auditor_dashboard"):
-                with st.popover("🛡️ Auditoria", use_container_width=True):
-                    st.markdown(data["auditor_dashboard"])
-        with c3:
-            if data.get("style_report"):
-                with st.popover("🎨 Estilo", use_container_width=True):
-                    st.markdown(data["style_report"])
-        with c4:
-             with st.popover("⚙️ Logs", use_container_width=True):
-                st.json(data.get("steps", {}))
-        
-        st.markdown("---")
-        st.info("💬 Modo de Visualização Rápida (Sessão Simplificada)")
-        
-    except Exception as e:
-        st.error(f"Erro ao carregar relatório: {e}")
-    
-    st.stop() # PARA A EXECUÇÃO AQUI PARA ESTA ABA
-
-
-# ==============================================================================
-# 0. ROTEAMENTO (ROUTER) - PARA ABAS NOVAS (PRIORIDADE ALTA)
-# ==============================================================================
-query_params = st.query_params
-if "report_id" in query_params:
-    report_id = query_params["report_id"]
-    try:
-        # Load from persistent storage
-        file_path = f"data/reports/{report_id}.json"
-        
-        if not os.path.exists(file_path):
-             st.error(f"Relatório não encontrado: {file_path}")
-             st.stop()
-             
-        with open(file_path, "r") as f:
-            data = json.load(f)
-            
-        # Defensive fix for 'list' vs 'dict'
-        if isinstance(data, list):
-            if len(data) > 0 and isinstance(data[0], dict):
-                data = data[0]
-            else:
-                 st.error(f"Formato de relatório inválido (Lista): {str(data)[:100]}")
-                 st.stop()
-        
-        # --- VIEW: PROCESSO INDIVIDUAL (NOVA ABA) ---
-        st.title(f"⚖️ Processo: {data.get('filename', 'Detalhes')}")
-        
-        # Recupera dados
-        steps_data = data.get("steps", {})
-        if isinstance(steps_data, dict):
-            integral_text = steps_data.get("integral")
-        else:
-            integral_text = None
-            
-        full_text = integral_text if integral_text else data.get("final_report", "")
-        
-        if isinstance(full_text, list):
-            full_text = "\n".join([str(x) for x in full_text])
-        elif not isinstance(full_text, str):
-            full_text = str(full_text if full_text is not None else "")
-            
-        # Tenta separar a Minuta (múltiplos padrões possíveis) - SYNC COM LOGICA PRINCIPAL
-        patterns = [
-            r'##\s*3\.\s*MINUTA',
-            r'##\s*MINUTA',
-            r'\*\*DO\s+ATO\s+JUDICIAL\*\*',
-            r'DO\s+ATO\s+JUDICIAL',
-            r'\*\*SENTENÇA\*\*',
-            r'\*\*DECISÃO\*\*',
-            r'##\s*SENTENÇA',
-            r'##\s*DECISÃO'
-        ]
-        
-        minuta_text = None
-        diagnostic_text = None
-        
-        for pattern in patterns:
-            parts = re.split(pattern, full_text, flags=re.IGNORECASE)
-            if len(parts) > 1:
-                diagnostic_text = parts[0].strip()
-                minuta_text = parts[1].strip()
-                break
-        
-        if not minuta_text:
-            diagnostic_text = "Diagnóstico integral."
-            minuta_text = full_text
-
-        # --- NOVA LÓGICA V3/V2 (NOVA ABA) ---
-        if data.get("diagnostic_reasoning"):
-            diagnostic_text = data.get("diagnostic_reasoning")
-
-        # V1 Fallback semântico
-        if not diagnostic_text or diagnostic_text == "Diagnóstico integral.":
-             if isinstance(full_text, str) and '"fundamentacao_logica":' in full_text:
-                 try:
-                     import re
-                     match = re.search(r'"fundamentacao_logica":\s*"(.*?)"', full_text, re.DOTALL)
-                     if match:
-                         diagnostic_text = match.group(1).replace("\\n", "\n")
-                 except:
-                     pass
-
-        # --- CORREÇÃO DE FORMATAÇÃO E LIMPEZA FINAL ---
-        if minuta_text and isinstance(minuta_text, str):
-            minuta_text = minuta_text.replace("\\n", "\n")
-            if "'extras':" in minuta_text:
-                    minuta_text = minuta_text.split("'extras':")[0].strip().rstrip(",").strip()
-            elif '"extras":' in minuta_text:
-                    minuta_text = minuta_text.split('"extras":')[0].strip().rstrip(",").strip()
-            minuta_text = minuta_text.strip().strip("'").strip('"')
-
-        # Renderiza Decisão
-        st.subheader("📝 Minuta da Decisão")
-        st.text_area("Copie o texto abaixo:", value=minuta_text, height=600, label_visibility="collapsed")
-        
-        st.markdown("---")
-        st.write("🔎 **Painel de Controle:**")
-        
-        with st.expander("🛠️ Debug do Texto Original (Se algo estiver cortado)"):
-            st.text(f"Tamanho do Texto Original: {len(full_text) if full_text else 0}")
-            st.code(str(full_text)[:500])
             
         c1, c2, c3, c4 = st.columns(4)
         with c1:
@@ -467,7 +355,8 @@ with st.sidebar:
                  "Gemini Flash (Rápido)": {"provider": "google", "model": "gemini-3-flash-preview"},
                  "DeepSeek R1 (Lógica Extrema)": {"provider": "deepseek", "model": "deepseek-reasoner"}, # Via DeepSeek API (OpenAI compat)
                  "GPT-5.1 Preview (Simulado/GPT-4o)": {"provider": "openai", "model": "gpt-4o"},
-                 "Claude 4.5 Sonnet": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"}
+                 "Claude 4.5 Sonnet": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929"},
+                 "Amazônia IA (Soberano BR)": {"provider": "amazonia", "model": "rodrigomalossi/amazonia-a"}
              }
              
              # Seletores
@@ -514,6 +403,15 @@ with st.sidebar:
                  
                  if main_config['provider'] == 'anthropic': main_config['key'] = k_ant
                  if style_config['provider'] == 'anthropic': style_config['key'] = k_ant
+             
+             # Amazônia IA
+             if 'amazonia' in needed_providers:
+                 if "amazonia_key_v1" not in st.session_state: st.session_state.amazonia_key_v1 = ""
+                 k_amz = st.text_input("Amazônia IA API Key", value=st.session_state.amazonia_key_v1, type="password", key="v1_amz_key")
+                 st.session_state.amazonia_key_v1 = k_amz
+                 
+                 if main_config['provider'] == 'amazonia': main_config['key'] = k_amz
+                 if style_config['provider'] == 'amazonia': style_config['key'] = k_amz
              
              # Salva no Session State para uso nos botões de ação
              st.session_state.v1_main_config = main_config
