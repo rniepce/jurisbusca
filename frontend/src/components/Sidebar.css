@@ -1,0 +1,118 @@
+.assistente-sidebar {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 400px;
+    background-color: var(--sidebar-bg);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    box-shadow: -2px 0 10px rgba(0, 0, 0, 0.02);
+    transition: transform 0.3s ease;
+}
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 40px;
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.logo-img {
+    height: 32px;
+    border-radius: 4px;
+}
+
+.title {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--text-color);
+}
+
+.window-controls .control-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--secondary-text-color);
+    padding: 4px;
+    margin-left: 8px;
+    transition: color 0.2s;
+}
+
+.window-controls .control-btn:hover {
+    color: var(--text-color);
+}
+
+/* Content */
+.content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 32px;
+}
+
+.welcome-section {
+    text-align: left;
+}
+
+.welcome-title {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-color);
+    margin-bottom: 8px;
+    line-height: 1.2;
+}
+
+.welcome-subtitle {
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--secondary-text-color);
+    margin-bottom: 24px;
+}
+
+.action-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.history-link {
+    margin-top: 10px;
+}
+
+.history-link a {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.history-link a:hover {
+    text-decoration: underline;
+}
+
+/* Footer & Input */
+.footer {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+@media (max-width: 768px) {
+    .assistente-sidebar {
+        width: 100%;
+        border-left: none;
+    }
+}

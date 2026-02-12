@@ -1,0 +1,323 @@
+:root {
+    --primary-color: #003366;
+    /* TJMG Blue - Approx */
+    --accent-color: #0056b3;
+    --text-color: #1a1a1a;
+    --secondary-text-color: #666;
+    --bg-color: #f9f9f9;
+    --sidebar-bg: #ffffff;
+    --border-color: #e0e0e0;
+    --input-bg: #f0f2f5;
+    --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.05);
+    --shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.08);
+    --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-pill: 50px;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-family);
+    background-color: var(--bg-color);
+    display: flex;
+    justify-content: center;
+    /* Center for demo purposes */
+    align-items: center;
+    min-height: 100vh;
+    color: var(--text-color);
+}
+
+.assistente-wrapper {
+    /* Simulating the workspace context where the sidebar lives */
+    width: 100%;
+    max-width: 1440px;
+    height: 90vh;
+    background-color: #eceff1;
+    /* Neutral background to show off the white sidebar */
+    position: relative;
+    border-radius: var(--radius-lg);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+/* Sidebar Styles */
+.assistente-sidebar {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 400px;
+    background-color: var(--sidebar-bg);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    box-shadow: -2px 0 10px rgba(0, 0, 0, 0.02);
+}
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 40px;
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.logo-img {
+    height: 32px;
+    /* Placeholder styling */
+    border-radius: 4px;
+}
+
+.title {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--text-color);
+}
+
+.window-controls .control-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--secondary-text-color);
+    padding: 4px;
+    margin-left: 8px;
+    transition: color 0.2s;
+}
+
+.window-controls .control-btn:hover {
+    color: var(--text-color);
+}
+
+/* Content */
+.content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    /* Vertically center content like in the design */
+    gap: 32px;
+}
+
+.welcome-section {
+    text-align: left;
+}
+
+.welcome-title {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-color);
+    margin-bottom: 8px;
+    line-height: 1.2;
+}
+
+.welcome-subtitle {
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--secondary-text-color);
+    margin-bottom: 24px;
+}
+
+/* Action Buttons */
+.action-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.action-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* Space between content and arrow */
+    background-color: var(--sidebar-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: left;
+    box-shadow: var(--shadow-soft);
+}
+
+.action-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+    border-color: var(--accent-color);
+}
+
+.action-card .icon-box {
+    display: none;
+    /* Hide icon box for cleaner look if not needed, or style it */
+}
+
+/* If we want icons inside cards */
+.action-card .action-text {
+    font-weight: 500;
+    font-size: 16px;
+    color: var(--text-color);
+    flex: 1;
+    /* Take remaining space */
+}
+
+.action-card .action-arrow {
+    color: var(--secondary-text-color);
+    font-size: 14px;
+    opacity: 0;
+    /* Hidden by default or subtle */
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.action-card:hover .action-arrow {
+    opacity: 1;
+    transform: translateX(4px);
+    color: var(--accent-color);
+}
+
+
+.history-link a {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.history-link a:hover {
+    text-decoration: underline;
+}
+
+/* Footer & Input */
+.footer {
+    margin-top: auto;
+    /* Push to bottom if content is short */
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.chat-input-container {
+    background-color: var(--input-bg);
+    border-radius: var(--radius-pill);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 1px solid transparent;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.chat-input-container:focus-within {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(0, 86, 179, 0.1);
+    background-color: #fff;
+}
+
+.chat-input {
+    border: none;
+    background: transparent;
+    flex: 1;
+    /* Takes all available space */
+    padding: 8px 0;
+    font-size: 14px;
+    color: var(--text-color);
+    outline: none;
+    font-family: var(--font-family);
+}
+
+.chat-input::placeholder {
+    color: #999;
+}
+
+.input-action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--secondary-text-color);
+    font-size: 16px;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+}
+
+.input-action-btn:hover {
+    color: var(--accent-color);
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.input-action-btn.send-btn {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.input-action-btn.send-btn:hover {
+    background-color: #004494;
+}
+
+.right-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* "New Chat" button styling matching the design (top left usually or floating) */
+/* In the code provided, I put it in footer but in design it might be elsewhere. 
+   Assuming it's a small text button based on "Nova chat" text. */
+.new-chat-floater {
+    position: absolute;
+    top: 80px;
+    /* Below header */
+    left: 24px;
+}
+
+.new-chat-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-color);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+}
+
+.new-chat-btn:hover {
+    background-color: var(--input-bg);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .assistente-sidebar {
+        width: 100%;
+        position: relative;
+        /* Becomes full page on mobile */
+        height: 100vh;
+        border-left: none;
+    }
+
+    .assistente-wrapper {
+        border-radius: 0;
+        height: auto;
+    }
+}

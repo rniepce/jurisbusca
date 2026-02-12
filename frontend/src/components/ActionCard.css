@@ -1,0 +1,51 @@
+.action-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var(--sidebar-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: left;
+    box-shadow: var(--shadow-soft);
+    width: 100%;
+    font-family: var(--font-family);
+}
+
+.action-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+    border-color: var(--accent-color);
+}
+
+.action-card .icon-box {
+    /* display: none; */
+    /* If you want icons on the left, uncomment below */
+    margin-right: 12px;
+    font-size: 18px;
+    color: var(--accent-color);
+    display: flex;
+    align-items: center;
+}
+
+.action-card .action-text {
+    font-weight: 500;
+    font-size: 16px;
+    color: var(--text-color);
+    flex: 1;
+}
+
+.action-card .action-arrow {
+    color: var(--secondary-text-color);
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.action-card:hover .action-arrow {
+    opacity: 1;
+    transform: translateX(4px);
+    color: var(--accent-color);
+}

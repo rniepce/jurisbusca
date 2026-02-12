@@ -1,0 +1,29 @@
+:root {
+  --primary-color: #003366;
+  --accent-color: #0056b3;
+  --text-color: #1a1a1a;
+  --secondary-text-color: #666;
+  --bg-color: #f9f9f9;
+  --sidebar-bg: #ffffff;
+  --border-color: #e0e0e0;
+  --input-bg: #f0f2f5;
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.08);
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 50px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  min-height: 100vh;
+}
