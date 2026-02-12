@@ -54,7 +54,7 @@ def node_magistrate(state: MagistrateState):
     # Or GPT-4o.
     llm = None
     if keys.get("google"):
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", google_api_key=keys["google"], temperature=0.1)
+        llm = ChatGoogleGenerativeAI(model="gemini-3-pro-preview", google_api_key=keys["google"], temperature=0.1)
     elif keys.get("openai"):
         llm = ChatOpenAI(model="gpt-4o", api_key=keys["openai"], temperature=0.1)
     

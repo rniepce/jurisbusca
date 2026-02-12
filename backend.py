@@ -4,6 +4,8 @@ import traceback
 import tempfile
 import hashlib
 import time
+import random
+import concurrent.futures
 from typing import List, Optional, Any
 import pypdf
 import docx
@@ -87,14 +89,14 @@ except ImportError as e:
     GEMINI_IMPORT_ERROR = str(e)
     ChatGoogleGenerativeAI = None
     GoogleGenerativeAIEmbeddings = None
-    ChatGoogleGenerativeAI = None
-    GoogleGenerativeAIEmbeddings = None
 
 try:
-    from langchain_openai import ChatOpenAI
+    from langchain_openai import ChatOpenAI, OpenAIEmbeddings
     HAS_OPENAI = True
 except ImportError:
     HAS_OPENAI = False
+    ChatOpenAI = None
+    OpenAIEmbeddings = None
 
 try:
     from langchain_anthropic import ChatAnthropic
@@ -171,7 +173,7 @@ def get_embedding_function(api_key=None):
                 return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
             else:
                 print("⚠️ Chave Google detectada mas lib não instalada. Usando local.")
-        elif api_key.startswith("sk-"):
+        elif api_key.startswith("sk-") and HAS_OPENAI:
             return OpenAIEmbeddings(openai_api_key=api_key)
             
     # Modelo leve para rodar localmente no Mac M3
@@ -363,7 +365,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
                 data = json.loads(clean)
                 if isinstance(data, dict):
                     draft_content = data.get("minuta_final", draft_text)
-            except:
+            except Exception:
                 pass
 
         print("🛡️ Iniciando Auditoria Ativa (Reflexion Loop)...")
@@ -378,7 +380,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
         audit_json = {}
         try:
             audit_json = json.loads(audit_clean)
-        except:
+        except Exception:
             print(f"Erro parse auditoria: {audit_clean}")
             return draft_text, "Falha no Parse da Auditoria"
 
@@ -411,7 +413,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
                         data["minuta_final"] = fix_resp
                         data["diagnostico"]["status_auditoria"] = "Corrigido Automaticamente"
                         return json.dumps(data, ensure_ascii=False), audit_resp
-                except:
+                except Exception:
                     pass
             
             return fix_resp, audit_resp
@@ -465,7 +467,7 @@ def extract_text_with_gemini_flash(file_path, api_key):
         # Cleanup
         try:
             genai.delete_file(sample_file.name)
-        except:
+        except Exception:
             pass
             
         return response.text
@@ -597,8 +599,8 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
                 except UnicodeDecodeError:
                     with open(fpath, "r", encoding="latin-1") as f:
                         content = f.read()
-                    if content.strip():
-                        kb_text += f"\n=== {label} ===\n{content}\n"
+                if content.strip():
+                    kb_text += f"\n=== {label} ===\n{content}\n"
         
         # GARANTE USO DO PROMPT V1 OTIMIZADO (JSON)
         final_prompt_integral = PROMPT_GEMINI_INTEGRAL
@@ -1174,7 +1176,7 @@ def generate_batch_xray(files, api_key, template_files=None):
             # Se for lista de strings ou objetos com text, tenta converter
             try:
                 content = "".join([str(c) for c in content])
-            except:
+            except Exception:
                 content = str(content)
         elif not isinstance(content, str):
             content = str(content)
@@ -1202,12 +1204,12 @@ def generate_batch_xray(files, api_key, template_files=None):
                      # ast.literal_eval consegue parsear dicts python stringficados ({'key': 'val'})
                      repaired = ast.literal_eval(cleaned_json)
                      return repaired, text_cache
-                 except:
+                 except Exception:
                      # Última tentativa: regex replace de aspas simples
                      try:
                          repaired_str = cleaned_json.replace("'", '"').replace("Mm.", "Mm").replace("Exa.", "Exa") # Hacks comuns
                          return json.loads(repaired_str), text_cache
-                     except:
+                     except Exception:
                         pass
                  
                  # Se tudo falhar, retorna erro
@@ -1219,11 +1221,6 @@ def generate_batch_xray(files, api_key, template_files=None):
     except Exception as e:
         return {"error": f"Erro Geral no Pipeline: {str(e)}\n{traceback.format_exc()}"}, {}
 
-import concurrent.futures
-import time
-import random
-import tempfile
-import hashlib
 
 
 
@@ -1529,19 +1526,11 @@ def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=
                 ocr_engine_choice=ocr_engine_choice
             )
             
-            # Persistência
-            report_id = f"{int(time.time())}_{random.randint(1000,9999)}"
-            res['report_id'] = report_id
-            res['timestamp'] = time.strftime("%Y-%m-%d %H:%M:%S")
+            # Usa report_id gerado pelo process_single_case_pipeline (evita duplicação)
             res['mode'] = mode
             res['filename'] = filename
-            
-            # Salva JSON
-            try:
-                with open(f"data/reports/{report_id}.json", "w") as f:
-                    json.dump(res, f, ensure_ascii=False, indent=2)
-            except Exception as e_io:
-                print(f"⚠️ Erro IO ao salvar {filename}: {e_io}")
+            if 'timestamp' not in res:
+                res['timestamp'] = time.strftime("%Y-%m-%d %H:%M:%S")
 
             results_list.append(res)
             

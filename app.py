@@ -62,7 +62,7 @@ def extract_minuta_from_report(data: dict) -> tuple:
             fund = data_json.get("fundamentacao_logica", "")
             if diag or fund:
                 diagnostic_text = f"**Diagnóstico:** {json.dumps(diag, indent=2, ensure_ascii=False)}\n\n**Fundamentação:** {fund}"
-    except:
+    except Exception:
         pass
     
     # Fallback: Regex patterns
@@ -967,7 +967,7 @@ if uploaded_files:
                                 parsed = ast.literal_eval(raw_output)
                                 if isinstance(parsed, dict) and 'text' in parsed:
                                     raw_output = parsed['text']
-                            except:
+                            except Exception:
                                 pass
                         
                         # Tenta Parse JSON (Prompt V3 Core)
