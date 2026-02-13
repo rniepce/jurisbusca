@@ -86,7 +86,8 @@ def build_v2_graph():
 
 def run_hybrid_orchestration(text: str, keys: dict, style_guide: str = ""):
     """
-    Function to be called from backend.py
+    Function to be called from backend.py.
+    Returns a normalized dict compatible with app.py expectations.
     """
     app = build_v2_graph()
     initial_state = {
@@ -97,4 +98,15 @@ def run_hybrid_orchestration(text: str, keys: dict, style_guide: str = ""):
     }
     
     result = app.invoke(initial_state)
-    return result
+    
+    # Normalize output to match what app.py expects
+    normalized = {
+        "final_output": result.get("final_output", ""),
+        "audit_report": result.get("audit_report", ""),
+        "draft_text": result.get("draft_text", ""),
+        "logs": result.get("logs", []),
+        "final_report": result.get("final_output", ""),
+        "auditor_dashboard": result.get("audit_report", ""),
+        "steps": result.get("logs", []),
+    }
+    return normalized

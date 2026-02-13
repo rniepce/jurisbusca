@@ -7,9 +7,9 @@ const actions = [
     'Gerar resumo de peças individualizadas',
 ];
 
-const WelcomeContent = () => {
+const WelcomeContent = ({ onAction }) => {
     const handleAction = (action) => {
-        console.log('Action:', action);
+        if (onAction) onAction(action);
     };
 
     return (

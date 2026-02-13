@@ -5,6 +5,9 @@ langchain-community
 python-dotenv
 pandas
 plotly
+fastapi
+uvicorn
+python-multipart
 
 # V1: Google Gemini (Native)
 langchain-google-genai

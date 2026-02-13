@@ -1,0 +1,365 @@
+/* ═══════════════════════════════════════════════════════════════════
+   XRay Dashboard — Premium Legal Portfolio Analysis
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+    --xray-bg: #0f0f23;
+    --xray-card-bg: rgba(255, 255, 255, 0.04);
+    --xray-card-border: rgba(255, 255, 255, 0.08);
+    --xray-text: #e2e8f0;
+    --xray-text-muted: rgba(255, 255, 255, 0.5);
+    --xray-glass: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Container ──────────────────────────────────────────────────── */
+.xray-dashboard {
+    width: 100%;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 24px;
+    animation: xrayFadeIn 0.5s ease-out;
+}
+
+@keyframes xrayFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+.xray-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 28px;
+}
+
+.xray-title {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--text-color, #1e293b);
+    margin: 0;
+}
+
+.xray-subtitle {
+    font-size: 0.85rem;
+    color: var(--text-muted, #64748b);
+    margin: 4px 0 0;
+}
+
+.xray-close-btn {
+    background: var(--xray-glass);
+    border: 1px solid var(--xray-card-border);
+    color: var(--text-muted, #64748b);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.xray-close-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* ── Stat Cards ─────────────────────────────────────────────────── */
+.xray-stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.xray-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 18px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.05));
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 14px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.xray-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12);
+}
+
+.xray-stat-icon {
+    color: #6366f1;
+    flex-shrink: 0;
+}
+
+.xray-stat-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-color, #1e293b);
+    line-height: 1.2;
+}
+
+.xray-stat-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted, #64748b);
+}
+
+/* ── Temas ──────────────────────────────────────────────────────── */
+.xray-temas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.xray-tema-tag {
+    padding: 5px 14px;
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.12));
+    color: #818cf8;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+/* ── Alertas ────────────────────────────────────────────────────── */
+.xray-alertas {
+    margin-bottom: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.xray-alerta-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: 10px;
+    font-size: 0.82rem;
+    color: #d97706;
+}
+
+/* ── Chart Section ──────────────────────────────────────────────── */
+.xray-chart-section {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    padding: 24px;
+    background: linear-gradient(135deg, rgba(15, 15, 35, 0.03), rgba(99, 102, 241, 0.04));
+    border: 1px solid rgba(99, 102, 241, 0.1);
+    border-radius: 18px;
+    margin-bottom: 28px;
+}
+
+.xray-pie {
+    width: 180px;
+    height: 180px;
+    flex-shrink: 0;
+    --xray-bg: #fff;
+}
+
+/* Dark mode override for center hole */
+@media (prefers-color-scheme: dark) {
+    .xray-pie {
+        --xray-bg: #1a1a2e;
+    }
+}
+
+.xray-legend {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.xray-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+}
+
+.xray-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.xray-legend-label {
+    flex: 1;
+    color: var(--text-color, #334155);
+}
+
+.xray-legend-value {
+    font-weight: 700;
+    color: var(--text-color, #1e293b);
+    min-width: 20px;
+    text-align: right;
+}
+
+/* ── Cluster Cards ──────────────────────────────────────────────── */
+.xray-clusters-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+}
+
+.xray-cluster-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-left: 4px solid #6366f1;
+    border-radius: 14px;
+    padding: 20px;
+    transition: transform 0.2s, box-shadow 0.2s;
+    animation: cardSlideIn 0.4s ease-out both;
+}
+
+.xray-cluster-card:nth-child(2) {
+    animation-delay: 0.05s;
+}
+
+.xray-cluster-card:nth-child(3) {
+    animation-delay: 0.1s;
+}
+
+.xray-cluster-card:nth-child(4) {
+    animation-delay: 0.15s;
+}
+
+.xray-cluster-card:nth-child(5) {
+    animation-delay: 0.2s;
+}
+
+@keyframes cardSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-12px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.xray-cluster-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+}
+
+.xray-cluster-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.xray-cluster-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.xray-cluster-name {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-color, #1e293b);
+}
+
+.xray-cluster-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted, #64748b);
+    line-height: 1.5;
+    margin: 0 0 10px;
+}
+
+.xray-cluster-hint {
+    font-size: 0.78rem;
+    color: #6366f1;
+    background: rgba(99, 102, 241, 0.06);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 0 0 12px;
+    border-left: 3px solid rgba(99, 102, 241, 0.3);
+}
+
+/* ── File Chips ─────────────────────────────────────────────────── */
+.xray-cluster-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.xray-file-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: rgba(0, 0, 0, 0.04);
+    border-radius: 6px;
+    font-size: 0.72rem;
+    color: var(--text-muted, #64748b);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* ── Action Button ──────────────────────────────────────────────── */
+.xray-cluster-action {
+    width: 100%;
+    padding: 10px 0;
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    opacity: 0.9;
+}
+
+.xray-cluster-action:hover {
+    opacity: 1;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.3);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+    .xray-chart-section {
+        flex-direction: column;
+    }
+
+    .xray-clusters-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .xray-stats-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

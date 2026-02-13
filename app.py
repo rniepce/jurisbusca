@@ -22,6 +22,39 @@ load_dotenv()
 
 
 # ==============================================================================
+# FUNÇÃO UTILITÁRIA: LIMPEZA DE TEXTO PARA EXIBIÇÃO
+# ==============================================================================
+def clean_for_display(text):
+    """Sanitiza texto vindo de LLM para exibição via st.markdown()."""
+    if not text:
+        return ""
+    if not isinstance(text, str):
+        if isinstance(text, list):
+            parts = []
+            for item in text:
+                if isinstance(item, dict) and 'text' in item:
+                    parts.append(item['text'])
+                else:
+                    parts.append(str(item))
+            text = "\n".join(parts)
+        else:
+            text = str(text)
+    # 1. Converte escaped newlines
+    text = text.replace("\\n", "\n")
+    # 2. Detecta JSON inline e formata como bloco de código
+    stripped = text.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        try:
+            parsed = json.loads(stripped)
+            text = "```json\n" + json.dumps(parsed, indent=2, ensure_ascii=False) + "\n```"
+        except Exception:
+            pass
+    # 3. Remove tags HTML (exceto br/hr que st.markdown pode usar)
+    text = re.sub(r'<(?!/?(?:br|hr)\s*/?>)[^>]+>', '', text)
+    return text
+
+
+# ==============================================================================
 # FUNÇÃO UTILITÁRIA: EXTRAÇÃO ROBUSTA DE MINUTA
 # ==============================================================================
 def extract_minuta_from_report(data: dict) -> tuple:
@@ -146,15 +179,15 @@ if "report_id" in query_params:
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             with st.popover("🧠 Diagnóstico", use_container_width=True):
-                st.markdown(diagnostic_text)
+                st.markdown(clean_for_display(diagnostic_text))
         with c2:
             if data.get("auditor_dashboard"):
                 with st.popover("🛡️ Auditoria", use_container_width=True):
-                    st.markdown(data["auditor_dashboard"])
+                    st.markdown(clean_for_display(data["auditor_dashboard"]))
         with c3:
             if data.get("style_report"):
                 with st.popover("🎨 Estilo", use_container_width=True):
-                    st.markdown(data["style_report"])
+                    st.markdown(clean_for_display(data["style_report"]))
         with c4:
              with st.popover("⚙️ Logs", use_container_width=True):
                 st.json(data.get("steps", {}))
@@ -544,7 +577,7 @@ st.markdown('<p class="subtitle">Inteligência Artificial para Análise Jurídic
 # Exibe Preview do Estilo se houver
 if "style_report_preview" in st.session_state and st.session_state.style_report_preview:
     st.info("🎨 **Perfil de Estilo Identificado (Dossiê do Magistrado):**")
-    st.markdown(st.session_state.style_report_preview)
+    st.markdown(clean_for_display(st.session_state.style_report_preview))
     if st.button("Fechar Preview do Estilo"):
         del st.session_state.style_report_preview
         st.rerun()
@@ -1045,7 +1078,7 @@ if uploaded_files:
                             st.markdown("### 🧠 Raciocínio (Chain-of-Thought)")
                             # Fix escaped newlines for proper display
                             display_text = diagnostic_text.replace("\\n", "\n") if isinstance(diagnostic_text, str) else str(diagnostic_text)
-                            st.markdown(display_text)
+                            st.markdown(clean_for_display(display_text))
                     
                     with c2:
                         dashboard_text = results.get("auditor_dashboard", "")
@@ -1054,7 +1087,7 @@ if uploaded_files:
                                 st.markdown("### 🛡️ Relatório do Auditor")
                                 # Fix escaped newlines
                                 display_audit = dashboard_text.replace("\\n", "\n") if isinstance(dashboard_text, str) else str(dashboard_text)
-                                st.markdown(display_audit)
+                                st.markdown(clean_for_display(display_audit))
                     
                     with c3:
                         style_report = results.get("style_report", "")
@@ -1063,7 +1096,7 @@ if uploaded_files:
                                 st.markdown("### 🎨 Dossiê de Estilo Identificado")
                                 # Fix escaped newlines
                                 display_style = style_report.replace("\\n", "\n") if isinstance(style_report, str) else str(style_report)
-                                st.markdown(display_style)
+                                st.markdown(clean_for_display(display_style))
 
                     # Removido Coluna 4 (Debug) como solicitado
                     
@@ -1086,7 +1119,7 @@ if st.session_state.messages and st.session_state.retriever:
     # Exibe histórico
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+            st.markdown(clean_for_display(msg["content"]))
             
     # Input
     if prompt := st.chat_input("Faça perguntas sobre o caso..."):
@@ -1132,7 +1165,7 @@ if st.session_state.messages and st.session_state.retriever:
                     response = llm.invoke(chat_history)
                     
                     with st.chat_message("assistant"):
-                        st.markdown(response.content)
+                        st.markdown(clean_for_display(response.content if hasattr(response, 'content') else str(response)))
                     
                     st.session_state.messages.append({"role": "assistant", "content": response.content})
                 

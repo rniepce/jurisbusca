@@ -18,3 +18,7 @@ adapters/
 data/
 !data/knowledge_base/
 !data/knowledge_base/*.txt
+
+# Frontend
+frontend/dist/
+frontend/node_modules/

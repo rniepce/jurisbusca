@@ -22,7 +22,7 @@ const OCR_ENGINES = [
     { id: 'deepseek', label: 'DeepSeek-OCR' },
 ];
 
-const ChatInput = ({ onSend }) => {
+const ChatInput = ({ onSend, onXray, isLoading = false }) => {
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(LLM_MODELS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -45,11 +45,18 @@ const ChatInput = ({ onSend }) => {
     }, []);
 
     const handleSend = () => {
+        if (isLoading) return;
         if (message.trim() || files.length > 0) {
             if (onSend) onSend(message, selectedModel, files, ocrEngine, templateFiles);
             setMessage('');
             setFiles([]);
         }
+    };
+
+    const handleXray = () => {
+        if (isLoading || files.length < 2) return;
+        if (onXray) onXray(files);
+        setFiles([]);
     };
 
     const handleKeyDown = (e) => {
@@ -213,15 +220,28 @@ const ChatInput = ({ onSend }) => {
             <div className="chat-input-box">
                 <textarea
                     className="chat-textarea"
-                    placeholder="Insira o seu prompt aqui. @ para modelos, / para prompts"
+                    placeholder={isLoading ? 'Processando...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
                     rows={3}
+                    disabled={isLoading}
                 />
+                {files.length >= 2 && (
+                    <button
+                        className="xray-btn"
+                        onClick={handleXray}
+                        disabled={isLoading}
+                        aria-label="Raio-X"
+                        title="Analisar carteira (Raio-X)"
+                    >
+                        ⚡ Raio-X
+                    </button>
+                )}
                 <button
-                    className={`send-btn ${(message.trim() || files.length > 0) ? 'active' : ''}`}
+                    className={`send-btn ${(message.trim() || files.length > 0) && !isLoading ? 'active' : ''}`}
                     onClick={handleSend}
+                    disabled={isLoading}
                     aria-label="Enviar"
                 >
                     <IoSend size={14} />

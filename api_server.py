@@ -1,0 +1,224 @@
+"""
+FastAPI backend for Jurisbusca React frontend.
+Exposes chat and file upload endpoints, wiring into existing backend.py orchestration.
+"""
+import os
+import json
+import uuid
+import tempfile
+import traceback
+from pathlib import Path
+from typing import Optional
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+import backend as be
+
+app = FastAPI(title="Jurisbusca API", version="1.0.0")
+
+# CORS — allow Vite dev server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── In-memory conversation store (per session) ──────────────────────────────
+conversations: dict[str, list[dict]] = {}
+
+
+class ChatRequest(BaseModel):
+    message: str
+    model: str = "gemini"
+    conversation_id: Optional[str] = None
+    agent_prompt: Optional[str] = None
+    ocr_engine: str = "gemini_flash"
+    uploaded_text: Optional[str] = None  # pre-extracted text from uploaded file
+
+
+# ── Model mapping ───────────────────────────────────────────────────────────
+MODEL_MAP = {
+    "gemini": {"provider": "google", "model": "gemini-2.5-flash", "key_env": "GOOGLE_API_KEY"},
+    "gpt": {"provider": "openai", "model": "gpt-4o", "key_env": "OPENAI_API_KEY"},
+    "claude": {"provider": "anthropic", "model": "claude-sonnet-4-20250514", "key_env": "ANTHROPIC_API_KEY"},
+    "deepseek": {"provider": "openai", "model": "deepseek-reasoner", "key_env": "DEEPSEEK_API_KEY"},
+}
+
+
+def _get_api_key(model_id: str) -> str:
+    cfg = MODEL_MAP.get(model_id, MODEL_MAP["gemini"])
+    key = os.getenv(cfg["key_env"], "")
+    if not key:
+        raise HTTPException(status_code=400, detail=f"API key não configurada: {cfg['key_env']}")
+    return key
+
+
+def _build_prompt(message: str, agent_prompt: Optional[str], uploaded_text: Optional[str]) -> str:
+    """Combines agent system prompt + uploaded file text + user message into a single prompt."""
+    parts = []
+    if agent_prompt:
+        parts.append(agent_prompt)
+    if uploaded_text:
+        parts.append(f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{uploaded_text}\n---\n")
+    parts.append(f"\n\n**SOLICITAÇÃO DO USUÁRIO:**\n{message}")
+    return "\n".join(parts)
+
+
+@app.get("/api/health")
+async def health():
+    return {"status": "ok"}
+
+
+@app.post("/api/chat")
+async def chat(req: ChatRequest):
+    """Process a chat message and return LLM response."""
+    try:
+        api_key = _get_api_key(req.model)
+        cfg = MODEL_MAP.get(req.model, MODEL_MAP["gemini"])
+
+        # Build the LLM instance
+        llm = be.get_llm(
+            provider=cfg["provider"],
+            model_name=cfg["model"],
+            api_key=api_key,
+            temperature=0.3,
+        )
+
+        # Build full prompt
+        full_prompt = _build_prompt(req.message, req.agent_prompt, req.uploaded_text)
+
+        # Conversation history
+        conv_id = req.conversation_id or str(uuid.uuid4())
+        if conv_id not in conversations:
+            conversations[conv_id] = []
+
+        conversations[conv_id].append({"role": "user", "content": req.message})
+
+        # Call LLM
+        response = llm.invoke(full_prompt)
+        response_text = be.safe_content(response)
+
+        conversations[conv_id].append({"role": "assistant", "content": response_text})
+
+        return {
+            "conversation_id": conv_id,
+            "response": response_text,
+            "model": cfg["model"],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao processar: {str(e)}")
+
+
+@app.post("/api/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    ocr_engine: str = Form("gemini_flash"),
+):
+    """Upload and extract text from a file (PDF/DOCX/TXT)."""
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY", "")
+
+        # Save to temp file
+        suffix = os.path.splitext(file.filename or "doc.pdf")[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        # Extract text using backend
+        try:
+            full_text, _ = be.process_uploaded_file(
+                open(tmp_path, "rb"),
+                file.filename or "documento",
+                api_key=api_key,
+                ocr_engine_choice=ocr_engine,
+            )
+        finally:
+            os.unlink(tmp_path)
+
+        if not full_text or not full_text.strip():
+            raise HTTPException(status_code=422, detail="Não foi possível extrair texto do arquivo.")
+
+        return {
+            "filename": file.filename,
+            "text": full_text,
+            "char_count": len(full_text),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro no upload: {str(e)}")
+
+
+@app.post("/api/xray")
+async def batch_xray(files: list[UploadFile] = File(...)):
+    """
+    Batch X-Ray: upload multiple process files, run MAP-REDUCE clustering.
+    Returns clustered report JSON.
+    """
+    import io
+
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY", "")
+        if not api_key:
+            raise HTTPException(status_code=400, detail="GOOGLE_API_KEY não configurada")
+
+        # Convert UploadFiles into file-like objects with .name attribute
+        file_objects = []
+        for f in files:
+            content = await f.read()
+            buf = io.BytesIO(content)
+            buf.name = f.filename or "documento.pdf"
+            buf.seek(0)
+            file_objects.append(buf)
+
+        # Call the existing MAP-REDUCE pipeline
+        report, text_cache = be.generate_batch_xray(file_objects, api_key)
+
+        if "error" in report:
+            raise HTTPException(status_code=422, detail=report.get("error", "Erro desconhecido"))
+
+        return {
+            "report": report,
+            "file_count": len(file_objects),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro no Raio-X: {str(e)}")
+
+
+# ── Serve React frontend (production) ────────────────────────────────────────
+FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
+if FRONTEND_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(request: Request, full_path: str):
+        """Catch-all: serve static files or fallback to index.html (SPA routing)."""
+        file_path = FRONTEND_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=True)

@@ -17,15 +17,22 @@ const iconMap = {
     FaPenNib: <FaPenNib />,
 };
 
-const Sidebar = ({ isOpen, onToggle, history = [] }) => {
+const Sidebar = ({ isOpen, onToggle, history = [], activeAgent, onAgentSelect, onNewChat }) => {
     const [agentsOpen, setAgentsOpen] = useState(true);
-    const [activeAgent, setActiveAgent] = useState(null);
+
+    const handleAgentClick = (agent) => {
+        if (onAgentSelect) onAgentSelect(agent);
+    };
+
+    const handleNewChat = () => {
+        if (onNewChat) onNewChat();
+    };
 
     return (
         <nav className={`sidebar ${isOpen ? 'open' : 'closed'}`}>
             {/* New Chat Button */}
             <div className="sidebar-top">
-                <button className="new-chat-btn" id="new-chat-btn">
+                <button className="new-chat-btn" id="new-chat-btn" onClick={handleNewChat}>
                     <FaPlus size={14} />
                     <span>Novo Chat</span>
                 </button>
@@ -48,8 +55,8 @@ const Sidebar = ({ isOpen, onToggle, history = [] }) => {
                     {agentDefinitions.map((agent) => (
                         <button
                             key={agent.id}
-                            className={`agent-card ${activeAgent === agent.id ? 'active' : ''}`}
-                            onClick={() => setActiveAgent(agent.id)}
+                            className={`agent-card ${activeAgent?.id === agent.id ? 'active' : ''}`}
+                            onClick={() => handleAgentClick(agent)}
                             id={`agent-${agent.id}`}
                         >
                             <span className="agent-icon" style={{ color: agent.color }}>

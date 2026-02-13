@@ -130,6 +130,51 @@ def _template_cache_key(template_files):
     return hashlib.md5('|'.join(names).encode()).hexdigest()
 
 
+def safe_content(response) -> str:
+    """
+    Normaliza response.content para string limpa.
+    Anthropic retorna lista [{'type':'text','text':'...'}], Gemini às vezes também.
+    """
+    content = response.content if hasattr(response, 'content') else str(response)
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and 'text' in item:
+                parts.append(item['text'])
+            elif isinstance(item, str):
+                parts.append(item)
+            else:
+                parts.append(str(item))
+        content = "\n".join(parts)
+    if content is None:
+        return ""
+    content = str(content)
+    # Converte escaped newlines literais (\n como texto) para quebras reais
+    content = content.replace("\\n", "\n")
+    return content
+
+
+def clean_llm_text(text: str) -> str:
+    """
+    Sanitiza texto vindo de LLM para exibição limpa.
+    Remove tags HTML, escaped newlines, artefatos de dict/JSON.
+    """
+    if not text or not isinstance(text, str):
+        return ""
+    # 1. Converte escaped newlines
+    text = text.replace("\\n", "\n")
+    # 2. Remove tags HTML comuns que LLMs podem gerar
+    text = re.sub(r'<(?!/?(?:br|hr)\s*/?>)[^>]+>', '', text)
+    # 3. Remove artefatos de dict Python vazando
+    if "'extras':" in text:
+        text = text.split("'extras':")[0].strip().rstrip(",").strip()
+    elif '"extras":' in text:
+        text = text.split('"extras":')[0].strip().rstrip(",").strip()
+    # 4. Remove aspas soltas no início/fim
+    text = text.strip().strip("'").strip('"')
+    return text
+
+
 def clean_text(text: str) -> str:
     """
     Higienização agressiva para peças jurídicas (Otimização de Context Window).
@@ -382,7 +427,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
             HumanMessage(content=f"DADOS DO PROCESSO:\n{source_text[:50000]}\n\nMINUTA PARA AUDITORIA:\n{draft_content}")
         ]
         
-        audit_resp = auditor_llm.invoke(msg_audit).content
+        audit_resp = safe_content(auditor_llm.invoke(msg_audit))
         audit_clean = audit_resp.replace("```json", "").replace("```", "").strip()
         
         audit_json = {}
@@ -409,7 +454,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
                 critique=json.dumps(errors, ensure_ascii=False)
             )
             
-            fix_resp = fixer_llm.invoke([HumanMessage(content=msg_fix)]).content
+            fix_resp = safe_content(fixer_llm.invoke([HumanMessage(content=msg_fix)]))
             
             # Se o input era JSON, precisamos reconstruir o JSON com a minuta corrigida?
             # Sim, para mater compatibilidade com o frontend que espera JSON.
@@ -478,7 +523,7 @@ def extract_text_with_gemini_flash(file_path, api_key):
         except Exception:
             pass
             
-        return response.text
+        return safe_content(response)
         
     except Exception as e:
         return f"Erro no Semantic OCR: {str(e)}"
@@ -533,19 +578,7 @@ def generate_style_dossier(template_files, api_key):
         ]
         
         response = llm.invoke(messages)
-        content = response.content
-        
-        # Handle list response (common in Gemini)
-        if isinstance(content, list):
-            text_parts = []
-            for part in content:
-                if isinstance(part, dict) and 'text' in part:
-                    text_parts.append(part['text'])
-                elif isinstance(part, str):
-                    text_parts.append(part)
-            content = "\n".join(text_parts)
-        
-        content = str(content)
+        content = safe_content(response)
         
         # 4. Parse structured response into 3 parts
         result = _parse_dossier_response(content)
@@ -761,7 +794,7 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
         SystemMessage(content=final_prompt_integral),
         HumanMessage(content=f"Realize a ANÁLISE INTEGRAL E MINUTAGEM deste processo:\n\n[AUTOS DO PROCESSO]: {text[:200000]}") 
     ]
-    integral_response = main_llm.invoke(integral_messages).content
+    integral_response = safe_content(main_llm.invoke(integral_messages))
     
     # --- REFLEXION LOOP (ACTIVE AUDITOR) ---
     update("🛡️ Rodando Auditoria Ativa (Verificando Alucinações)...")
@@ -839,12 +872,12 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     
     # Prompt de Fatos
     msg_fatos = [SystemMessage(content=PROMPT_FATOS), HumanMessage(content=f"Autos:\n{text[:150000]}")]
-    res_fatos = analista_fatos.invoke(msg_fatos).content
+    res_fatos = safe_content(analista_fatos.invoke(msg_fatos))
     logs['fatos'] = res_fatos
     
     # Prompt Formal
     msg_formal = [SystemMessage(content=PROMPT_ANALISE_FORMAL), HumanMessage(content=f"Autos:\n{text[:100000]}")] # Menos contexto ok
-    res_formal = analista_fatos.invoke(msg_formal).content
+    res_formal = safe_content(analista_fatos.invoke(msg_formal))
     logs['analise_formal'] = res_formal
     
     # === FASE 2: RACIOCÍNIO JURÍDICO (DEEPSEEK) ===
@@ -875,7 +908,7 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     )
     
     # Use Invoke
-    res_material = juiz_logico.invoke([HumanMessage(content=contexto_juiz), SystemMessage(content=msg_material)]).content
+    res_material = safe_content(juiz_logico.invoke([HumanMessage(content=contexto_juiz), SystemMessage(content=msg_material)]))
     logs['analise_material'] = res_material
     
     # === FASE 3: REDAÇÃO DE MINUTA (CLAUDE) ===
@@ -886,7 +919,7 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
         style_guide=final_style_guide or "Estilo Padrão (Sem guia específico)."
     )
     
-    res_final = redator_final.invoke([HumanMessage(content=msg_redator)]).content
+    res_final = safe_content(redator_final.invoke([HumanMessage(content=msg_redator)]))
     logs['minuta_final'] = res_final
     
     # === FASE 4: AUDITORIA FINAL (GPT-4o) ===
@@ -902,7 +935,7 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
                 SystemMessage(content=PROMPT_AUDITOR_GPT),
                 HumanMessage(content=f"MINUTA PARA REVISÃO:\n{res_final}\n\nAUTOS:\n{text[:20000]}")
             ]
-            audit_resp = auditor_gpt.invoke(msg_audit).content
+            audit_resp = safe_content(auditor_gpt.invoke(msg_audit))
             logs['auditoria_gpt'] = audit_resp
             
             if "ERRO:" in audit_resp or "REPROVADO" in audit_resp:
@@ -1053,18 +1086,7 @@ def generate_style_report(documents, api_key):
         ]
         
         response = llm_flash.invoke(messages)
-        content = response.content
-        
-        # Correção para formato de lista (Gemini 3 Flash Preview as vezes retorna blocos)
-        if isinstance(content, list):
-            # Tenta extrair texto de blocos do tipo {'type': 'text', 'text': ...}
-            text_parts = []
-            for part in content:
-                if isinstance(part, dict) and 'text' in part:
-                    text_parts.append(part['text'])
-                elif isinstance(part, str):
-                    text_parts.append(part)
-            return clean_text("\n".join(text_parts))
+        content = safe_content(response)
             
         return clean_text(content)
     except Exception as e:
@@ -1142,7 +1164,7 @@ def map_process_individual(text_content, filename, api_key):
                 SystemMessage(content=PROMPT_XRAY_MAP),
                 HumanMessage(content=f"Arquivo: {filename}\n\n{text_content[:20000]}")
             ]
-            response = llm.invoke(messages).content
+            response = safe_content(llm.invoke(messages))
             
             # Limpa JSON
             cleaned = response.replace("```json", "").replace("```", "").strip()
@@ -1277,7 +1299,7 @@ def generate_batch_xray(files, api_key, template_files=None):
                 # print(f"Tentando Reduce com: {model_name}...")
                 llm_flash = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=0.1)
                 response = llm_flash.invoke(messages)
-                content = response.content
+                content = safe_content(response)
                 
                 # Se chegou aqui, funcionou
                 break

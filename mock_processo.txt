@@ -1,0 +1,50 @@
+[ID: 1001]
+PETIÇÃO INICIAL
+EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA ___ VARA CÍVEL DA COMARCA DE BELO HORIZONTE/MG.
+
+AUTOR: JOÃO DA SILVA
+RÉU: COMPANHIA AÉREA VOAR BEM S.A.
+
+DOS FATOS
+O autor adquiriu passagem aérea para o trecho BH-MIAMI, voo nº 1234, data 10/01/2024.
+O voo foi cancelado sem aviso prévio. O autor permaneceu 12 horas no aeroporto sem assistência.
+Perdeu uma diária de hotel em Miami (USD 200,00).
+
+DO DIREITO
+Aplica-se o CDC (Responsabilidade Objetiva). Dano Moral in re ipsa. Dano Material comprovado.
+
+PEDIDOS
+1. Condenação em Danos Morais: R$ 10.000,00.
+2. Condenação em Danos Materiais: R$ 1.000,00 (câmbio do dia).
+3. Inversão do ônus da prova.
+
+[ID: 1002]
+DESPACHO CITAÇÃO
+Cite-se a ré para contestar em 15 dias.
+
+[ID: 1003]
+CONTESTAÇÃO
+A ré alega Força Maior (mau tempo). Junta print de site de meteorologia.
+Alega que ofereceu voucher de alimentação (não aceito pelo autor).
+Pede improcedência.
+
+[ID: 1004]
+IMPUNGNAÇÃO À CONTESTAÇÃO
+O autor reitera os pedidos. O "mau tempo" não foi comprovado por laudo oficial, apenas print genérico.
+O voucher não foi oferecido.
+
+[ID: 1005]
+DESPACHO SANEADOR/ESPECIFICAÇÃO DE PROVAS
+Intimem-se as partes para especificar provas.
+
+[ID: 1006]
+MANIFESTAÇÃO DO AUTOR
+Pede julgamento antecipado.
+
+[ID: 1007]
+MANIFESTAÇÃO DO RÉU
+Não tem outras provas a produzir.
+
+[ID: 1008]
+CONCLUSÃO
+Autos conclusos para sentença.
