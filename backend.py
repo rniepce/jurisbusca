@@ -120,6 +120,14 @@ except ImportError as e:
     run_hybrid_orchestration = None
     run_autonomous_magistrate = None
 
+# ── Module-level cache for style dossier (avoids re-running expensive analysis) ──
+_style_dossier_cache = {}
+
+def _template_cache_key(template_files):
+    """Gera chave de cache baseada nos nomes dos arquivos de template."""
+    import hashlib
+    names = sorted([getattr(f, 'name', str(f)) for f in template_files])
+    return hashlib.md5('|'.join(names).encode()).hexdigest()
 
 
 def clean_text(text: str) -> str:
@@ -475,31 +483,172 @@ def extract_text_with_gemini_flash(file_path, api_key):
     except Exception as e:
         return f"Erro no Semantic OCR: {str(e)}"
 
-def retrieve_mirror_context(text, api_key, template_files):
+def generate_style_dossier(template_files, api_key):
     """
-    Função Auxiliar para implementar a Estratégia do Espelho (Mirror Strategy).
-    Recupera o 'Caso Espelho' (Top-1) e monta o contexto.
+    ETAPA 1 DO PIPELINE FORENSE: Gera o Dossiê de Identidade Decisional.
+    
+    Executa a análise dos 5 Pilares uma única vez (cacheado por set de templates).
+    Retorna dict com: 'dossier', 'glossary', 'cloning_prompt', 'full_response'.
+    """
+    # Check cache first
+    cache_key = _template_cache_key(template_files)
+    if cache_key in _style_dossier_cache:
+        print(f"✅ Dossiê de estilo recuperado do cache (key: {cache_key[:8]}...)")
+        return _style_dossier_cache[cache_key]
+    
+    if not HAS_GEMINI:
+        print("⚠️ Google GenAI não instalado. Dossiê de estilo não disponível.")
+        return None
+    
+    try:
+        print("🧬 Gerando Dossiê de Identidade Decisional (5 Pilares)...")
+        
+        # 1. Processar templates para obter todos os documentos
+        _, all_docs = process_templates(template_files, api_key)
+        
+        if not all_docs:
+            print("⚠️ Nenhum documento extraído dos templates.")
+            return None
+        
+        # 2. Concatenar TODOS os textos (não random sampling como antes)
+        # Limita a ~80k chars para caber no context window do Flash
+        full_text = ""
+        for doc in all_docs:
+            source = doc.metadata.get('source', 'desconhecido')
+            full_text += f"\n\n=== DECISÃO ({source}) ===\n{doc.page_content}\n"
+            if len(full_text) > 80000:
+                full_text += "\n[... documentos adicionais truncados por limite de contexto ...]\n"
+                break
+        
+        # 3. Chamar LLM com o prompt forense de 5 pilares
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-3-flash-preview", 
+            google_api_key=api_key, 
+            temperature=0.3
+        )
+        
+        messages = [
+            SystemMessage(content=PROMPT_STYLE_ANALYZER),
+            HumanMessage(content=f"Aqui está o acervo de decisões do magistrado para análise forense:\n{full_text}")
+        ]
+        
+        response = llm.invoke(messages)
+        content = response.content
+        
+        # Handle list response (common in Gemini)
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and 'text' in part:
+                    text_parts.append(part['text'])
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            content = "\n".join(text_parts)
+        
+        content = str(content)
+        
+        # 4. Parse structured response into 3 parts
+        result = _parse_dossier_response(content)
+        result['full_response'] = content
+        
+        # 5. Cache result
+        _style_dossier_cache[cache_key] = result
+        
+        print(f"✅ Dossiê gerado com sucesso:")
+        print(f"   - Dossiê: {len(result.get('dossier', ''))} chars")
+        print(f"   - Glossário: {len(result.get('glossary', ''))} chars")
+        print(f"   - System Prompt: {len(result.get('cloning_prompt', ''))} chars")
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Erro ao gerar Dossiê de Estilo: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def _parse_dossier_response(content: str) -> dict:
+    """
+    Parseia a resposta estruturada do prompt forense usando os delimitadores.
+    Retorna dict com 'dossier', 'glossary', 'cloning_prompt'.
+    """
+    result = {'dossier': '', 'glossary': '', 'cloning_prompt': ''}
+    
+    # Try structured parsing with delimiters
+    if '===PARTE_1_DOSSIE===' in content:
+        parts = content.split('===PARTE_1_DOSSIE===')
+        if len(parts) > 1:
+            rest = parts[1]
+            
+            if '===PARTE_2_GLOSSARIO===' in rest:
+                dossier_part, rest2 = rest.split('===PARTE_2_GLOSSARIO===', 1)
+                result['dossier'] = dossier_part.strip()
+                
+                if '===PARTE_3_SYSTEM_PROMPT===' in rest2:
+                    glossary_part, rest3 = rest2.split('===PARTE_3_SYSTEM_PROMPT===', 1)
+                    result['glossary'] = glossary_part.strip()
+                    
+                    # Remove trailing ===FIM=== if present
+                    cloning = rest3.split('===FIM===')[0] if '===FIM===' in rest3 else rest3
+                    result['cloning_prompt'] = cloning.strip()
+                else:
+                    result['glossary'] = rest2.strip()
+            else:
+                result['dossier'] = rest.strip()
+    else:
+        # Fallback: treat entire response as dossier (unstructured)
+        print("⚠️ Resposta não contém delimitadores estruturados. Usando como dossiê completo.")
+        result['dossier'] = content
+        result['cloning_prompt'] = content  # Use full content as cloning instruction
+    
+    return result
+
+def retrieve_mirror_context(text, api_key, template_files, style_dossier=None):
+    """
+    Estratégia do Espelho APRIMORADA.
+    Combina: System Prompt de Clonagem (do dossiê) + Golden Sample (RAG top-1).
+    
+    Args:
+        text: Texto do processo sendo analisado
+        api_key: Chave de API para embeddings
+        template_files: Arquivos de modelo de decisão
+        style_dossier: Dict com 'dossier', 'glossary', 'cloning_prompt' (opcional)
     """
     if not template_files: return ""
     
     try:
-        # Reutiliza process_templates (assume que ele lida com cache ou é rápido)
+        rag_context = ""
+        
+        # ── ETAPA 1: Injetar System Prompt de Clonagem (estilo geral) ──
+        if style_dossier:
+            cloning_prompt = style_dossier.get('cloning_prompt', '')
+            glossary = style_dossier.get('glossary', '')
+            
+            if cloning_prompt:
+                rag_context += "\n\n## 🧬 SYSTEM PROMPT DE CLONAGEM (ESTILO DO MAGISTRADO)\n"
+                rag_context += "⚠️ INSTRUÇÃO PRIMÁRIA: Você DEVE seguir rigorosamente as diretrizes abaixo para replicar o estilo deste magistrado.\n"
+                rag_context += f"\n{cloning_prompt}\n"
+            
+            if glossary:
+                rag_context += "\n\n## 📝 GLOSSÁRIO DO MAGISTRADO (CHECKLIST DE VOCABULÁRIO)\n"
+                rag_context += "Use estas expressões e conectivos obrigatoriamente ao redigir:\n"
+                rag_context += f"\n{glossary}\n"
+        
+        # ── ETAPA 2: Golden Sample / Caso Espelho (gabarito estrutural específico) ──
         retriever, _ = process_templates(template_files, api_key)
         
-        if not retriever: return ""
+        if not retriever: return rag_context
         
-        # Busca documento mais relevante (Golden Sample)
         relevant_docs = retriever.invoke(text[:6000])
         
-        rag_context = ""
         if relevant_docs:
             mirror_doc = relevant_docs[0]
             other_docs = relevant_docs[1:]
             
-            rag_context += "\n\n## 💎 CASO ESPELHO (GOLDEN SAMPLE - GABARITO)\n"
-            rag_context += f"⚠️ INSTRUÇÃO DE CLONAGEM: O caso abaixo ({mirror_doc.metadata.get('source')}) é o seu GABARITO ESTRUTURAL OBRIGATÓRIO.\n"
+            rag_context += "\n\n## 💎 CASO ESPELHO (GOLDEN SAMPLE - GABARITO ESTRUTURAL)\n"
+            rag_context += f"⚠️ INSTRUÇÃO DE CLONAGEM ESTRUTURAL: O caso abaixo ({mirror_doc.metadata.get('source')}) é o seu GABARITO.\n"
             rag_context += "1. Copie a estrutura de tópicos (titulação, numeração).\n"
-            rag_context += "2. Copie os jargões e frases de transição exatas.\n"
+            rag_context += "2. Use os mesmos jargões e frases de transição do Glossário acima.\n"
             rag_context += "3. Se for o mesmo assunto, adapte apenas os fatos e nomes, mantendo a fundamentação jurídica.\n"
             rag_context += f"\n--- INÍCIO DO CASO ESPELHO ---\n{mirror_doc.page_content}\n--- FIM DO CASO ESPELHO ---\n"
             
@@ -531,48 +680,23 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
     except Exception as e:
         return {"final_report": f"Erro na inicialização dos modelos: {str(e)}", "steps": {}}
 
-    # PROCESSAMENTO DE TEMPLATES (RAG MIRROR STRATEGY)
+    # PROCESSAMENTO DE TEMPLATES (RAG + DOSSIÊ FORENSE)
     rag_context = ""
     style_report = None
+    style_dossier = None
     
     if template_files:
-        update("📚 Localizando Caso Espelho (Golden Sample)...")
         # Define API Key para Embeddings (Google)
         rag_key = main_llm_config['key'] if main_llm_config['provider'] == 'google' else (google_key or os.getenv("GOOGLE_API_KEY"))
         
-        # 1. Retrieve Mirror Context
-        rag_context = retrieve_mirror_context(text, rag_key, template_files)
+        # 1. Gerar Dossiê de Estilo Forense (cacheado)
+        update("🧬 Gerando Dossiê de Identidade Decisional (5 Pilares)...")
+        style_dossier = generate_style_dossier(template_files, rag_key)
+        style_report = style_dossier.get('dossier') if style_dossier else None
         
-        # 2. Style Report (Legacy Sampling for 'Personality')
-        try:
-           update(f"🎨 Analisando Estilo Judicial ({style_llm_config['model']})...")
-           # We still need all_docs for style analysis, so process_templates is called again
-           _, all_docs = process_templates(template_files, rag_key)
-           
-           sample_text = ""
-           num_samples = min(5, len(all_docs))
-           selected_docs = random.sample(all_docs, num_samples) if num_samples > 0 else []
-           for doc in selected_docs: 
-               sample_text += f"\n--- AMOSTRA ({doc.metadata.get('source')}): ---\n{doc.page_content[:4000]}\n"
-            
-           style_msgs = [
-               SystemMessage(content=PROMPT_STYLE_ANALYZER),
-               HumanMessage(content=f"Aqui estão amostras de decisões do magistrado. Crie o Dossiê de Estilo:\n{sample_text}")
-           ]
-           style_resp = style_llm.invoke(style_msgs)
-           style_content = style_resp.content
-           
-           # Cleaning list artifacts if needed (common in Gemini)
-           if isinstance(style_content, list):
-                style_content = "\n".join([x if isinstance(x, str) else str(x) for x in style_content])
-           
-           style_report = clean_text(str(style_content))
-           
-           if style_report:
-                rag_context += f"\n\n## DIRETRIZES DE PERSONALIDADE (PERFIL DO JULGADOR)\nUse também este perfil:\n{style_report}\n"
-
-        except Exception as e:
-            print(f"Erro no Style Analysis: {e}")
+        # 2. Retrieve Mirror Context (agora com dossiê integrado)
+        update("📚 Localizando Caso Espelho (Golden Sample)...")
+        rag_context = retrieve_mirror_context(text, rag_key, template_files, style_dossier=style_dossier)
 
     update(f"🧠 Iniciando Análise Profunda ({main_llm_config['model']})...")
 
@@ -701,11 +825,14 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
 
     logs = {}
     
-    # MIRROR STRATEGY FOR V2
+    # MIRROR STRATEGY FOR V2 (com Dossiê Forense)
     rag_context = ""
+    style_dossier = None
     if template_files:
+        update("🧬 (V2) Gerando Dossiê de Identidade Decisional...")
+        style_dossier = generate_style_dossier(template_files, keys['google'])
         update("📚 (V2) Localizando Caso Espelho...")
-        rag_context = retrieve_mirror_context(text, keys['google'], template_files)
+        rag_context = retrieve_mirror_context(text, keys['google'], template_files, style_dossier=style_dossier)
 
     # === FASE 1: EXTRAÇÃO E TRIAGEM (GEMINI) ===
     update("🕵️‍♂️ Fase 1: Gemini analisando Fatos e Requisitos Formais...")
@@ -1368,10 +1495,11 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
             if run_autonomous_magistrate is None:
                 return {"error": "ERRO DE INSTALAÇÃO (V3): Engine Agente não disponível.", "filename": filename}
             
-            # --- MIRROR STRATEGY FOR V3 ---
+            # --- MIRROR STRATEGY FOR V3 (com Dossiê Forense) ---
             mirror_context = ""
             if template_files:
-                 mirror_context = retrieve_mirror_context(clean_content, keys.get('google') or api_key, template_files)
+                 _dossier = generate_style_dossier(template_files, keys.get('google') or api_key)
+                 mirror_context = retrieve_mirror_context(clean_content, keys.get('google') or api_key, template_files, style_dossier=_dossier)
 
             # Normalizar output para o formato esperado pelo front
             # returns (final_json, logs_list)
