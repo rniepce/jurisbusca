@@ -17,12 +17,13 @@ function App() {
   const [uploadedText, setUploadedText] = useState(null);
   const [xrayReport, setXrayReport] = useState(null);
   const [xrayLoading, setXrayLoading] = useState(false);
+  const [ocrProcessing, setOcrProcessing] = useState(false);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
   // ── Send message handler ────────────────────────────────────────────
   const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles) => {
-    if (!message.trim() && files.length === 0) return;
+    if (!message.trim() && !uploadedText) return;
 
     // 1. Add user message immediately
     const userMsg = { role: 'user', content: message };
@@ -30,17 +31,10 @@ function App() {
     setIsLoading(true);
 
     try {
-      // 2. Upload files first (if any)
-      let fileText = uploadedText;
-      if (files.length > 0) {
-        const uploadPromises = files.map((f) => uploadFile(f, ocrEngine));
-        const results = await Promise.all(uploadPromises);
-        const newText = results.map((r) => r.text).join('\n\n---\n\n');
-        fileText = fileText ? fileText + '\n\n---\n\n' + newText : newText;
-        setUploadedText(fileText);
-      }
+      // Files are already processed by handleFilesUploaded (auto-OCR),
+      // so we just use the uploadedText that was populated earlier.
 
-      // 3. Load agent prompt if active
+      // 2. Load agent prompt if active
       let agentPrompt = null;
       if (activeAgent?.promptModule) {
         try {
@@ -51,18 +45,18 @@ function App() {
         }
       }
 
-      // 4. Call the backend
+      // 3. Call the backend
       const result = await sendMessage({
         message,
         model: selectedModel.id,
         agentPrompt,
         conversationId,
-        uploadedText: fileText,
+        uploadedText,
       });
 
       setConversationId(result.conversation_id);
 
-      // 5. Add assistant response
+      // 4. Add assistant response
       const assistantMsg = {
         role: 'assistant',
         content: result.response,
@@ -100,9 +94,50 @@ function App() {
     }
   }, []);
 
+  // ── Files uploaded → run OCR immediately ─────────────────────────────
+  const handleFilesUploaded = useCallback(async (files, ocrEngine) => {
+    if (files.length === 0) return;
+    setOcrProcessing(true);
+
+    try {
+      const uploadPromises = files.map((f) => uploadFile(f, ocrEngine));
+      const results = await Promise.all(uploadPromises);
+
+      // Store the extracted text for future chat messages
+      const newText = results.map((r) => r.text).join('\n\n---\n\n');
+      setUploadedText((prev) => prev ? prev + '\n\n---\n\n' + newText : newText);
+
+      // Inject OCR preview messages into the chat
+      const ocrMessages = results.map((r) => ({
+        role: 'ocr',
+        filename: r.filename,
+        text: r.text,
+        engine: ocrEngine,
+        charCount: r.char_count,
+      }));
+      setMessages((prev) => [...prev, ...ocrMessages]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `⚠️ **Erro no OCR:** ${err.message}`, model: 'erro' },
+      ]);
+    } finally {
+      setOcrProcessing(false);
+    }
+  }, []);
+
   // ── Agent selection handler ─────────────────────────────────────────
   const handleAgentSelect = useCallback((agent) => {
     setActiveAgent(agent);
+    // Inject an activation message into the chat so the user sees feedback
+    const activationMsg = {
+      role: 'agent-activation',
+      agentName: agent.name,
+      agentDesc: agent.desc,
+      agentColor: agent.color,
+      agentIcon: agent.icon,
+    };
+    setMessages((prev) => [...prev, activationMsg]);
   }, []);
 
   // ── New chat handler ────────────────────────────────────────────────
@@ -113,12 +148,6 @@ function App() {
     setUploadedText(null);
     setXrayReport(null);
   }, []);
-
-  // ── Welcome action handler (quick prompts) ──────────────────────────
-  const handleWelcomeAction = useCallback((action) => {
-    const fakeModel = { id: 'gemini', name: 'Gemini 2.5 Pro', color: '#4285F4' };
-    handleSend(action, fakeModel, [], 'gemini_flash', []);
-  }, [handleSend]);
 
   const hasMessages = messages.length > 0;
 
@@ -141,7 +170,7 @@ function App() {
         />
       );
     }
-    return <WelcomeContent onAction={handleWelcomeAction} />;
+    return <WelcomeContent />;
   };
 
   return (
@@ -164,7 +193,9 @@ function App() {
         <ChatInput
           onSend={handleSend}
           onXray={handleXray}
+          onFilesUploaded={handleFilesUploaded}
           isLoading={isLoading || xrayLoading}
+          ocrProcessing={ocrProcessing}
         />
       </div>
     </div>

@@ -1,6 +1,20 @@
 import React, { useEffect, useRef } from 'react';
-import { FaRobot, FaUser } from 'react-icons/fa6';
+import {
+    FaRobot, FaUser,
+    FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
+    FaBookOpen, FaPenNib
+} from 'react-icons/fa6';
+import OcrPreview from './OcrPreview';
 import './ChatArea.css';
+
+// Icon map for agent activation cards
+const iconMap = {
+    FaScaleBalanced: FaScaleBalanced,
+    FaFileLines: FaFileLines,
+    FaMagnifyingGlass: FaMagnifyingGlass,
+    FaBookOpen: FaBookOpen,
+    FaPenNib: FaPenNib,
+};
 
 const ChatArea = ({ messages, isLoading, activeAgent }) => {
     const endRef = useRef(null);
@@ -23,30 +37,69 @@ const ChatArea = ({ messages, isLoading, activeAgent }) => {
 
             {/* Messages */}
             <div className="messages-list">
-                {messages.map((msg, i) => (
-                    <div key={i} className={`message-row ${msg.role}`}>
-                        <div className="message-avatar">
-                            {msg.role === 'user' ? (
-                                <FaUser size={14} />
-                            ) : (
-                                <FaRobot size={14} />
-                            )}
+                {messages.map((msg, i) => {
+                    // ── Agent Activation Card ──
+                    if (msg.role === 'agent-activation') {
+                        const IconComp = iconMap[msg.agentIcon] || FaScaleBalanced;
+                        return (
+                            <div key={i} className="agent-activation-card" style={{ '--agent-color': msg.agentColor }}>
+                                <div className="activation-icon-ring">
+                                    <IconComp size={22} />
+                                </div>
+                                <div className="activation-info">
+                                    <span className="activation-title">
+                                        🎯 Agente <strong>{msg.agentName}</strong> ativado
+                                    </span>
+                                    <span className="activation-desc">
+                                        {msg.agentDesc}
+                                    </span>
+                                    <span className="activation-hint">
+                                        Todas as mensagens usarão o prompt especializado deste agente.
+                                    </span>
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    // ── OCR Preview Card ──
+                    if (msg.role === 'ocr') {
+                        return (
+                            <OcrPreview
+                                key={i}
+                                filename={msg.filename}
+                                text={msg.text}
+                                engine={msg.engine}
+                                charCount={msg.charCount}
+                            />
+                        );
+                    }
+
+                    // ── Normal messages ──
+                    return (
+                        <div key={i} className={`message-row ${msg.role}`}>
+                            <div className="message-avatar">
+                                {msg.role === 'user' ? (
+                                    <FaUser size={14} />
+                                ) : (
+                                    <FaRobot size={14} />
+                                )}
+                            </div>
+                            <div className={`message-bubble ${msg.role}`}>
+                                {msg.role === 'assistant' ? (
+                                    <div
+                                        className="message-content markdown"
+                                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
+                                    />
+                                ) : (
+                                    <div className="message-content">{msg.content}</div>
+                                )}
+                                {msg.model && (
+                                    <span className="message-model">{msg.model}</span>
+                                )}
+                            </div>
                         </div>
-                        <div className={`message-bubble ${msg.role}`}>
-                            {msg.role === 'assistant' ? (
-                                <div
-                                    className="message-content markdown"
-                                    dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
-                                />
-                            ) : (
-                                <div className="message-content">{msg.content}</div>
-                            )}
-                            {msg.model && (
-                                <span className="message-model">{msg.model}</span>
-                            )}
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
 
                 {/* Typing indicator */}
                 {isLoading && (

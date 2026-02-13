@@ -22,7 +22,7 @@ const OCR_ENGINES = [
     { id: 'deepseek', label: 'DeepSeek-OCR' },
 ];
 
-const ChatInput = ({ onSend, onXray, isLoading = false }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, isLoading = false, ocrProcessing = false }) => {
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(LLM_MODELS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -83,6 +83,8 @@ const ChatInput = ({ onSend, onXray, isLoading = false }) => {
         const selected = Array.from(e.target.files);
         if (selected.length > 0) {
             setFiles((prev) => [...prev, ...selected]);
+            // Trigger OCR immediately
+            if (onFilesUploaded) onFilesUploaded(selected, ocrEngine);
         }
         e.target.value = '';
     };
@@ -220,12 +222,12 @@ const ChatInput = ({ onSend, onXray, isLoading = false }) => {
             <div className="chat-input-box">
                 <textarea
                     className="chat-textarea"
-                    placeholder={isLoading ? 'Processando...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
+                    placeholder={isLoading ? 'Processando...' : ocrProcessing ? 'Executando OCR...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
                     rows={3}
-                    disabled={isLoading}
+                    disabled={isLoading || ocrProcessing}
                 />
                 {files.length >= 2 && (
                     <button

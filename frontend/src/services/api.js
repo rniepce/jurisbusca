@@ -5,6 +5,22 @@
 const API_BASE = '/api';
 
 /**
+ * Safely parse JSON from a response, with a clear error if HTML is returned.
+ */
+async function safeJson(res, context) {
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        const text = await res.text().catch(() => '');
+        const preview = text.slice(0, 100);
+        throw new Error(
+            `${context}: servidor retornou ${res.status} (${contentType || 'sem content-type'}). ` +
+            `Verifique se o backend está rodando. Preview: ${preview}`
+        );
+    }
+    return res.json();
+}
+
+/**
  * Upload a file and extract its text content.
  * @param {File} file
  * @param {string} ocrEngine
@@ -21,11 +37,11 @@ export async function uploadFile(file, ocrEngine = 'gemini_flash') {
     });
 
     if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = await safeJson(res, 'Upload').catch(() => ({}));
         throw new Error(err.detail || `Upload falhou (${res.status})`);
     }
 
-    return res.json();
+    return safeJson(res, 'Upload');
 }
 
 /**
@@ -53,11 +69,11 @@ export async function sendMessage({ message, model, agentPrompt, conversationId,
     });
 
     if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = await safeJson(res, 'Chat').catch(() => ({}));
         throw new Error(err.detail || `Erro no chat (${res.status})`);
     }
 
-    return res.json();
+    return safeJson(res, 'Chat');
 }
 
 /**
@@ -75,9 +91,9 @@ export async function uploadBatchXray(files) {
     });
 
     if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = await safeJson(res, 'Raio-X').catch(() => ({}));
         throw new Error(err.detail || `Raio-X falhou (${res.status})`);
     }
 
-    return res.json();
+    return safeJson(res, 'Raio-X');
 }
