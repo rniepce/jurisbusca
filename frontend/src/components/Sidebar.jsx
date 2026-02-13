@@ -15,14 +15,7 @@ const agents = [
     { id: 'redator', icon: <FaPenNib />, name: 'Redator de Minutas', desc: 'Auxilia na redação de minutas', color: '#dc2626' },
 ];
 
-const historyData = [
-    { label: 'Hoje', items: ['Resumo de processo'] },
-    { label: 'Ontem', items: ['Resumo de processo', 'Resumo de processo'] },
-    { label: '7 dias', items: ['Resumo de processo', 'Resumo de processo', 'Resumo de processo', 'Resumo de processo'] },
-    { label: '30 dias', items: ['Resumo de processo', 'Resumo de processo', 'Resumo de processo'] },
-];
-
-const Sidebar = ({ isOpen, onToggle }) => {
+const Sidebar = ({ isOpen, onToggle, history = [] }) => {
     const [agentsOpen, setAgentsOpen] = useState(true);
     const [activeAgent, setActiveAgent] = useState(null);
 
@@ -72,19 +65,28 @@ const Sidebar = ({ isOpen, onToggle }) => {
             {/* Divider */}
             <div className="sidebar-divider" />
 
-            {/* History Section */}
+            {/* History Section — only shows when there are conversations */}
             <div className="sidebar-history">
-                <span className="section-label-static">Histórico</span>
-                {historyData.map((group, gi) => (
-                    <div key={gi} className="history-group">
-                        <span className="history-group-label">{group.label}</span>
-                        {group.items.map((item, ii) => (
-                            <button key={ii} className="history-item" id={`history-${gi}-${ii}`}>
-                                {item}
-                            </button>
+                {history.length > 0 ? (
+                    <>
+                        <span className="section-label-static">Histórico</span>
+                        {history.map((group, gi) => (
+                            <div key={gi} className="history-group">
+                                <span className="history-group-label">{group.label}</span>
+                                {group.items.map((item, ii) => (
+                                    <button key={ii} className="history-item" id={`history-${gi}-${ii}`}>
+                                        {item}
+                                    </button>
+                                ))}
+                            </div>
                         ))}
+                    </>
+                ) : (
+                    <div className="history-empty">
+                        <span className="section-label-static">Histórico</span>
+                        <p className="history-empty-text">Suas conversas aparecerão aqui</p>
                     </div>
-                ))}
+                )}
             </div>
 
             {/* Bottom Icons */}

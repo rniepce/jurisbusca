@@ -233,6 +233,18 @@
     color: #1a1a1a;
 }
 
+/* Empty History State */
+.history-empty {
+    padding-top: 4px;
+}
+
+.history-empty-text {
+    font-size: 13px;
+    color: #bbb;
+    padding: 8px 4px;
+    font-style: italic;
+}
+
 /* ===== BOTTOM BAR ===== */
 .sidebar-bottom {
     padding: 4px 14px 14px;
