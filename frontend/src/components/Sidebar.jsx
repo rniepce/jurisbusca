@@ -1,71 +1,51 @@
 import React from 'react';
-import { FaMinus, FaXmark, FaFileLines, FaLayerGroup, FaCopy } from 'react-icons/fa6';
-import ActionCard from './ActionCard';
-import ChatInput from './ChatInput';
+import { FaRegSquarePlus, FaRegFolder, FaGear, FaCircleUser } from 'react-icons/fa6';
 import './Sidebar.css';
 
-const Sidebar = () => {
-    const handleAction = (action) => {
-        console.log('Action triggered:', action);
-    };
+const historyData = [
+    { label: 'Hoje', items: ['Resumo de processo'] },
+    { label: 'Ontem', items: ['Resumo de processo', 'Resumo de processo'] },
+    { label: '7 dias', items: ['Resumo de processo', 'Resumo de processo', 'Resumo de processo', 'Resumo de processo'] },
+    { label: '30 dias', items: ['Resumo de processo', 'Resumo de processo', 'Resumo de processo'] },
+];
 
-    const handleSendPrompt = (prompt) => {
-        console.log('Sending prompt:', prompt);
-    };
-
+const Sidebar = ({ isOpen, onToggle }) => {
     return (
-        <aside className="assistente-sidebar">
-            {/* Header */}
-            <header className="header">
-                <div className="logo-area">
-                    <img
-                        src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR0Kqa5yJ0q2i9o52w_y6vjA44c20q2u9u9-w&s"
-                        alt="Logo TJMG"
-                        className="logo-img"
-                    />
-                    <span className="title">Assistente TJMG</span>
-                </div>
-                <div className="window-controls">
-                    <button className="control-btn minimize" aria-label="Minimizar"><FaMinus /></button>
-                    <button className="control-btn close" aria-label="Fechar"><FaXmark /></button>
-                </div>
-            </header>
+        <nav className={`sidebar ${isOpen ? 'open' : 'closed'}`}>
+            {/* New Chat Button */}
+            <div className="sidebar-top">
+                <button className="new-chat-btn">
+                    <FaRegSquarePlus size={16} />
+                    <span>Novo chat</span>
+                </button>
+            </div>
 
-            {/* Main Content */}
-            <main className="content">
-                <div className="welcome-section">
-                    <h1 className="welcome-title">Bem-vindo,</h1>
-                    <h2 className="welcome-subtitle">O que você deseja fazer?</h2>
-                </div>
+            {/* History */}
+            <div className="sidebar-history">
+                <span className="history-label-main">HISTÓRICO</span>
+                {historyData.map((group, gi) => (
+                    <div key={gi} className="history-group">
+                        <span className="history-group-label">{group.label}</span>
+                        {group.items.map((item, ii) => (
+                            <button key={ii} className="history-item">
+                                {item}
+                            </button>
+                        ))}
+                    </div>
+                ))}
+                <a href="#" className="history-see-all">Ver histórico completo...</a>
+            </div>
 
-                <div className="action-buttons">
-                    <ActionCard
-                        icon={<FaFileLines />}
-                        text="Gerar ementa"
-                        onClick={() => handleAction('Gerar ementa')}
-                    />
-                    <ActionCard
-                        icon={<FaLayerGroup />}
-                        text="Gerar resumo consolidado"
-                        onClick={() => handleAction('Gerar resumo consolidado')}
-                    />
-                    <ActionCard
-                        icon={<FaCopy />}
-                        text="Gerar resumo de peças individualizadas"
-                        onClick={() => handleAction('Gerar resumo de peças')}
-                    />
+            {/* Bottom Icons */}
+            <div className="sidebar-bottom">
+                <div className="sidebar-divider" />
+                <div className="sidebar-bottom-icons">
+                    <button className="sidebar-icon-btn" aria-label="Pastas"><FaRegFolder /></button>
+                    <button className="sidebar-icon-btn" aria-label="Configurações"><FaGear /></button>
+                    <button className="sidebar-icon-btn" aria-label="Perfil"><FaCircleUser /></button>
                 </div>
-
-                <div className="history-link">
-                    <a href="#">Ver histórico completo...</a>
-                </div>
-            </main>
-
-            {/* Footer */}
-            <footer className="footer">
-                <ChatInput onSend={handleSendPrompt} />
-            </footer>
-        </aside>
+            </div>
+        </nav>
     );
 };
 

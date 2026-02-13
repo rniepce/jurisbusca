@@ -1,0 +1,45 @@
+.welcome-container {
+    max-width: 680px;
+    width: 100%;
+}
+
+.welcome-title {
+    font-size: 36px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin: 0 0 4px;
+    line-height: 1.2;
+}
+
+.welcome-subtitle {
+    font-size: 28px;
+    font-weight: 600;
+    color: #555;
+    margin: 0 0 32px;
+    line-height: 1.3;
+}
+
+.action-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.action-btn {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 15px;
+    font-weight: 400;
+    color: #333;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    font-family: 'Inter', system-ui, sans-serif;
+}
+
+.action-btn:hover {
+    border-color: #bbb;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}

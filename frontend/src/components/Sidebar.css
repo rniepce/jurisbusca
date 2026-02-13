@@ -1,118 +1,149 @@
-.assistente-sidebar {
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 400px;
-    background-color: var(--sidebar-bg);
-    border-left: 1px solid var(--border-color);
+.sidebar {
+    width: 240px;
+    background: #fff;
+    border-right: 1px solid #eee;
     display: flex;
     flex-direction: column;
-    padding: 24px;
-    box-shadow: -2px 0 10px rgba(0, 0, 0, 0.02);
-    transition: transform 0.3s ease;
+    flex-shrink: 0;
+    transition: width 0.3s ease, opacity 0.3s ease;
+    overflow: hidden;
 }
 
-/* Header */
-.header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 40px;
+.sidebar.closed {
+    width: 0;
+    border-right: none;
+    opacity: 0;
+    pointer-events: none;
 }
 
-.logo-area {
+.sidebar-top {
+    padding: 16px 16px 8px;
+}
+
+.new-chat-btn {
     display: flex;
     align-items: center;
     gap: 10px;
-}
-
-.logo-img {
-    height: 32px;
-    border-radius: 4px;
-}
-
-.title {
-    font-weight: 600;
-    font-size: 16px;
-    color: var(--text-color);
-}
-
-.window-controls .control-btn {
     background: none;
     border: none;
     cursor: pointer;
     font-size: 14px;
-    color: var(--secondary-text-color);
-    padding: 4px;
-    margin-left: 8px;
-    transition: color 0.2s;
+    font-weight: 500;
+    color: #333;
+    padding: 8px 10px;
+    border-radius: 8px;
+    width: 100%;
+    transition: background 0.15s;
 }
 
-.window-controls .control-btn:hover {
-    color: var(--text-color);
+.new-chat-btn:hover {
+    background: #f5f5f5;
 }
 
-/* Content */
-.content {
+/* History Section */
+.sidebar-history {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 32px;
+    overflow-y: auto;
+    padding: 8px 16px;
 }
 
-.welcome-section {
-    text-align: left;
+.history-label-main {
+    font-size: 11px;
+    font-weight: 600;
+    color: #999;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 12px;
 }
 
-.welcome-title {
-    font-size: 32px;
-    font-weight: 700;
-    color: var(--text-color);
+.history-group {
     margin-bottom: 8px;
-    line-height: 1.2;
 }
 
-.welcome-subtitle {
-    font-size: 24px;
+.history-group-label {
+    font-size: 12px;
     font-weight: 500;
-    color: var(--secondary-text-color);
-    margin-bottom: 24px;
+    color: #888;
+    display: block;
+    margin-bottom: 4px;
+    padding-left: 2px;
 }
 
-.action-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+.history-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    color: #333;
+    padding: 6px 8px;
+    border-radius: 6px;
+    transition: background 0.15s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.history-link {
-    margin-top: 10px;
+.history-item:hover {
+    background: #f5f5f5;
 }
 
-.history-link a {
-    color: var(--accent-color);
+.history-see-all {
+    display: block;
+    font-size: 13px;
+    color: #0066cc;
     text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
+    margin-top: 12px;
+    padding-left: 2px;
 }
 
-.history-link a:hover {
+.history-see-all:hover {
     text-decoration: underline;
 }
 
-/* Footer & Input */
-.footer {
-    margin-top: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+/* Bottom Bar */
+.sidebar-bottom {
+    padding: 8px 16px 16px;
 }
 
-@media (max-width: 768px) {
-    .assistente-sidebar {
-        width: 100%;
-        border-left: none;
-    }
+.sidebar-divider {
+    height: 1px;
+    background: #eee;
+    margin-bottom: 12px;
+}
+
+.sidebar-bottom-icons {
+    display: flex;
+    gap: 8px;
+}
+
+.sidebar-icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #555;
+    font-size: 18px;
+    padding: 8px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    transition: background 0.15s, color 0.15s;
+}
+
+.sidebar-icon-btn:hover {
+    background: #f5f5f5;
+    color: #333;
+}
+
+/* Scrollbar */
+.sidebar-history::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar-history::-webkit-scrollbar-thumb {
+    background: #ddd;
+    border-radius: 4px;
 }

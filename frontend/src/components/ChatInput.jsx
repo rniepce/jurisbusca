@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { FaPaperclip, FaWandMagicSparkles, FaArrowUp, FaPlus } from 'react-icons/fa6';
+import {
+    FaPaperclip, FaBook, FaSlash,
+    FaArrowRotateRight, FaChevronDown
+} from 'react-icons/fa6';
+import { IoSend } from 'react-icons/io5';
 import './ChatInput.css';
 
 const ChatInput = ({ onSend }) => {
@@ -7,46 +11,52 @@ const ChatInput = ({ onSend }) => {
 
     const handleSend = () => {
         if (message.trim()) {
-            onSend(message);
+            if (onSend) onSend(message);
             setMessage('');
         }
     };
 
-    const handleKeyPress = (e) => {
-        if (e.key === 'Enter') {
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
             handleSend();
         }
     };
 
     return (
-        <div className="footer-container">
-            <div className="chat-input-wrapper">
-                <button className="input-action-btn attach" aria-label="Anexar arquivo">
-                    <FaPaperclip />
-                </button>
-
-                <input
-                    type="text"
-                    className="chat-input"
-                    placeholder="Inicie o seu prompt aqui... / para prompts"
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={handleKeyPress}
-                />
-
-                <div className="right-actions">
-                    <button className="input-action-btn prompt-lib" aria-label="Biblioteca de Prompts">
-                        <FaWandMagicSparkles />
+        <div className="chat-footer">
+            {/* Toolbar */}
+            <div className="chat-toolbar">
+                <div className="toolbar-left">
+                    <button className="toolbar-btn model-selector">
+                        <span className="model-dot" />
+                        <FaChevronDown size={10} />
                     </button>
-                    <button className="input-action-btn send-btn" aria-label="Enviar" onClick={handleSend}>
-                        <FaArrowUp />
-                    </button>
+                    <button className="toolbar-btn" aria-label="Anexar"><FaPaperclip /></button>
+                    <button className="toolbar-btn" aria-label="Modelos"><FaBook /></button>
+                    <button className="toolbar-btn" aria-label="Prompts"><FaSlash /></button>
+                </div>
+                <div className="toolbar-right">
+                    <button className="toolbar-btn" aria-label="Recarregar"><FaArrowRotateRight /></button>
                 </div>
             </div>
 
-            <div className="footer-info">
-                <button className="new-chat-btn">
-                    <FaPlus size={12} /> <span>Nova chat</span>
+            {/* Input Area */}
+            <div className="chat-input-box">
+                <textarea
+                    className="chat-textarea"
+                    placeholder="Insira o seu prompt aqui. @ para modelos, / para prompts"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    rows={3}
+                />
+                <button
+                    className={`send-btn ${message.trim() ? 'active' : ''}`}
+                    onClick={handleSend}
+                    aria-label="Enviar"
+                >
+                    <IoSend size={14} />
                 </button>
             </div>
         </div>
