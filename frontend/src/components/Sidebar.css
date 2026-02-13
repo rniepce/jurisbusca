@@ -1,7 +1,8 @@
+/* ===== SIDEBAR CONTAINER ===== */
 .sidebar {
-    width: 240px;
+    width: 280px;
     background: #fff;
-    border-right: 1px solid #eee;
+    border-right: 1px solid #ebebeb;
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
@@ -16,58 +17,197 @@
     pointer-events: none;
 }
 
+/* ===== TOP — NEW CHAT ===== */
 .sidebar-top {
-    padding: 16px 16px 8px;
+    padding: 16px 14px 8px;
 }
 
 .new-chat-btn {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 10px;
-    background: none;
+    width: 100%;
+    padding: 11px 16px;
     border: none;
+    border-radius: 10px;
     cursor: pointer;
     font-size: 14px;
-    font-weight: 500;
-    color: #333;
-    padding: 8px 10px;
-    border-radius: 8px;
-    width: 100%;
-    transition: background 0.15s;
+    font-weight: 600;
+    font-family: var(--font-family);
+    color: #fff;
+    background: linear-gradient(135deg, #1a56db 0%, #2563eb 50%, #3b82f6 100%);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .new-chat-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35);
+}
+
+.new-chat-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.2);
+}
+
+/* ===== SECTION TOGGLE ===== */
+.sidebar-section {
+    padding: 4px 14px 0;
+}
+
+.section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px 4px;
+    width: 100%;
+    border-radius: 6px;
+    transition: background 0.15s;
+}
+
+.section-toggle:hover {
     background: #f5f5f5;
 }
 
-/* History Section */
-.sidebar-history {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 16px;
+.section-toggle-icon {
+    color: #999;
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s ease;
 }
 
-.history-label-main {
+.section-label {
     font-size: 11px;
-    font-weight: 600;
-    color: #999;
-    letter-spacing: 0.5px;
+    font-weight: 700;
+    color: #888;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+}
+
+.section-label-static {
+    font-size: 11px;
+    font-weight: 700;
+    color: #888;
+    letter-spacing: 0.6px;
     text-transform: uppercase;
     display: block;
-    margin-bottom: 12px;
-}
-
-.history-group {
+    padding: 0 4px;
     margin-bottom: 8px;
 }
 
-.history-group-label {
-    font-size: 12px;
-    font-weight: 500;
+/* ===== AGENTS LIST ===== */
+.agents-list {
+    overflow: hidden;
+    transition: max-height 0.35s ease, opacity 0.25s ease;
+}
+
+.agents-list.expanded {
+    max-height: 500px;
+    opacity: 1;
+    margin-top: 4px;
+}
+
+.agents-list.collapsed {
+    max-height: 0;
+    opacity: 0;
+}
+
+/* ===== AGENT CARD ===== */
+.agent-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 10px;
+    border: none;
+    background: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s ease, box-shadow 0.2s ease;
+    text-align: left;
+}
+
+.agent-card:hover {
+    background: #f0f4ff;
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.08);
+}
+
+.agent-card.active {
+    background: #e8f0fe;
+    box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.agent-icon {
+    font-size: 16px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: #f5f7fa;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+
+.agent-card:hover .agent-icon {
+    transform: scale(1.1);
+}
+
+.agent-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.agent-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a1a1a;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-desc {
+    font-size: 11px;
     color: #888;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ===== DIVIDER ===== */
+.sidebar-divider {
+    height: 1px;
+    background: #ebebeb;
+    margin: 6px 14px;
+}
+
+/* ===== HISTORY SECTION ===== */
+.sidebar-history {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 14px;
+}
+
+.history-group {
+    margin-bottom: 6px;
+}
+
+.history-group-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #aaa;
     display: block;
-    margin-bottom: 4px;
-    padding-left: 2px;
+    margin-bottom: 2px;
+    padding-left: 4px;
 }
 
 .history-item {
@@ -78,10 +218,11 @@
     border: none;
     cursor: pointer;
     font-size: 13px;
-    color: #333;
-    padding: 6px 8px;
-    border-radius: 6px;
-    transition: background 0.15s;
+    font-family: var(--font-family);
+    color: #444;
+    padding: 7px 10px;
+    border-radius: 7px;
+    transition: background 0.15s, color 0.15s;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -89,61 +230,54 @@
 
 .history-item:hover {
     background: #f5f5f5;
+    color: #1a1a1a;
 }
 
-.history-see-all {
-    display: block;
-    font-size: 13px;
-    color: #0066cc;
-    text-decoration: none;
-    margin-top: 12px;
-    padding-left: 2px;
-}
-
-.history-see-all:hover {
-    text-decoration: underline;
-}
-
-/* Bottom Bar */
+/* ===== BOTTOM BAR ===== */
 .sidebar-bottom {
-    padding: 8px 16px 16px;
-}
-
-.sidebar-divider {
-    height: 1px;
-    background: #eee;
-    margin-bottom: 12px;
+    padding: 4px 14px 14px;
+    margin-top: auto;
 }
 
 .sidebar-bottom-icons {
     display: flex;
-    gap: 8px;
+    gap: 6px;
+    padding-top: 8px;
 }
 
 .sidebar-icon-btn {
     background: none;
     border: none;
     cursor: pointer;
-    color: #555;
-    font-size: 18px;
+    color: #666;
+    font-size: 17px;
     padding: 8px;
-    border-radius: 6px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s, transform 0.15s;
 }
 
 .sidebar-icon-btn:hover {
-    background: #f5f5f5;
+    background: #f0f0f0;
     color: #333;
+    transform: scale(1.05);
 }
 
-/* Scrollbar */
+/* ===== SCROLLBAR ===== */
 .sidebar-history::-webkit-scrollbar {
     width: 4px;
+}
+
+.sidebar-history::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 .sidebar-history::-webkit-scrollbar-thumb {
     background: #ddd;
     border-radius: 4px;
+}
+
+.sidebar-history::-webkit-scrollbar-thumb:hover {
+    background: #ccc;
 }
