@@ -6,14 +6,16 @@ import {
     FaBookOpen, FaPenNib
 } from 'react-icons/fa6';
 import './Sidebar.css';
+import agentDefinitions from '../config/agents';
 
-const agents = [
-    { id: 'ementador', icon: <FaFileLines />, name: 'Ementador', desc: 'Gera ementas a partir de decisões', color: '#2563eb' },
-    { id: 'resumidor', icon: <FaBookOpen />, name: 'Resumidor', desc: 'Resumos consolidados de processos', color: '#7c3aed' },
-    { id: 'analisador', icon: <FaMagnifyingGlass />, name: 'Analisador de Peças', desc: 'Analisa peças processuais', color: '#059669' },
-    { id: 'consultor', icon: <FaScaleBalanced />, name: 'Consultor Jurisprudencial', desc: 'Consulta jurisprudência', color: '#d97706' },
-    { id: 'redator', icon: <FaPenNib />, name: 'Redator de Minutas', desc: 'Auxilia na redação de minutas', color: '#dc2626' },
-];
+// Map string icon names to React components
+const iconMap = {
+    FaScaleBalanced: <FaScaleBalanced />,
+    FaFileLines: <FaFileLines />,
+    FaMagnifyingGlass: <FaMagnifyingGlass />,
+    FaBookOpen: <FaBookOpen />,
+    FaPenNib: <FaPenNib />,
+};
 
 const Sidebar = ({ isOpen, onToggle, history = [] }) => {
     const [agentsOpen, setAgentsOpen] = useState(true);
@@ -43,7 +45,7 @@ const Sidebar = ({ isOpen, onToggle, history = [] }) => {
                 </button>
 
                 <div className={`agents-list ${agentsOpen ? 'expanded' : 'collapsed'}`}>
-                    {agents.map((agent) => (
+                    {agentDefinitions.map((agent) => (
                         <button
                             key={agent.id}
                             className={`agent-card ${activeAgent === agent.id ? 'active' : ''}`}
@@ -51,7 +53,7 @@ const Sidebar = ({ isOpen, onToggle, history = [] }) => {
                             id={`agent-${agent.id}`}
                         >
                             <span className="agent-icon" style={{ color: agent.color }}>
-                                {agent.icon}
+                                {iconMap[agent.icon] || <FaScaleBalanced />}
                             </span>
                             <div className="agent-info">
                                 <span className="agent-name">{agent.name}</span>

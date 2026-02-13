@@ -39,21 +39,219 @@
     color: #333;
 }
 
+/* ── Model Selector ── */
+.model-selector-wrapper {
+    position: relative;
+}
+
 .model-selector {
     border: 1px solid #ddd;
     border-radius: 20px;
-    padding: 4px 10px;
+    padding: 4px 10px 4px 8px;
     font-size: 13px;
+    gap: 6px;
+}
+
+.model-selector.open {
+    border-color: #999;
+    background: #f5f5f5;
 }
 
 .model-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #333;
+    flex-shrink: 0;
 }
 
-/* Input Box */
+.model-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #444;
+    white-space: nowrap;
+}
+
+.chevron {
+    transition: transform 0.2s ease;
+    color: #888;
+}
+
+.chevron.rotated {
+    transform: rotate(180deg);
+}
+
+/* ── Dropdown Menu ── */
+.model-dropdown {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    min-width: 240px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    box-shadow:
+        0 4px 24px rgba(0, 0, 0, 0.08),
+        0 1px 4px rgba(0, 0, 0, 0.04);
+    padding: 6px;
+    z-index: 100;
+    animation: dropdownSlide 0.15s ease-out;
+}
+
+@keyframes dropdownSlide {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.dropdown-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 6px 10px 8px;
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    background: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.12s;
+    text-align: left;
+}
+
+.dropdown-item:hover {
+    background: #f5f5f7;
+}
+
+.dropdown-item.selected {
+    background: #f0f4ff;
+}
+
+.dropdown-item .model-dot {
+    width: 10px;
+    height: 10px;
+}
+
+.dropdown-item-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #222;
+    flex: 1;
+}
+
+.dropdown-check {
+    color: #4F46E5;
+    flex-shrink: 0;
+}
+
+/* ── File Chips ── */
+.file-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.file-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 5px 8px 5px 10px;
+    font-size: 12px;
+    color: #444;
+    max-width: 260px;
+    animation: chipSlide 0.15s ease-out;
+}
+
+@keyframes chipSlide {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.file-chip-icon {
+    color: #6366F1;
+    flex-shrink: 0;
+}
+
+.file-chip-name {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+
+.file-chip-size {
+    color: #999;
+    white-space: nowrap;
+    font-size: 11px;
+}
+
+.file-chip-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #aaa;
+    padding: 2px;
+    border-radius: 4px;
+    transition: color 0.12s, background 0.12s;
+    flex-shrink: 0;
+}
+
+.file-chip-remove:hover {
+    color: #dc2626;
+    background: #fee2e2;
+}
+
+/* Template chips: purple tint to distinguish from process files */
+.template-chip {
+    background: #f0eeff;
+    border-color: #d8d4f7;
+}
+
+.template-chip .file-chip-icon {
+    color: #7C3AED;
+}
+
+.file-chip-tag {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #7C3AED;
+    background: #ede9fe;
+    padding: 1px 5px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+/* ── Input Box ── */
 .chat-input-box {
     position: relative;
     border: 1px solid #ddd;
@@ -108,8 +306,58 @@
     color: #333;
 }
 
+/* ── OCR Engine Bar ── */
+.ocr-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    justify-content: center;
+}
+
+.ocr-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-right: 2px;
+}
+
+.ocr-option {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: none;
+    color: #999;
+    cursor: pointer;
+    font-family: 'Inter', system-ui, sans-serif;
+    transition: all 0.15s;
+}
+
+.ocr-option:hover {
+    color: #555;
+    background: #f5f5f5;
+}
+
+.ocr-option.active {
+    color: #4F46E5;
+    border-color: #4F46E5;
+    background: #f0f0ff;
+    font-weight: 500;
+}
+
 @media (max-width: 768px) {
     .chat-footer {
         padding: 0 16px 16px;
+    }
+
+    .model-label {
+        display: none;
+    }
+
+    .model-dropdown {
+        min-width: 200px;
     }
 }
