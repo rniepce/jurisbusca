@@ -18,10 +18,13 @@ HAS_OCR = False
 try:
     import ocr_engine
     HAS_OCR = True
-except ImportError:
-    print("⚠️ ocr_engine não disponível. OCR desativado.")
+    print("✅ ocr_engine importado com sucesso.")
+except ImportError as e:
+    print(f"⚠️ ocr_engine não disponível (ImportError): {e}")
 except Exception as e:
+    import traceback
     print(f"⚠️ Erro ao importar ocr_engine: {e}")
+    traceback.print_exc()
 
 # Hybrid Chunker
 HybridSemanticChunker = None
@@ -264,9 +267,10 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
             
             # 2. Se falhar (PDF escaneado/imagem) ou texto for muito curto, aciona SEMANTIC OCR (Gemini Vision)
             if total_chars < 500:
-                print(f"📉 Texto insuficiente ({total_chars} chars). Acionando Semantic OCR (Gemini Flash)...")
+                print(f"📉 Texto insuficiente ({total_chars} chars). Acionando OCR ({ocr_engine_choice})...")
                 # Usa chave do ambiente ou passada
                 g_key = api_key if api_key and api_key.startswith("AIza") else os.getenv("GOOGLE_API_KEY")
+                t_ocr_start = time.time()
                 
                 if ocr_engine_choice == "gemini_flash":
                     if g_key:
@@ -276,22 +280,25 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
                                 # Cria um documento único pois o OCR retorna tudo junto
                                 from langchain_core.documents import Document
                                 docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "semantic_flash"})]
-                                print("✅ Semantic OCR (Gemini) concluído com sucesso.")
+                                print(f"✅ Semantic OCR (Gemini) concluído em {time.time() - t_ocr_start:.1f}s")
                         else:
                                 text += f"[ERRO OCR: {ocr_text}]\n"
                     else:
                         text += "[AVISO: PDF Imagem detectado, mas sem Chave Google para OCR Semântico.]\n"
                 
                 elif ocr_engine_choice in ["paddle", "deepseek"]:
-                    import ocr_engine
-                    print(f"📉 Texto insuficiente. Acionando OCR Engine ({ocr_engine_choice})...")
-                    ocr_text = ocr_engine.extract_text_from_pdf(tmp_path, engine=ocr_engine_choice)
-                    if ocr_text and "[ERRO]" not in ocr_text:
-                         from langchain_core.documents import Document
-                         docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": ocr_engine_choice})]
-                         print(f"✅ OCR ({ocr_engine_choice}) concluído com sucesso.")
+                    if not HAS_OCR:
+                        text += f"[ERRO: ocr_engine não disponível. Instale paddleocr ou use Gemini Flash.]\n"
+                        print(f"❌ OCR Engine ({ocr_engine_choice}) não disponível - módulo não importado")
                     else:
-                        text += f"[ERRO OCR {ocr_engine_choice}]: {ocr_text}\n"
+                        print(f"📉 Acionando OCR Engine ({ocr_engine_choice})...")
+                        ocr_text = ocr_engine.extract_text_from_pdf(tmp_path, engine=ocr_engine_choice)
+                        if ocr_text and "[ERRO]" not in ocr_text:
+                             from langchain_core.documents import Document
+                             docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": ocr_engine_choice})]
+                             print(f"✅ OCR ({ocr_engine_choice}) concluído em {time.time() - t_ocr_start:.1f}s")
+                        else:
+                            text += f"[ERRO OCR {ocr_engine_choice}]: {ocr_text}\n"
         
         elif suffix == ".docx":
             from langchain_community.document_loaders import Docx2txtLoader
@@ -484,23 +491,32 @@ def extract_text_with_gemini_flash(file_path, api_key):
         return "Erro: Biblioteca Google GenAI não encontrada."
 
     try:
+        t_start = time.time()
+        
         # Config API
         genai.configure(api_key=api_key)
         
         # Upload via File API (Mais robusto que converter para imagem localmente)
         print(f"📤 Uploading {os.path.basename(file_path)} to Google File API...")
+        t_upload = time.time()
         sample_file = genai.upload_file(path=file_path, display_name=os.path.basename(file_path))
+        print(f"⏱️ Upload concluído em {time.time() - t_upload:.1f}s")
         
-        # Wait for processing
+        # Wait for processing (with timeout)
+        t_poll = time.time()
+        OCR_TIMEOUT = 120  # segundos
         while sample_file.state.name == "PROCESSING":
+            if time.time() - t_poll > OCR_TIMEOUT:
+                raise TimeoutError(f"Google File API não processou o arquivo em {OCR_TIMEOUT}s")
             time.sleep(1)
             sample_file = genai.get_file(sample_file.name)
+        print(f"⏱️ Polling/Processamento em {time.time() - t_poll:.1f}s")
             
         if sample_file.state.name == "FAILED":
              raise ValueError("Google File API processing failed.")
              
         # Generate Content (Vision)
-        model = genai.GenerativeModel(model_name="gemini-3-flash-preview") # Version consistent with project
+        model = genai.GenerativeModel(model_name="gemini-2.5-flash")
         
         prompt = """
         Aja como um transcritor jurídico de elite. 
@@ -515,16 +531,21 @@ def extract_text_with_gemini_flash(file_path, api_key):
         Retorne APENAS o texto limpo e estruturado.
         """
         
+        t_gen = time.time()
         response = model.generate_content([sample_file, prompt])
+        print(f"⏱️ Geração de conteúdo (Vision) em {time.time() - t_gen:.1f}s")
         
         # Cleanup
         try:
             genai.delete_file(sample_file.name)
         except Exception:
             pass
-            
+        
+        print(f"✅ OCR Gemini total: {time.time() - t_start:.1f}s")
         return safe_content(response)
         
+    except TimeoutError as e:
+        return f"Erro no Semantic OCR (Timeout): {str(e)}"
     except Exception as e:
         return f"Erro no Semantic OCR: {str(e)}"
 
