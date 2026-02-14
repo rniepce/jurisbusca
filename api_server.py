@@ -274,11 +274,9 @@ async def style_report(files: list[UploadFile] = File(...)):
         # Call the existing style dossier pipeline
         result = be.generate_style_dossier(file_objects, api_key)
 
-        if not result:
-            raise HTTPException(
-                status_code=422,
-                detail="Não foi possível gerar o dossiê de estilo. Verifique se os arquivos contêm texto válido."
-            )
+        if not result or result.get("error"):
+            error_detail = (result or {}).get("error", "Não foi possível gerar o dossiê de estilo.")
+            raise HTTPException(status_code=422, detail=error_detail)
 
         return {
             "dossier": result.get("dossier", ""),

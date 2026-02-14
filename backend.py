@@ -564,17 +564,22 @@ def generate_style_dossier(template_files, api_key):
     
     if not HAS_GEMINI:
         print("⚠️ Google GenAI não instalado. Dossiê de estilo não disponível.")
-        return None
+        return {"error": "Google GenAI não instalado. Dossiê de estilo não disponível."}
     
     try:
         print("🧬 Gerando Dossiê de Identidade Decisional (5 Pilares)...")
+        
+        # Reset seek position on all template files (BytesIO safety)
+        for f in template_files:
+            if hasattr(f, 'seek'):
+                f.seek(0)
         
         # 1. Processar templates para obter todos os documentos
         _, all_docs = process_templates(template_files, api_key)
         
         if not all_docs:
             print("⚠️ Nenhum documento extraído dos templates.")
-            return None
+            return {"error": "Nenhum texto pôde ser extraído dos arquivos enviados. Verifique se são PDFs com texto (não imagens escaneadas)."}
         
         # 2. Concatenar TODOS os textos (não random sampling como antes)
         # Limita a ~80k chars para caber no context window do Flash
@@ -588,7 +593,7 @@ def generate_style_dossier(template_files, api_key):
         
         # 3. Chamar LLM com o prompt forense de 5 pilares
         llm = ChatGoogleGenerativeAI(
-            model="gemini-3-flash-preview", 
+            model="gemini-2.5-flash", 
             google_api_key=api_key, 
             temperature=0.3
         )
@@ -619,7 +624,7 @@ def generate_style_dossier(template_files, api_key):
         print(f"❌ Erro ao gerar Dossiê de Estilo: {e}")
         import traceback
         traceback.print_exc()
-        return None
+        return {"error": f"Erro ao gerar dossiê: {str(e)}"}
 
 def _parse_dossier_response(content: str) -> dict:
     """
@@ -1002,6 +1007,9 @@ def process_templates(files, api_key):
     fallback_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 
     for file in files:
+        # Reset seek position (safety for BytesIO objects)
+        if hasattr(file, 'seek'):
+            file.seek(0)
         # Salva temporariamente para processar
         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file.name.split('.')[-1]}") as tmp:
             tmp.write(file.read())

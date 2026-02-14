@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     FaRobot, FaUser,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
@@ -6,6 +6,55 @@ import {
 } from 'react-icons/fa6';
 import OcrPreview from './OcrPreview';
 import './ChatArea.css';
+
+// ── Analysis phases for the style animation ──
+const STYLE_PHASES = [
+    { icon: '📄', title: 'Extraindo texto dos modelos...', sub: 'Lendo e processando os arquivos enviados' },
+    { icon: '🔍', title: 'Analisando estrutura e vocabulário...', sub: 'Identificando padrões de redação e jargões' },
+    { icon: '🧬', title: 'Mapeando DNA da escrita judicial...', sub: 'Analisando os 5 Pilares de Identidade Decisional' },
+    { icon: '📝', title: 'Compilando glossário do magistrado...', sub: 'Catalogando expressões e conectivos característicos' },
+    { icon: '✨', title: 'Finalizando dossiê de identidade...', sub: 'Gerando System Prompt de Clonagem Estilística' },
+];
+
+/** Multi-step animation shown during Style Report generation */
+function StyleAnalysisAnimation() {
+    const [phase, setPhase] = useState(0);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setPhase((p) => (p + 1) % STYLE_PHASES.length);
+        }, 4000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const current = STYLE_PHASES[phase];
+    const progress = ((phase + 1) / STYLE_PHASES.length) * 100;
+
+    return (
+        <div className="style-processing-card">
+            <div className="style-phase-icon" key={phase}>
+                <span>{current.icon}</span>
+            </div>
+            <div className="style-processing-body">
+                <div className="style-steps-row">
+                    {STYLE_PHASES.map((_, i) => (
+                        <span
+                            key={i}
+                            className={`style-step-dot ${i === phase ? 'active' : ''} ${i < phase ? 'done' : ''}`}
+                        />
+                    ))}
+                    <span className="style-step-label">Etapa {phase + 1}/{STYLE_PHASES.length}</span>
+                </div>
+                <span className="style-processing-title" key={`t-${phase}`}>{current.title}</span>
+                <span className="style-processing-sub" key={`s-${phase}`}>{current.sub}</span>
+                <div className="style-progress-track">
+                    <div className="style-progress-fill" style={{ width: `${progress}%` }} />
+                </div>
+            </div>
+        </div>
+    );
+}
+
 
 // Icon map for agent activation cards
 const iconMap = {
@@ -119,20 +168,9 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, sty
                     </div>
                 )}
 
-                {/* Style Analysis Processing Animation */}
+                {/* Style Analysis Processing Animation — Multi-step */}
                 {styleAnalyzing && (
-                    <div className="style-processing-card">
-                        <div className="style-processing-icon">
-                            <FaPenNib size={18} />
-                        </div>
-                        <div className="style-processing-info">
-                            <span className="style-processing-title">Analisando estilo decisional...</span>
-                            <span className="style-processing-sub">Extraindo DNA da escrita judicial (5 Pilares)</span>
-                        </div>
-                        <div className="style-processing-bar">
-                            <div className="style-processing-bar-fill" />
-                        </div>
-                    </div>
+                    <StyleAnalysisAnimation />
                 )}
 
                 {/* Typing indicator */}
