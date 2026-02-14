@@ -23,6 +23,15 @@ import backend as be
 
 app = FastAPI(title="Jurisbusca API", version="1.0.0")
 
+@app.on_event("startup")
+async def log_routes():
+    print("\n🚀 Registered routes:")
+    for route in app.routes:
+        methods = getattr(route, 'methods', None)
+        path = getattr(route, 'path', getattr(route, 'path_regex', '?'))
+        print(f"   {methods or 'MOUNT'} {path}")
+    print()
+
 # CORS — allow Vite dev server
 app.add_middleware(
     CORSMiddleware,
@@ -74,7 +83,18 @@ def _build_prompt(message: str, agent_prompt: Optional[str], uploaded_text: Opti
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "routes": len(app.routes)}
+
+
+@app.get("/api/debug-routes")
+async def debug_routes():
+    """Diagnostic: list all registered routes."""
+    routes = []
+    for route in app.routes:
+        methods = getattr(route, 'methods', None)
+        path = getattr(route, 'path', str(getattr(route, 'path_regex', '?')))
+        routes.append({"methods": list(methods) if methods else ["MOUNT"], "path": str(path)})
+    return {"routes": routes}
 
 
 @app.post("/api/chat")
