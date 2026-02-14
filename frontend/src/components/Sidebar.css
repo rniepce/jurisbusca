@@ -211,7 +211,9 @@
 }
 
 .history-item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     width: 100%;
     text-align: left;
     background: none;
@@ -223,6 +225,14 @@
     padding: 7px 10px;
     border-radius: 7px;
     transition: background 0.15s, color 0.15s;
+}
+
+.history-item-icon {
+    color: #aaa;
+    flex-shrink: 0;
+}
+
+.history-item-title {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -231,6 +241,10 @@
 .history-item:hover {
     background: #f5f5f5;
     color: #1a1a1a;
+}
+
+.history-item:hover .history-item-icon {
+    color: #666;
 }
 
 /* Empty History State */

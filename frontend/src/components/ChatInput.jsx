@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
     FaPaperclip, FaBook, FaSlash,
     FaArrowRotateRight, FaChevronDown, FaCheck,
-    FaXmark, FaFile
+    FaXmark, FaFile, FaPalette
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
 import './ChatInput.css';
@@ -22,7 +22,7 @@ const OCR_ENGINES = [
     { id: 'deepseek', label: 'DeepSeek-OCR' },
 ];
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, isLoading = false, ocrProcessing = false }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading = false, ocrProcessing = false }) => {
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(LLM_MODELS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -184,7 +184,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, isLoading = false, ocrProc
             </div>
 
             {/* File Chips */}
-            {(files.length > 0 || templateFiles.length > 0) && (
+            {files.length > 0 && (
                 <div className="file-chips">
                     {files.map((file, idx) => (
                         <div key={`proc-${file.name}-${idx}`} className="file-chip">
@@ -200,21 +200,31 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, isLoading = false, ocrProc
                             </button>
                         </div>
                     ))}
-                    {templateFiles.map((file, idx) => (
-                        <div key={`tpl-${file.name}-${idx}`} className="file-chip template-chip">
-                            <FaBook size={12} className="file-chip-icon" />
-                            <span className="file-chip-tag">Modelo</span>
-                            <span className="file-chip-name">{file.name}</span>
-                            <span className="file-chip-size">{formatSize(file.size)}</span>
-                            <button
-                                className="file-chip-remove"
-                                onClick={() => removeTemplate(idx)}
-                                aria-label={`Remover modelo ${file.name}`}
-                            >
-                                <FaXmark size={10} />
-                            </button>
-                        </div>
-                    ))}
+                </div>
+            )}
+
+            {/* Template Files — compact pill */}
+            {templateFiles.length > 0 && (
+                <div className="template-bar">
+                    <div className="template-pill">
+                        <FaBook size={12} />
+                        <span>{templateFiles.length} modelo{templateFiles.length > 1 ? 's' : ''} carregado{templateFiles.length > 1 ? 's' : ''}</span>
+                        <button
+                            className="template-pill-clear"
+                            onClick={() => setTemplateFiles([])}
+                            aria-label="Remover modelos"
+                        >
+                            <FaXmark size={10} />
+                        </button>
+                    </div>
+                    <button
+                        className="style-report-btn"
+                        onClick={() => onStyleReport && onStyleReport(templateFiles)}
+                        disabled={isLoading}
+                    >
+                        <FaPalette size={12} />
+                        <span>Relatório de Estilo</span>
+                    </button>
                 </div>
             )}
 

@@ -18,6 +18,7 @@ function App() {
   const [xrayReport, setXrayReport] = useState(null);
   const [xrayLoading, setXrayLoading] = useState(false);
   const [ocrProcessing, setOcrProcessing] = useState(false);
+  const [chatHistory, setChatHistory] = useState([]);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
@@ -129,7 +130,6 @@ function App() {
   // ── Agent selection handler ─────────────────────────────────────────
   const handleAgentSelect = useCallback((agent) => {
     setActiveAgent(agent);
-    // Inject an activation message into the chat so the user sees feedback
     const activationMsg = {
       role: 'agent-activation',
       agentName: agent.name,
@@ -140,16 +140,69 @@ function App() {
     setMessages((prev) => [...prev, activationMsg]);
   }, []);
 
-  // ── New chat handler ────────────────────────────────────────────────
+  // ── New chat handler — saves current conversation to history ────────
   const handleNewChat = useCallback(() => {
+    // Save current conversation to history (only if it has real messages)
+    const realMessages = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
+    if (realMessages.length > 0) {
+      const firstUserMsg = realMessages.find((m) => m.role === 'user');
+      const title = firstUserMsg
+        ? firstUserMsg.content.slice(0, 60) + (firstUserMsg.content.length > 60 ? '…' : '')
+        : 'Conversa sem título';
+
+      setChatHistory((prev) => [
+        {
+          id: conversationId || Date.now().toString(),
+          title,
+          messages: [...messages],
+          agent: activeAgent,
+          timestamp: new Date(),
+        },
+        ...prev,
+      ]);
+    }
+
+    // Reset everything for new chat
     setMessages([]);
     setActiveAgent(null);
     setConversationId(null);
     setUploadedText(null);
     setXrayReport(null);
+  }, [messages, activeAgent, conversationId]);
+
+  // ── Load chat from history ──────────────────────────────────────────
+  const handleLoadChat = useCallback((chatId) => {
+    const chat = chatHistory.find((c) => c.id === chatId);
+    if (!chat) return;
+
+    setMessages(chat.messages);
+    setActiveAgent(chat.agent);
+    setConversationId(chat.id);
+    setUploadedText(null);
+    setXrayReport(null);
+  }, [chatHistory]);
+
+  // ── Style report handler (future backend integration) ───────────────
+  const handleStyleReport = useCallback(async (templateFiles) => {
+    if (!templateFiles || templateFiles.length === 0) return;
+    // TODO: integrate with backend style analysis API
+    const infoMsg = {
+      role: 'assistant',
+      content: `🎨 **Relatório de Estilo:** Analisando ${templateFiles.length} modelo(s) de decisão... (Funcionalidade em desenvolvimento)`,
+      model: 'sistema',
+    };
+    setMessages((prev) => [...prev, infoMsg]);
   }, []);
 
   const hasMessages = messages.length > 0;
+
+  // Build sidebar history format
+  const sidebarHistory = chatHistory.length > 0
+    ? [{
+      label: 'Conversas anteriores',
+      items: chatHistory.map((c) => ({ id: c.id, title: c.title })),
+    }]
+    : [];
 
   // Determine what to show in main content
   const renderContent = () => {
@@ -167,6 +220,7 @@ function App() {
           messages={messages}
           isLoading={isLoading}
           activeAgent={activeAgent}
+          ocrProcessing={ocrProcessing}
         />
       );
     }
@@ -181,6 +235,8 @@ function App() {
         activeAgent={activeAgent}
         onAgentSelect={handleAgentSelect}
         onNewChat={handleNewChat}
+        history={sidebarHistory}
+        onLoadChat={handleLoadChat}
       />
 
       <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
@@ -194,6 +250,7 @@ function App() {
           onSend={handleSend}
           onXray={handleXray}
           onFilesUploaded={handleFilesUploaded}
+          onStyleReport={handleStyleReport}
           isLoading={isLoading || xrayLoading}
           ocrProcessing={ocrProcessing}
         />

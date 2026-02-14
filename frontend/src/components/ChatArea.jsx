@@ -16,7 +16,7 @@ const iconMap = {
     FaPenNib: FaPenNib,
 };
 
-const ChatArea = ({ messages, isLoading, activeAgent }) => {
+const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
@@ -100,6 +100,24 @@ const ChatArea = ({ messages, isLoading, activeAgent }) => {
                         </div>
                     );
                 })}
+
+                {/* OCR Processing Animation */}
+                {ocrProcessing && (
+                    <div className="ocr-processing-card">
+                        <div className="ocr-processing-icon">
+                            <FaFileLines size={18} />
+                        </div>
+                        <div className="ocr-processing-info">
+                            <span className="ocr-processing-title">Processando OCR...</span>
+                            <span className="ocr-processing-sub">Extraindo texto do documento</span>
+                        </div>
+                        <div className="ocr-processing-dots">
+                            <span className="dot" />
+                            <span className="dot" />
+                            <span className="dot" />
+                        </div>
+                    </div>
+                )}
 
                 {/* Typing indicator */}
                 {isLoading && (

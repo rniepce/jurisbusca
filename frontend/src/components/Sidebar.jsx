@@ -3,7 +3,7 @@ import {
     FaPlus, FaGear, FaCircleUser,
     FaChevronDown, FaChevronRight,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
-    FaBookOpen, FaPenNib
+    FaBookOpen, FaPenNib, FaComments
 } from 'react-icons/fa6';
 import './Sidebar.css';
 import agentDefinitions from '../config/agents';
@@ -17,7 +17,7 @@ const iconMap = {
     FaPenNib: <FaPenNib />,
 };
 
-const Sidebar = ({ isOpen, onToggle, history = [], activeAgent, onAgentSelect, onNewChat }) => {
+const Sidebar = ({ isOpen, onToggle, history = [], activeAgent, onAgentSelect, onNewChat, onLoadChat }) => {
     const [agentsOpen, setAgentsOpen] = useState(true);
 
     const handleAgentClick = (agent) => {
@@ -74,27 +74,30 @@ const Sidebar = ({ isOpen, onToggle, history = [], activeAgent, onAgentSelect, o
             {/* Divider */}
             <div className="sidebar-divider" />
 
-            {/* History Section — only shows when there are conversations */}
+            {/* History Section */}
             <div className="sidebar-history">
+                <span className="section-label-static">Histórico</span>
                 {history.length > 0 ? (
                     <>
-                        <span className="section-label-static">Histórico</span>
                         {history.map((group, gi) => (
                             <div key={gi} className="history-group">
                                 <span className="history-group-label">{group.label}</span>
-                                {group.items.map((item, ii) => (
-                                    <button key={ii} className="history-item" id={`history-${gi}-${ii}`}>
-                                        {item}
+                                {group.items.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        className="history-item"
+                                        onClick={() => onLoadChat && onLoadChat(item.id)}
+                                        title={item.title}
+                                    >
+                                        <FaComments size={12} className="history-item-icon" />
+                                        <span className="history-item-title">{item.title}</span>
                                     </button>
                                 ))}
                             </div>
                         ))}
                     </>
                 ) : (
-                    <div className="history-empty">
-                        <span className="section-label-static">Histórico</span>
-                        <p className="history-empty-text">Suas conversas aparecerão aqui</p>
-                    </div>
+                    <p className="history-empty-text">Suas conversas aparecerão aqui</p>
                 )}
             </div>
 
