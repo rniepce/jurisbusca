@@ -16,12 +16,12 @@ const iconMap = {
     FaPenNib: FaPenNib,
 };
 
-const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false }) => {
+const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, styleAnalyzing = false }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, isLoading]);
+    }, [messages, isLoading, styleAnalyzing]);
 
     return (
         <div className="chat-area">
@@ -115,6 +115,22 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false }) =
                             <span className="dot" />
                             <span className="dot" />
                             <span className="dot" />
+                        </div>
+                    </div>
+                )}
+
+                {/* Style Analysis Processing Animation */}
+                {styleAnalyzing && (
+                    <div className="style-processing-card">
+                        <div className="style-processing-icon">
+                            <FaPenNib size={18} />
+                        </div>
+                        <div className="style-processing-info">
+                            <span className="style-processing-title">Analisando estilo decisional...</span>
+                            <span className="style-processing-sub">Extraindo DNA da escrita judicial (5 Pilares)</span>
+                        </div>
+                        <div className="style-processing-bar">
+                            <div className="style-processing-bar-fill" />
                         </div>
                     </div>
                 )}

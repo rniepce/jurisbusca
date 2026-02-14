@@ -10,6 +10,8 @@ import traceback
 from pathlib import Path
 from typing import Optional
 
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -112,20 +114,43 @@ async def chat(req: ChatRequest):
             temperature=0.3,
         )
 
-        # Build full prompt
-        full_prompt = _build_prompt(req.message, req.agent_prompt, req.uploaded_text)
-
         # Conversation history
         conv_id = req.conversation_id or str(uuid.uuid4())
         if conv_id not in conversations:
             conversations[conv_id] = []
 
+        # ── Build LangChain message list with full history ──────────────
+        messages = []
+
+        # System prompt: agent instructions + document context
+        system_parts = []
+        if req.agent_prompt:
+            system_parts.append(req.agent_prompt)
+        if req.uploaded_text:
+            system_parts.append(
+                f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
+            )
+        if system_parts:
+            messages.append(SystemMessage(content="\n".join(system_parts)))
+
+        # Append previous conversation turns
+        for turn in conversations[conv_id]:
+            if turn["role"] == "user":
+                messages.append(HumanMessage(content=turn["content"]))
+            else:
+                messages.append(AIMessage(content=turn["content"]))
+
+        # Append current user message
+        messages.append(HumanMessage(content=req.message))
+
+        # Persist user turn in history
         conversations[conv_id].append({"role": "user", "content": req.message})
 
-        # Call LLM
-        response = llm.invoke(full_prompt)
+        # Call LLM with full conversation
+        response = llm.invoke(messages)
         response_text = be.safe_content(response)
 
+        # Persist assistant turn in history
         conversations[conv_id].append({"role": "assistant", "content": response_text})
 
         return {
@@ -222,6 +247,52 @@ async def batch_xray(files: list[UploadFile] = File(...)):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro no Raio-X: {str(e)}")
+
+
+@app.post("/api/style-report")
+async def style_report(files: list[UploadFile] = File(...)):
+    """
+    Generate a Style Dossier (Dossiê de Identidade Decisional) from template files.
+    Uses the existing generate_style_dossier pipeline in backend.py.
+    """
+    import io
+
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY", "")
+        if not api_key:
+            raise HTTPException(status_code=400, detail="GOOGLE_API_KEY não configurada")
+
+        # Convert UploadFiles into file-like objects with .name attribute
+        file_objects = []
+        for f in files:
+            content = await f.read()
+            buf = io.BytesIO(content)
+            buf.name = f.filename or "template.pdf"
+            buf.seek(0)
+            file_objects.append(buf)
+
+        # Call the existing style dossier pipeline
+        result = be.generate_style_dossier(file_objects, api_key)
+
+        if not result:
+            raise HTTPException(
+                status_code=422,
+                detail="Não foi possível gerar o dossiê de estilo. Verifique se os arquivos contêm texto válido."
+            )
+
+        return {
+            "dossier": result.get("dossier", ""),
+            "glossary": result.get("glossary", ""),
+            "cloning_prompt": result.get("cloning_prompt", ""),
+            "full_response": result.get("full_response", ""),
+            "file_count": len(file_objects),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório de estilo: {str(e)}")
 
 
 # ── Serve React frontend (production) ────────────────────────────────────────

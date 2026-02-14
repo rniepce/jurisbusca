@@ -126,3 +126,30 @@ export async function uploadBatchXray(files) {
 
     return safeJson(res, 'Raio-X');
 }
+
+/**
+ * Generate a Style Dossier from template decision files.
+ * @param {File[]} files - Template files (PDF/DOCX/TXT)
+ * @returns {Promise<{dossier: string, glossary: string, cloning_prompt: string, full_response: string, file_count: number}>}
+ */
+export async function generateStyleReport(files) {
+    const form = new FormData();
+    files.forEach((f) => form.append('files', f));
+
+    const res = await fetch(`${API_BASE}/style-report`, {
+        method: 'POST',
+        body: form,
+        redirect: 'error',
+    }).catch((err) => {
+        throw new Error(
+            `Relatório de Estilo: requisição redirecionada ou bloqueada. (${err.message})`
+        );
+    });
+
+    if (!res.ok) {
+        const err = await safeJson(res, 'Relatório de Estilo').catch(() => ({}));
+        throw new Error(err.detail || err.message || `Relatório de Estilo falhou (${res.status})`);
+    }
+
+    return safeJson(res, 'Relatório de Estilo');
+}

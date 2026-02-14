@@ -5,7 +5,7 @@ import WelcomeContent from './components/WelcomeContent';
 import ChatArea from './components/ChatArea';
 import ChatInput from './components/ChatInput';
 import XRayDashboard from './components/XRayDashboard';
-import { sendMessage, uploadFile, uploadBatchXray } from './services/api';
+import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport } from './services/api';
 import './App.css';
 
 function App() {
@@ -18,6 +18,7 @@ function App() {
   const [xrayReport, setXrayReport] = useState(null);
   const [xrayLoading, setXrayLoading] = useState(false);
   const [ocrProcessing, setOcrProcessing] = useState(false);
+  const [styleAnalyzing, setStyleAnalyzing] = useState(false);
   const [chatHistory, setChatHistory] = useState([]);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
@@ -182,16 +183,33 @@ function App() {
     setXrayReport(null);
   }, [chatHistory]);
 
-  // ── Style report handler (future backend integration) ───────────────
+  // ── Style report handler — calls backend API ────────────────────────
   const handleStyleReport = useCallback(async (templateFiles) => {
     if (!templateFiles || templateFiles.length === 0) return;
-    // TODO: integrate with backend style analysis API
-    const infoMsg = {
-      role: 'assistant',
-      content: `🎨 **Relatório de Estilo:** Analisando ${templateFiles.length} modelo(s) de decisão... (Funcionalidade em desenvolvimento)`,
-      model: 'sistema',
-    };
-    setMessages((prev) => [...prev, infoMsg]);
+
+    setStyleAnalyzing(true);
+
+    try {
+      const result = await generateStyleReport(templateFiles);
+
+      // Display the full dossier as an assistant message
+      const dossierContent = result.full_response || result.dossier || 'Dossiê gerado sem conteúdo.';
+      const assistantMsg = {
+        role: 'assistant',
+        content: `🎨 **Dossiê de Identidade Decisional** (${result.file_count} modelo${result.file_count > 1 ? 's' : ''} analisado${result.file_count > 1 ? 's' : ''})\n\n${dossierContent}`,
+        model: 'gemini-flash',
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch (err) {
+      const errorMsg = {
+        role: 'assistant',
+        content: `⚠️ **Erro no Relatório de Estilo:** ${err.message}`,
+        model: 'erro',
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    } finally {
+      setStyleAnalyzing(false);
+    }
   }, []);
 
   const hasMessages = messages.length > 0;
@@ -221,6 +239,7 @@ function App() {
           isLoading={isLoading}
           activeAgent={activeAgent}
           ocrProcessing={ocrProcessing}
+          styleAnalyzing={styleAnalyzing}
         />
       );
     }
@@ -251,7 +270,7 @@ function App() {
           onXray={handleXray}
           onFilesUploaded={handleFilesUploaded}
           onStyleReport={handleStyleReport}
-          isLoading={isLoading || xrayLoading}
+          isLoading={isLoading || xrayLoading || styleAnalyzing}
           ocrProcessing={ocrProcessing}
         />
       </div>
