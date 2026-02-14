@@ -211,7 +211,11 @@ if FRONTEND_DIR.is_dir():
 
     @app.get("/{full_path:path}")
     async def serve_frontend(request: Request, full_path: str):
-        """Catch-all: serve static files or fallback to index.html (SPA routing)."""
+        """Catch-all: serve static files or fallback to index.html (SPA routing).
+        IMPORTANT: never serve HTML for /api/ paths."""
+        # Never intercept API routes
+        if full_path.startswith("api/") or full_path.startswith("api"):
+            raise HTTPException(status_code=404, detail=f"API endpoint not found: /{full_path}")
         file_path = FRONTEND_DIR / full_path
         if file_path.is_file():
             return FileResponse(str(file_path))

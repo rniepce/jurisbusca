@@ -4,7 +4,7 @@ import './WelcomeContent.css';
 const WelcomeContent = () => {
     return (
         <div className="welcome-container">
-            <h1 className="welcome-title">Bem-vindo ao Jurisbusca</h1>
+            <h1 className="welcome-title">Bem-vindo ao Assistente TJMG</h1>
             <p className="welcome-hint">
                 Selecione um agente na barra lateral e envie um processo para começar.
             </p>
