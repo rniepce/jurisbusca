@@ -226,7 +226,7 @@ def get_embedding_function(api_key=None):
     if api_key:
         if api_key.startswith("AIza"):
             if HAS_GEMINI:
-                return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
+                return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
             else:
                 print("⚠️ Chave Google detectada mas lib não instalada. Usando local.")
         elif api_key.startswith("sk-") and HAS_OPENAI:
@@ -236,7 +236,7 @@ def get_embedding_function(api_key=None):
     # Fallback to Environment Variable if available
     env_key = os.getenv("GOOGLE_API_KEY")
     if env_key and HAS_GEMINI:
-        return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=env_key)
+        return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=env_key)
         
     raise ValueError("Nenhum provedor de Embeddings configurado. Por favor, insira a Google API Key.")
     # return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") # REMOVIDO PARA EVITAR ERRO
@@ -1041,7 +1041,7 @@ def process_templates(files, api_key):
         return None, []
 
     # Embeddings e Vector Store (PERSISTENTE)
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
     
     # Define caminho persistente (Railway Volume ou Local)
     # No Railway, defina CHROMA_DB_PATH como variável de ambiente apontando para o volume (ex: /app/data)
@@ -1068,7 +1068,7 @@ def load_persistent_rag(api_key):
         if not HAS_GEMINI: return None
         persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
         if os.path.exists(persist_dir):
-            embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
+            embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
             vectorstore = Chroma(
                 persist_directory=persist_dir, 
                 embedding_function=embeddings,

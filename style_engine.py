@@ -22,7 +22,7 @@ class StyleEngine:
         if provider == "openai":
             self.embeddings = OpenAIEmbeddings(api_key=api_key)
         else:
-            self.embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
+            self.embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
             
         # Init VectorStore for Style (Templates)
         # Collection específica para estilo

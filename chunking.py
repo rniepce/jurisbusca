@@ -44,10 +44,10 @@ class HybridSemanticChunker:
             if provider == "openai":
                 return OpenAIEmbeddings(api_key=key)
             elif provider == "google":
-                return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=key)
+                return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=key)
             else:
                 # Fallback to Google if unknown
-                return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=key)
+                return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=key)
         except Exception as e:
             print(f"Erro ao iniciar Embeddings ({provider}): {e}")
             return None

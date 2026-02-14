@@ -25,7 +25,7 @@ class RaptorEngine:
             self.embeddings = OpenAIEmbeddings(api_key=api_key)
             self.llm = ChatOpenAI(model="gpt-4o-mini", api_key=api_key, temperature=0) # Mini for speed/cost
         else:
-            self.embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
+            self.embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
             self.llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0)
 
         # Chunker para folhas (usamos o híbrido mas com threshold mais relaxado para garantir chunks menores)
