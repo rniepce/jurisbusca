@@ -72,7 +72,7 @@ export async function uploadFile(file, ocrEngine = 'gemini_flash') {
  * @param {string|null} params.uploadedText
  * @returns {Promise<{conversation_id: string, response: string, model: string}>}
  */
-export async function sendMessage({ message, model, agentPrompt, conversationId, uploadedText }) {
+export async function sendMessage({ message, model, agentPrompt, conversationId, uploadedText, styleDossier }) {
     const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -83,6 +83,7 @@ export async function sendMessage({ message, model, agentPrompt, conversationId,
             agent_prompt: agentPrompt || null,
             ocr_engine: 'gemini_flash',
             uploaded_text: uploadedText || null,
+            style_dossier: styleDossier || null,
         }),
         redirect: 'error',    // Do NOT follow redirects
     }).catch((err) => {

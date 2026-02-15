@@ -19,6 +19,7 @@ function App() {
   const [xrayLoading, setXrayLoading] = useState(false);
   const [ocrProcessing, setOcrProcessing] = useState(false);
   const [styleAnalyzing, setStyleAnalyzing] = useState(false);
+  const [styleDossier, setStyleDossier] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
@@ -54,6 +55,7 @@ function App() {
         agentPrompt,
         conversationId,
         uploadedText,
+        styleDossier,
       });
 
       setConversationId(result.conversation_id);
@@ -75,7 +77,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeAgent, conversationId, uploadedText]);
+  }, [activeAgent, conversationId, uploadedText, styleDossier]);
 
   // ── X-Ray handler (batch clustering) ────────────────────────────────
   const handleXray = useCallback(async (files) => {
@@ -200,6 +202,11 @@ function App() {
         model: 'gemini-flash',
       };
       setMessages((prev) => [...prev, assistantMsg]);
+
+      // Store the cloning prompt for subsequent LLM analysis
+      if (result.cloning_prompt) {
+        setStyleDossier(result.cloning_prompt);
+      }
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
@@ -232,7 +239,7 @@ function App() {
         />
       );
     }
-    if (hasMessages) {
+    if (hasMessages || styleAnalyzing) {
       return (
         <ChatArea
           messages={messages}

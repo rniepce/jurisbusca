@@ -53,6 +53,7 @@ class ChatRequest(BaseModel):
     agent_prompt: Optional[str] = None
     ocr_engine: str = "gemini_flash"
     uploaded_text: Optional[str] = None  # pre-extracted text from uploaded file
+    style_dossier: Optional[str] = None  # cloning prompt from style report
 
 
 # ── Model mapping ───────────────────────────────────────────────────────────
@@ -129,6 +130,12 @@ async def chat(req: ChatRequest):
         if req.uploaded_text:
             system_parts.append(
                 f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
+            )
+        if req.style_dossier:
+            system_parts.append(
+                f"\n\n---\n🧬 **SYSTEM PROMPT DE CLONAGEM ESTILÍSTICA (DOSSIÊ DO MAGISTRADO):**\n"
+                f"⚠️ INSTRUÇÃO PRIMÁRIA: Replique rigorosamente o estilo descrito abaixo ao redigir qualquer decisão.\n\n"
+                f"{req.style_dossier}\n---"
             )
         if system_parts:
             messages.append(SystemMessage(content="\n".join(system_parts)))

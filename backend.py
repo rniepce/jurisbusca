@@ -549,6 +549,52 @@ def extract_text_with_gemini_flash(file_path, api_key):
     except Exception as e:
         return f"Erro no Semantic OCR: {str(e)}"
 
+def _extract_template_texts(template_files):
+    """
+    Lightweight text extraction from template files (PDF/DOCX/TXT).
+    Returns a list of Document objects with full text — NO chunking, NO ChromaDB.
+    Used by generate_style_dossier which only needs raw text for LLM analysis.
+    """
+    from langchain_core.documents import Document
+    documents = []
+    
+    for file in template_files:
+        if hasattr(file, 'seek'):
+            file.seek(0)
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file.name.split('.')[-1]}") as tmp:
+            tmp.write(file.read())
+            tmp_path = tmp.name
+        
+        try:
+            text = ""
+            if file.name.endswith(".pdf"):
+                reader = pypdf.PdfReader(tmp_path)
+                for page in reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+            elif file.name.endswith(".docx"):
+                doc = docx.Document(tmp_path)
+                text = "\n".join([p.text for p in doc.paragraphs])
+            else:  # txt
+                try:
+                    with open(tmp_path, "r", encoding="utf-8") as f:
+                        text = f.read()
+                except UnicodeDecodeError:
+                    with open(tmp_path, "r", encoding="latin-1") as f:
+                        text = f.read()
+            
+            if text.strip():
+                documents.append(Document(
+                    page_content=text,
+                    metadata={"source": file.name}
+                ))
+        finally:
+            os.remove(tmp_path)
+    
+    return documents
+
 def generate_style_dossier(template_files, api_key):
     """
     ETAPA 1 DO PIPELINE FORENSE: Gera o Dossiê de Identidade Decisional.
@@ -574,8 +620,8 @@ def generate_style_dossier(template_files, api_key):
             if hasattr(f, 'seek'):
                 f.seek(0)
         
-        # 1. Processar templates para obter todos os documentos
-        _, all_docs = process_templates(template_files, api_key)
+        # 1. Extrair texto dos templates (sem ChromaDB/RAG — desnecessário para dossiê)
+        all_docs = _extract_template_texts(template_files)
         
         if not all_docs:
             print("⚠️ Nenhum documento extraído dos templates.")
@@ -1054,6 +1100,19 @@ def process_templates(files, api_key):
     # Define caminho persistente (Railway Volume ou Local)
     # No Railway, defina CHROMA_DB_PATH como variável de ambiente apontando para o volume (ex: /app/data)
     persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
+    
+    # Delete existing collection to avoid dimension mismatch with stale embeddings
+    # (e.g. collection was created with 768-dim model but current model is 3072-dim)
+    try:
+        import chromadb
+        client = chromadb.PersistentClient(path=persist_dir)
+        try:
+            client.delete_collection("rag_templates_persistent")
+            print("🗑️ Collection anterior removida (evita conflito de dimensões).")
+        except Exception:
+            pass
+    except Exception:
+        pass
     
     # Instancia o banco persistente
     vectorstore = Chroma(
