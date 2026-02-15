@@ -22,7 +22,7 @@ const OCR_ENGINES = [
     { id: 'deepseek', label: 'DeepSeek-OCR' },
 ];
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading = false, ocrProcessing = false }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading = false, ocrProcessing = false, hasContext = false }) => {
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(LLM_MODELS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -46,7 +46,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading =
 
     const handleSend = () => {
         if (isLoading) return;
-        if (message.trim() || files.length > 0) {
+        if (message.trim() || files.length > 0 || hasContext) {
             if (onSend) onSend(message, selectedModel, files, ocrEngine, templateFiles);
             setMessage('');
             setFiles([]);
@@ -251,7 +251,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading =
                     </button>
                 )}
                 <button
-                    className={`send-btn ${(message.trim() || files.length > 0) && !isLoading ? 'active' : ''}`}
+                    className={`send-btn ${(message.trim() || files.length > 0 || hasContext) && !isLoading ? 'active' : ''}`}
                     onClick={handleSend}
                     disabled={isLoading}
                     aria-label="Enviar"

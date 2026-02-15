@@ -26,14 +26,47 @@ function App() {
 
   // ── Send message handler ────────────────────────────────────────────
   const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles) => {
-    if (!message.trim() && !uploadedText) return;
+    // Use a default prompt if user sends empty message but has context
+    const effectiveMessage = message.trim() ||
+      (uploadedText && activeAgent ? 'Analise o documento anexado conforme as instruções do agente.' :
+        uploadedText ? 'Analise o documento anexado.' : '');
+    if (!effectiveMessage) return;
 
     // 1. Add user message immediately
-    const userMsg = { role: 'user', content: message };
+    const userMsg = { role: 'user', content: effectiveMessage };
     setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
 
     try {
+      // ── Auto-generate style dossier if templates loaded but not yet analyzed ──
+      let currentStyleDossier = styleDossier;
+      if (templateFiles && templateFiles.length > 0 && !currentStyleDossier) {
+        // Show style analysis status
+        setStyleAnalyzing(true);
+        try {
+          const styleResult = await generateStyleReport(templateFiles);
+          if (styleResult.cloning_prompt) {
+            currentStyleDossier = styleResult.cloning_prompt;
+            setStyleDossier(styleResult.cloning_prompt);
+          }
+          // Show dossier as assistant message
+          const dossierContent = styleResult.full_response || styleResult.dossier || '';
+          if (dossierContent) {
+            const styleMsg = {
+              role: 'assistant',
+              content: `🎨 **Dossiê de Identidade Decisional** (${styleResult.file_count} modelo${styleResult.file_count > 1 ? 's' : ''} analisado${styleResult.file_count > 1 ? 's' : ''})\n\n${dossierContent}`,
+              model: 'gemini-flash',
+            };
+            setMessages((prev) => [...prev, styleMsg]);
+          }
+        } catch (styleErr) {
+          console.warn('Auto style report failed:', styleErr.message);
+          // Non-blocking: continue without style if it fails
+        } finally {
+          setStyleAnalyzing(false);
+        }
+      }
+
       // Files are already processed by handleFilesUploaded (auto-OCR),
       // so we just use the uploadedText that was populated earlier.
 
@@ -50,12 +83,12 @@ function App() {
 
       // 3. Call the backend
       const result = await sendMessage({
-        message,
+        message: effectiveMessage,
         model: selectedModel.id,
         agentPrompt,
         conversationId,
         uploadedText,
-        styleDossier,
+        styleDossier: currentStyleDossier,
       });
 
       setConversationId(result.conversation_id);
@@ -279,6 +312,7 @@ function App() {
           onStyleReport={handleStyleReport}
           isLoading={isLoading || xrayLoading || styleAnalyzing}
           ocrProcessing={ocrProcessing}
+          hasContext={!!(uploadedText || activeAgent)}
         />
       </div>
     </div>

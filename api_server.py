@@ -147,11 +147,22 @@ async def chat(req: ChatRequest):
             else:
                 messages.append(AIMessage(content=turn["content"]))
 
-        # Append current user message
-        messages.append(HumanMessage(content=req.message))
+        # Append current user message — ensure non-empty content for Gemini API
+        user_content = req.message.strip() if req.message else ""
+        if not user_content:
+            # Provide a default prompt when user sends empty message but context exists
+            if req.uploaded_text and req.agent_prompt:
+                user_content = "Analise o documento anexado conforme as instruções do agente."
+            elif req.uploaded_text:
+                user_content = "Analise o documento anexado."
+            elif req.agent_prompt:
+                user_content = "Proceda conforme as instruções do agente."
+            else:
+                raise HTTPException(status_code=400, detail="Mensagem não pode estar vazia.")
+        messages.append(HumanMessage(content=user_content))
 
         # Persist user turn in history
-        conversations[conv_id].append({"role": "user", "content": req.message})
+        conversations[conv_id].append({"role": "user", "content": user_content})
 
         # Call LLM with full conversation
         response = llm.invoke(messages)
