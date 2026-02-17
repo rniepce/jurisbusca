@@ -129,6 +129,28 @@ export async function uploadBatchXray(files) {
 }
 
 /**
+ * Analyze a cluster of processes individually, in parallel.
+ * @param {Array<{filename: string, text: string}>} processes
+ * @param {string} [agentPrompt] - Optional agent system prompt
+ * @param {string} [model] - LLM model ID
+ * @returns {Promise<{results: Array, total: number, ok_count: number}>}
+ */
+export async function analyzeCluster(processes, agentPrompt = '', model = 'gemini') {
+    const res = await fetch(`${API_BASE}/cluster-analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processes, agent_prompt: agentPrompt, model }),
+    });
+
+    if (!res.ok) {
+        const err = await safeJson(res, 'Cluster Analyze').catch(() => ({}));
+        throw new Error(err.detail || `Análise em lote falhou (${res.status})`);
+    }
+
+    return safeJson(res, 'Cluster Analyze');
+}
+
+/**
  * Generate a Style Dossier from template decision files.
  * @param {File[]} files - Template files (PDF/DOCX/TXT)
  * @returns {Promise<{dossier: string, glossary: string, cloning_prompt: string, full_response: string, file_count: number}>}

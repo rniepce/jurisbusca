@@ -5,7 +5,7 @@ import WelcomeContent from './components/WelcomeContent';
 import ChatArea from './components/ChatArea';
 import ChatInput from './components/ChatInput';
 import XRayDashboard from './components/XRayDashboard';
-import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus } from './services/api';
+import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster } from './services/api';
 import './App.css';
 
 function App() {
@@ -17,6 +17,7 @@ function App() {
   const [uploadedText, setUploadedText] = useState(null);
   const [xrayReport, setXrayReport] = useState(null);
   const [xrayLoading, setXrayLoading] = useState(false);
+  const [xrayTextCache, setXrayTextCache] = useState({});
   const [ocrProcessing, setOcrProcessing] = useState(false);
   const [styleAnalyzing, setStyleAnalyzing] = useState(false);
   const [styleDossier, setStyleDossier] = useState(null);
@@ -127,6 +128,7 @@ function App() {
     try {
       const result = await uploadBatchXray(files);
       setXrayReport(result.report);
+      setXrayTextCache(result.text_cache || {});
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -136,6 +138,66 @@ function App() {
       setXrayLoading(false);
     }
   }, []);
+
+  // ── Cluster action: analyze all processes in a cluster individually ──
+  const handleClusterAction = useCallback(async (cluster) => {
+    const filenames = cluster.arquivos || [];
+    if (filenames.length === 0) return;
+
+    // Build process list from text cache
+    const processes = filenames
+      .filter((fname) => xrayTextCache[fname])
+      .map((fname) => ({ filename: fname, text: xrayTextCache[fname] }));
+
+    if (processes.length === 0) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: '⚠️ Textos dos processos não encontrados no cache. Tente refazer o Raio-X.', model: 'erro' },
+      ]);
+      return;
+    }
+
+    // Switch to chat view and show progress
+    setXrayReport(null);
+    setIsLoading(true);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: `⚡ **Processando ${processes.length} processo(s) do grupo "${cluster.nome}" em paralelo...**\n\nAguarde, cada processo está sendo analisado individualmente.`,
+        model: 'sistema',
+      },
+    ]);
+
+    try {
+      const result = await analyzeCluster(processes, activeAgent?.prompt || '');
+
+      // Add each individual result as a separate message
+      const resultMessages = result.results.map((r) => ({
+        role: 'assistant',
+        content: r.status === 'ok'
+          ? `## 📄 ${r.filename}\n\n${r.response}`
+          : `## ⚠️ ${r.filename}\n\n${r.response}`,
+        model: r.model,
+      }));
+
+      // Summary header
+      const summary = {
+        role: 'assistant',
+        content: `✅ **Lote concluído:** ${result.ok_count}/${result.total} minutas geradas com sucesso.`,
+        model: 'sistema',
+      };
+
+      setMessages((prev) => [...prev, summary, ...resultMessages]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `⚠️ **Erro na análise em lote:** ${err.message}`, model: 'erro' },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [xrayTextCache, activeAgent]);
 
   // ── Files uploaded → run OCR immediately ─────────────────────────────
   const handleFilesUploaded = useCallback(async (files, ocrEngine) => {
@@ -275,6 +337,7 @@ function App() {
         <XRayDashboard
           report={xrayReport}
           onClose={() => setXrayReport(null)}
+          onClusterAction={handleClusterAction}
         />
       );
     }

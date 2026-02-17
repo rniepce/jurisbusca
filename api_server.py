@@ -303,6 +303,7 @@ async def batch_xray(files: list[UploadFile] = File(...)):
         return {
             "report": report,
             "file_count": len(file_objects),
+            "text_cache": text_cache,
         }
 
     except HTTPException:
@@ -354,6 +355,132 @@ async def style_report(files: list[UploadFile] = File(...)):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório de estilo: {str(e)}")
+
+
+# ── Cluster Batch Analysis (individual parallel processing) ───────────────────
+
+class ClusterAnalyzeRequest(BaseModel):
+    processes: list[dict]  # [{"filename": str, "text": str}]
+    agent_prompt: Optional[str] = None
+    model: str = "gemini"
+
+
+def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_cfg: dict, api_key: str):
+    """Analyze one process. Runs in a thread pool."""
+    try:
+        llm = be.get_llm(
+            provider=model_cfg["provider"],
+            model_name=model_cfg["model"],
+            api_key=api_key,
+            temperature=0.3,
+        )
+
+        messages = []
+        system_parts = []
+
+        if agent_prompt:
+            system_parts.append(agent_prompt)
+
+        system_parts.append(
+            f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{text}\n---"
+        )
+
+        # Auto-RAG: inject golden sample from persistent templates
+        google_key = os.getenv("GOOGLE_API_KEY", "")
+        if google_key:
+            try:
+                rag_retriever = be.load_persistent_rag(google_key)
+                if rag_retriever:
+                    relevant_docs = rag_retriever.invoke(text[:6000])
+                    if relevant_docs:
+                        mirror_doc = relevant_docs[0]
+                        rag_block = (
+                            f"\n\n---\n💎 **CASO ESPELHO (GOLDEN SAMPLE):**\n"
+                            f"O caso abaixo ({mirror_doc.metadata.get('source', '?')}) é o GABARITO ESTRUTURAL.\n"
+                            f"Copie a estrutura, adapte fatos e nomes.\n\n"
+                            f"--- INÍCIO ---\n{mirror_doc.page_content}\n--- FIM ---\n---"
+                        )
+                        system_parts.append(rag_block)
+
+                # Inject cached style dossier
+                if be._style_dossier_cache:
+                    for cached in be._style_dossier_cache.values():
+                        cloning = cached.get('cloning_prompt', '')
+                        if cloning:
+                            system_parts.append(
+                                f"\n\n---\n🧬 **CLONAGEM ESTILÍSTICA:**\n{cloning}\n---"
+                            )
+                        break
+            except Exception as e:
+                print(f"⚠️ RAG failed for {filename}: {e}")
+
+        messages.append(SystemMessage(content="\n".join(system_parts)))
+        messages.append(HumanMessage(content="Analise o documento anexado e gere a minuta de decisão conforme as instruções."))
+
+        response = llm.invoke(messages)
+        response_text = be.safe_content(response)
+
+        return {
+            "filename": filename,
+            "status": "ok",
+            "response": response_text,
+            "model": model_cfg["model"],
+        }
+    except Exception as e:
+        return {
+            "filename": filename,
+            "status": "error",
+            "response": f"Erro: {str(e)}",
+            "model": model_cfg.get("model", "?"),
+        }
+
+
+@app.post("/api/cluster-analyze")
+async def cluster_analyze(req: ClusterAnalyzeRequest):
+    """
+    Process all files in a cluster individually, in parallel.
+    Returns a list of individual analysis results.
+    """
+    import concurrent.futures
+
+    try:
+        api_key = _get_api_key(req.model)
+        cfg = MODEL_MAP.get(req.model, MODEL_MAP["gemini"])
+
+        if not req.processes:
+            raise HTTPException(status_code=400, detail="Nenhum processo para analisar.")
+
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {
+                executor.submit(
+                    _analyze_single_process,
+                    p["filename"],
+                    p["text"],
+                    req.agent_prompt or "",
+                    cfg,
+                    api_key,
+                ): p["filename"]
+                for p in req.processes
+                if p.get("text")
+            }
+            for future in concurrent.futures.as_completed(futures):
+                results.append(future.result())
+
+        # Sort by filename for consistent ordering
+        results.sort(key=lambda r: r["filename"])
+
+        return {
+            "results": results,
+            "total": len(results),
+            "ok_count": sum(1 for r in results if r["status"] == "ok"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na análise em lote: {str(e)}")
 
 
 # ── Template Management (Persistent RAG) ─────────────────────────────────────
