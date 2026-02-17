@@ -1,11 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import WelcomeContent from './components/WelcomeContent';
 import ChatArea from './components/ChatArea';
 import ChatInput from './components/ChatInput';
 import XRayDashboard from './components/XRayDashboard';
-import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport } from './services/api';
+import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus } from './services/api';
 import './App.css';
 
 function App() {
@@ -21,6 +21,12 @@ function App() {
   const [styleAnalyzing, setStyleAnalyzing] = useState(false);
   const [styleDossier, setStyleDossier] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
+  const [ragStatus, setRagStatus] = useState(null);
+
+  // Fetch template/RAG status on mount
+  useEffect(() => {
+    getTemplateStatus().then(setRagStatus).catch(() => { });
+  }, []);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
@@ -313,6 +319,8 @@ function App() {
           isLoading={isLoading || xrayLoading || styleAnalyzing}
           ocrProcessing={ocrProcessing}
           hasContext={!!(uploadedText || activeAgent)}
+          ragStatus={ragStatus}
+          onRagStatusChange={setRagStatus}
         />
       </div>
     </div>

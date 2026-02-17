@@ -154,3 +154,49 @@ export async function generateStyleReport(files) {
 
     return safeJson(res, 'Relatório de Estilo');
 }
+
+/**
+ * Upload and index template files for persistent RAG.
+ * Also auto-generates the style dossier.
+ * @param {File[]} files - Template files (PDF/DOCX/TXT)
+ * @returns {Promise<{indexed_chunks: number, file_count: number, has_dossier: boolean, cloning_prompt: string}>}
+ */
+export async function uploadTemplates(files) {
+    const form = new FormData();
+    files.forEach((f) => form.append('files', f));
+
+    const res = await fetch(`${API_BASE}/templates`, {
+        method: 'POST',
+        body: form,
+    });
+
+    if (!res.ok) {
+        const err = await safeJson(res, 'Upload Templates').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao indexar modelos (${res.status})`);
+    }
+
+    return safeJson(res, 'Upload Templates');
+}
+
+/**
+ * Check how many templates are indexed in the persistent RAG.
+ * @returns {Promise<{indexed_chunks: number, has_dossier: boolean}>}
+ */
+export async function getTemplateStatus() {
+    const res = await fetch(`${API_BASE}/templates/status`);
+    if (!res.ok) return { indexed_chunks: 0, has_dossier: false };
+    return safeJson(res, 'Template Status');
+}
+
+/**
+ * Clear all indexed templates from persistent RAG.
+ * @returns {Promise<{status: string, message: string}>}
+ */
+export async function clearTemplates() {
+    const res = await fetch(`${API_BASE}/templates`, { method: 'DELETE' });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Clear Templates').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao limpar modelos (${res.status})`);
+    }
+    return safeJson(res, 'Clear Templates');
+}

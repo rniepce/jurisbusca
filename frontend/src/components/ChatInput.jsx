@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
     FaPaperclip, FaBook, FaSlash,
     FaArrowRotateRight, FaChevronDown, FaCheck,
-    FaXmark, FaFile, FaPalette
+    FaXmark, FaFile, FaPalette, FaDatabase
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
+import { uploadTemplates, clearTemplates } from '../services/api';
 import './ChatInput.css';
 
 const LLM_MODELS = [
@@ -22,13 +23,14 @@ const OCR_ENGINES = [
     { id: 'deepseek', label: 'DeepSeek-OCR' },
 ];
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading = false, ocrProcessing = false, hasContext = false }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange }) => {
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(LLM_MODELS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [files, setFiles] = useState([]);
     const [templateFiles, setTemplateFiles] = useState([]);
     const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[0].id);
+    const [indexing, setIndexing] = useState(false);
     const dropdownRef = useRef(null);
     const fileInputRef = useRef(null);
     const templateInputRef = useRef(null);
@@ -203,28 +205,81 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading =
                 </div>
             )}
 
-            {/* Template Files — compact pill */}
-            {templateFiles.length > 0 && (
+            {/* Template Files — compact pill + persistent indexing */}
+            {(templateFiles.length > 0 || (ragStatus && ragStatus.indexed_chunks > 0)) && (
                 <div className="template-bar">
-                    <div className="template-pill">
-                        <FaBook size={12} />
-                        <span>{templateFiles.length} modelo{templateFiles.length > 1 ? 's' : ''} carregado{templateFiles.length > 1 ? 's' : ''}</span>
-                        <button
-                            className="template-pill-clear"
-                            onClick={() => setTemplateFiles([])}
-                            aria-label="Remover modelos"
-                        >
-                            <FaXmark size={10} />
-                        </button>
-                    </div>
-                    <button
-                        className="style-report-btn"
-                        onClick={() => onStyleReport && onStyleReport(templateFiles)}
-                        disabled={isLoading}
-                    >
-                        <FaPalette size={12} />
-                        <span>Relatório de Estilo</span>
-                    </button>
+                    {/* Show persisted RAG status */}
+                    {ragStatus && ragStatus.indexed_chunks > 0 && templateFiles.length === 0 && (
+                        <div className="template-pill rag-active">
+                            <FaDatabase size={12} />
+                            <span>📚 {ragStatus.indexed_chunks} chunks indexados {ragStatus.has_dossier ? '+ estilo' : ''}</span>
+                            <button
+                                className="template-pill-clear"
+                                onClick={async () => {
+                                    try {
+                                        await clearTemplates();
+                                        if (onRagStatusChange) onRagStatusChange({ indexed_chunks: 0, has_dossier: false });
+                                    } catch (err) {
+                                        console.warn('Failed to clear templates:', err);
+                                    }
+                                }}
+                                aria-label="Limpar modelos"
+                                title="Limpar modelos indexados"
+                            >
+                                <FaXmark size={10} />
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Show newly selected (un-indexed) templates */}
+                    {templateFiles.length > 0 && (
+                        <>
+                            <div className="template-pill">
+                                <FaBook size={12} />
+                                <span>{templateFiles.length} modelo{templateFiles.length > 1 ? 's' : ''} selecionado{templateFiles.length > 1 ? 's' : ''}</span>
+                                <button
+                                    className="template-pill-clear"
+                                    onClick={() => setTemplateFiles([])}
+                                    aria-label="Remover modelos"
+                                >
+                                    <FaXmark size={10} />
+                                </button>
+                            </div>
+                            <button
+                                className="style-report-btn"
+                                onClick={async () => {
+                                    if (indexing) return;
+                                    setIndexing(true);
+                                    try {
+                                        const result = await uploadTemplates(templateFiles);
+                                        if (onRagStatusChange) {
+                                            onRagStatusChange({
+                                                indexed_chunks: result.indexed_chunks,
+                                                has_dossier: result.has_dossier,
+                                            });
+                                        }
+                                        setTemplateFiles([]); // Clear local files after indexing
+                                    } catch (err) {
+                                        console.error('Indexing failed:', err);
+                                    } finally {
+                                        setIndexing(false);
+                                    }
+                                }}
+                                disabled={isLoading || indexing}
+                            >
+                                <FaDatabase size={12} />
+                                <span>{indexing ? 'Indexando...' : 'Indexar no RAG'}</span>
+                            </button>
+                            <button
+                                className="style-report-btn"
+                                onClick={() => onStyleReport && onStyleReport(templateFiles)}
+                                disabled={isLoading}
+                            >
+                                <FaPalette size={12} />
+                                <span>Relatório de Estilo</span>
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
 

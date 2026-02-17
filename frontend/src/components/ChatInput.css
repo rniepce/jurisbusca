@@ -409,6 +409,12 @@
     font-weight: 500;
 }
 
+.template-pill.rag-active {
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+    border-color: #6ee7b7;
+    color: #065f46;
+}
+
 .template-pill-clear {
     display: flex;
     align-items: center;

@@ -137,6 +137,51 @@ async def chat(req: ChatRequest):
                 f"⚠️ INSTRUÇÃO PRIMÁRIA: Replique rigorosamente o estilo descrito abaixo ao redigir qualquer decisão.\n\n"
                 f"{req.style_dossier}\n---"
             )
+
+        # ── Auto RAG: retrieve mirror context from persisted templates ──
+        if req.uploaded_text:
+            try:
+                google_key = os.getenv("GOOGLE_API_KEY", "")
+                if google_key:
+                    rag_retriever = be.load_persistent_rag(google_key)
+                    if rag_retriever:
+                        # Search for similar cases
+                        relevant_docs = rag_retriever.invoke(req.uploaded_text[:6000])
+                        if relevant_docs:
+                            mirror_doc = relevant_docs[0]
+                            rag_block = (
+                                f"\n\n---\n💎 **CASO ESPELHO (GOLDEN SAMPLE - MODELO MAIS SIMILAR):**\n"
+                                f"⚠️ O caso abaixo ({mirror_doc.metadata.get('source', '?')}) é o seu GABARITO ESTRUTURAL.\n"
+                                f"1. Copie a estrutura de tópicos (titulação, numeração).\n"
+                                f"2. Se for o mesmo assunto, adapte apenas os fatos e nomes, mantendo a fundamentação jurídica.\n\n"
+                                f"--- INÍCIO DO CASO ESPELHO ---\n{mirror_doc.page_content}\n--- FIM DO CASO ESPELHO ---\n"
+                            )
+                            # Add secondary references
+                            for i, doc in enumerate(relevant_docs[1:3]):
+                                rag_block += f"\n[MODELO SECUNDÁRIO {i+2} - {doc.metadata.get('source', '?')}]:\n{doc.page_content[:3000]}\n"
+                            rag_block += "---"
+                            system_parts.append(rag_block)
+
+                    # Also inject cached style dossier if not already provided
+                    if not req.style_dossier and be._style_dossier_cache:
+                        # Use the first (and usually only) cached dossier
+                        for cached in be._style_dossier_cache.values():
+                            cloning = cached.get('cloning_prompt', '')
+                            glossary = cached.get('glossary', '')
+                            if cloning:
+                                style_block = (
+                                    f"\n\n---\n🧬 **SYSTEM PROMPT DE CLONAGEM (ESTILO DO MAGISTRADO):**\n"
+                                    f"⚠️ INSTRUÇÃO PRIMÁRIA: Replique rigorosamente o estilo descrito abaixo.\n\n"
+                                    f"{cloning}\n"
+                                )
+                                if glossary:
+                                    style_block += f"\n📝 **GLOSSÁRIO DO MAGISTRADO:**\n{glossary}\n"
+                                style_block += "---"
+                                system_parts.append(style_block)
+                            break
+            except Exception as e:
+                print(f"⚠️ RAG auto-retrieval failed (non-blocking): {e}")
+
         if system_parts:
             messages.append(SystemMessage(content="\n".join(system_parts)))
 
@@ -309,6 +354,110 @@ async def style_report(files: list[UploadFile] = File(...)):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório de estilo: {str(e)}")
+
+
+# ── Template Management (Persistent RAG) ─────────────────────────────────────
+
+@app.post("/api/templates")
+async def upload_templates(files: list[UploadFile] = File(...)):
+    """
+    Upload and index template files in ChromaDB for persistent RAG.
+    Also auto-generates the style dossier.
+    """
+    import io
+
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY", "")
+        if not api_key:
+            raise HTTPException(status_code=400, detail="GOOGLE_API_KEY não configurada")
+
+        # Convert UploadFiles into file-like objects
+        file_objects = []
+        for f in files:
+            content = await f.read()
+            buf = io.BytesIO(content)
+            buf.name = f.filename or "template.pdf"
+            buf.seek(0)
+            file_objects.append(buf)
+
+        # 1. Index in ChromaDB (persistent)
+        retriever, docs = be.process_templates(file_objects, api_key)
+        indexed_count = len(docs) if docs else 0
+
+        # 2. Auto-generate style dossier (cached)
+        # Reset file positions for re-read
+        for f in file_objects:
+            f.seek(0)
+        dossier_result = be.generate_style_dossier(file_objects, api_key)
+        has_dossier = bool(dossier_result and not dossier_result.get("error"))
+
+        return {
+            "indexed_chunks": indexed_count,
+            "file_count": len(file_objects),
+            "has_dossier": has_dossier,
+            "dossier_preview": (dossier_result or {}).get("dossier", "")[:500],
+            "cloning_prompt": (dossier_result or {}).get("cloning_prompt", ""),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao indexar modelos: {str(e)}")
+
+
+@app.get("/api/templates/status")
+async def templates_status():
+    """Check how many templates are indexed in the persistent RAG."""
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY", "")
+        count = 0
+        if api_key:
+            retriever = be.load_persistent_rag(api_key)
+            if retriever:
+                # Get count from the vectorstore
+                persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
+                if os.path.exists(persist_dir):
+                    try:
+                        import chromadb
+                        client = chromadb.PersistentClient(path=persist_dir)
+                        collection = client.get_collection("rag_templates_persistent")
+                        count = collection.count()
+                    except Exception:
+                        pass
+
+        has_dossier = len(be._style_dossier_cache) > 0
+
+        return {
+            "indexed_chunks": count,
+            "has_dossier": has_dossier,
+        }
+
+    except Exception as e:
+        return {"indexed_chunks": 0, "has_dossier": False}
+
+
+@app.delete("/api/templates")
+async def clear_templates():
+    """Clear all indexed templates from ChromaDB and style cache."""
+    try:
+        persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
+        if os.path.exists(persist_dir):
+            import chromadb
+            client = chromadb.PersistentClient(path=persist_dir)
+            try:
+                client.delete_collection("rag_templates_persistent")
+            except Exception:
+                pass
+
+        # Clear style dossier cache
+        be._style_dossier_cache.clear()
+
+        return {"status": "ok", "message": "Modelos e cache limpos."}
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao limpar modelos: {str(e)}")
 
 
 # ── Serve React frontend (production) ────────────────────────────────────────
