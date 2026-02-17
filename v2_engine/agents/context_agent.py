@@ -16,20 +16,44 @@ SUA MISSÃO:
 
 SAÍDA ESPERADA (JSON FINAL):
 {
-    "fatos_principais": "Resumo cronológico...",
-    "pedidos_autor": ["..."],
-    "teses_defesa": ["..."],
-    "datas_chave": {"data_fato": "DD/MM/AAAA", ...},
-    "provas_citadas": ["Contrato (fls. encontrados via código)", ...]
+    "partes": {
+        "autor": "Nome completo do Autor/Requerente",
+        "reu": "Nome completo do Réu/Requerido"
+    },
+    "tipo_relacao": "CONSUMERISTA | CÍVEL | BANCÁRIO | TRABALHISTA | OUTRO",
+    "fatos_principais": "Resumo cronológico detalhado dos fatos...",
+    "pedidos_autor": ["Pedido 1 com valor se houver", "Pedido 2..."],
+    "teses_defesa": ["Tese defensiva 1", "Tese defensiva 2..."],
+    "valor_da_causa": "R$ X.XXX,XX ou 'Não informado'",
+    "competencia": {
+        "comarca": "Nome da Comarca",
+        "vara": "Xª Vara Cível / JEC / etc.",
+        "foro_competente": true
+    },
+    "datas_chave": {
+        "data_fato": "DD/MM/AAAA",
+        "data_distribuicao": "DD/MM/AAAA",
+        "data_citacao": "DD/MM/AAAA ou 'Não localizada'",
+        "data_contestacao": "DD/MM/AAAA ou 'Não localizada'"
+    },
+    "provas_citadas": [
+        {"tipo": "Contrato", "id_pje": "ID 123456", "descricao": "Contrato de adesão"}
+    ],
+    "ajg_status": "Concedida | Pendente | Não requerida | Indeferida",
+    "revelia": false
 }
 
 IMPORTANTE:
 - **HETEROGENEIDADE:** Advogados escrevem de formas diferentes. Se não achar "PETIÇÃO INICIAL", busque "EXORDIAL", "PEÇA PÓRTICA", "PROEMIAL".
+- **CLASSIFICAÇÃO DA RELAÇÃO:** Identifique se é Consumerista (CDC) verificando se envolve: banco, telefonia, plano de saúde, comércio, e-commerce, seguros. Caso contrário, classifique como CÍVEL.
 - **CHEAT SHEET (REGEX SUGERIDOS):**
-  - Inicial: `r'(petiç[aã]o\s*inicial|exordial|fatos|dos\s*fatos|resumo\s*da\s*demanda)'`
-  - Defesa: `r'(contesta[cç][aã]o|defesa|mérito|do\s*direito|preliminar)'`
+  - Inicial: `r'(petiç[aã]o\\s*inicial|exordial|fatos|dos\\s*fatos|resumo\\s*da\\s*demanda)'`
+  - Defesa: `r'(contesta[cç][aã]o|defesa|mérito|do\\s*direito|preliminar)'`
   - Audiência: `r'(audi[êe]ncia|concilia[cç][aã]o|termo|assentada)'`
-  - Sentença/Decisão: `r'(senten[çc]a|decis[aã]o|dispositivo|julgo|ante\s*o\s*exposto)'`
+  - Sentença/Decisão: `r'(senten[çc]a|decis[aã]o|dispositivo|julgo|ante\\s*o\\s*exposto)'`
+  - Valores: `r'R\\$\\s*[\\d.,]+'` ou `r'valor\\s*(da\\s*causa|pretendido|cobrado)'`
+  - Partes: `r'(autor|requerente|demandante)[:\\s]+'` e `r'(réu|requerido|demandado)[:\\s]+'`
+  - AJG: `r'(justiça\\s*gratuita|AJG|gratuidade|hipossufici)'`
 - **SAFETY FALLBACK:** Se `smart_search` não encontrar nada, LEIA O INÍCIO DO TEXTO DIRETAMENTE rodando: `print(PROCESS_TEXT[:5000])`. 
 - **PROTOCOLO DE FALHA DE BUSCA:** Se uma busca específica (ex: 'data da audiência') retornar 0 resultados:
   1. NÃO DESISTA nem retorne "não encontrado".
@@ -63,8 +87,6 @@ def run_context_agent(text_content: str, api_key: str):
         repl.globals["PROCESS_TEXT"] = text_content
         
         # Injeta a função smart_search no escopo do REPL
-        # Como o REPL roda string, precisamos passar o código da função ou injetar a lambda/wrapper
-        # Mas PythonREPL.run executa em seu proprio escopo. A melhor forma é definir a funçao no setup code.
         setup_code = """
 import re
 def smart_search(pattern, window=500):
@@ -78,7 +100,7 @@ def smart_search(pattern, window=500):
     for i, m in enumerate(matches[:5]): 
         start = max(0, m.start() - window)
         end = min(len(text), m.end() + window)
-        excerpt = text[start:end].replace('\\n', ' ')
+        excerpt = text[start:end].replace('\\\\n', ' ')
         print(f"--- MATCH {i+1} (Pos {m.start()}) ---")
         print(f"...{excerpt}...")
         print("-" * 20)
@@ -155,9 +177,12 @@ def smart_search(pattern, window=500):
              
              Retorne APENAS um JSON:
              {{
+                "partes": {{"autor": "...", "reu": "..."}},
+                "tipo_relacao": "CONSUMERISTA | CÍVEL | BANCÁRIO | OUTRO",
                 "fatos_principais": "Resumo...",
                 "pedidos_autor": [],
                 "teses_defesa": [],
+                "valor_da_causa": "Não informado",
                 "audit_warning": "Extraído via Fallback Direct"
              }}
              """

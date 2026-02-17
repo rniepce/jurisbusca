@@ -12,18 +12,8 @@ except ImportError:
     from tools.legal_repl import LegalREPL
 
 # Import Prompts
-# Assuming prompts_magistrate_v3 is in root or accessible
-try:
-    from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE, PROMPT_V3_HYBRID_FALLBACK
-except ImportError:
-    # Fallback or local import if necessary
-    from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE
-    # Define fallback prompt if not imported
-    PROMPT_V3_HYBRID_FALLBACK = """
-    # MODO HÍBRIDO (CODE FIRST)
-    1. Tente encontrar a informação via CÓDIGO (search_dates, grep).
-    2. Se retornar 'NOT_FOUND', use sua LEITURA SEMÂNTICA para encontrar a resposta no texto.
-    """
+# Both variables now correctly exported from prompts_magistrate_v3.py (typo ROMPT_ -> PROMPT_ fixed)
+from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE, PROMPT_V3_HYBRID_FALLBACK
 
 # Internal Imports for LLM
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -63,9 +53,11 @@ def node_magistrate(state: MagistrateState):
 
     # 2. System Prompt Injection
     if not state["messages"]:
-        sys_msg = SystemMessage(content=PROMPT_V3_MAGISTRATE_CORE + "\n" + PROMPT_V3_HYBRID_FALLBACK)
-        # Simplify raw text for prompt context if too large? 
-        # No, Gemini 1.5 Pro handles 1M tokens. Pass directly.
+        # Format the prompt with tribunal_local (default: TJMG)
+        tribunal = state.get("tribunal_local", "TJMG")
+        core_prompt = PROMPT_V3_MAGISTRATE_CORE.replace("{tribunal_local}", tribunal)
+        sys_msg = SystemMessage(content=core_prompt + "\n" + PROMPT_V3_HYBRID_FALLBACK)
+        # Gemini handles large contexts — pass the full text directly.
         user_msg = HumanMessage(content=f"AUTOS DO PROCESSO:\n{state['raw_text']}")
         messages = [sys_msg, user_msg]
     else:
