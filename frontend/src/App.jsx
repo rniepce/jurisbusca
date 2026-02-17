@@ -100,10 +100,11 @@ function App() {
 
       setConversationId(result.conversation_id);
 
-      // 4. Add assistant response
+      // 4. Add assistant response — ensure content is always a string
+      const rawResponse = result.response;
       const assistantMsg = {
         role: 'assistant',
-        content: result.response,
+        content: typeof rawResponse === 'string' ? rawResponse : (rawResponse?.text || rawResponse?.content || JSON.stringify(rawResponse)),
         model: result.model,
       };
       setMessages((prev) => [...prev, assistantMsg]);
@@ -173,13 +174,17 @@ function App() {
       const result = await analyzeCluster(processes, activeAgent?.prompt || '');
 
       // Add each individual result as a separate message
-      const resultMessages = result.results.map((r) => ({
-        role: 'assistant',
-        content: r.status === 'ok'
-          ? `## 📄 ${r.filename}\n\n${r.response}`
-          : `## ⚠️ ${r.filename}\n\n${r.response}`,
-        model: r.model,
-      }));
+      const resultMessages = result.results.map((r) => {
+        const raw = r.response;
+        const safeText = typeof raw === 'string' ? raw : (raw?.text || raw?.content || JSON.stringify(raw));
+        return {
+          role: 'assistant',
+          content: r.status === 'ok'
+            ? `## 📄 ${r.filename}\n\n${safeText}`
+            : `## ⚠️ ${r.filename}\n\n${safeText}`,
+          model: r.model,
+        };
+      });
 
       // Summary header
       const summary = {

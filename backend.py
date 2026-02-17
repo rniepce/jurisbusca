@@ -136,25 +136,72 @@ def _template_cache_key(template_files):
 def safe_content(response) -> str:
     """
     Normaliza response.content para string limpa.
-    Anthropic retorna lista [{'type':'text','text':'...'}], Gemini às vezes também.
+    Lida com TODOS os formatos de retorno:
+    - Anthropic: lista [{'type':'text','text':'...'}]
+    - Gemini 2.5: lista [{'type':'thinking','thinking':'...'},{'type':'text','text':'...'}]
+    - OpenAI: string pura
+    - LangChain ChatGeneration: .content pode ser string ou lista
+    - Casos edge: None, dict, int, etc.
     """
-    content = response.content if hasattr(response, 'content') else str(response)
+    # Extrair .content de objetos LangChain (AIMessage, ChatGeneration, etc.)
+    if hasattr(response, 'content'):
+        content = response.content
+    elif hasattr(response, 'text'):
+        content = response.text
+    elif isinstance(response, dict):
+        content = response.get('text', response.get('content', response.get('output', '')))
+    else:
+        content = response
+
+    # None → string vazia
+    if content is None:
+        return ""
+
+    # Se já é string, limpa e retorna
+    if isinstance(content, str):
+        content = content.replace("\\n", "\n")
+        return content.strip()
+
+    # Se é lista (Anthropic, Gemini 2.5 com thinking blocks)
     if isinstance(content, list):
         parts = []
         for item in content:
-            if isinstance(item, dict) and 'text' in item:
-                parts.append(item['text'])
+            if isinstance(item, dict):
+                # Pula blocos de "thinking" do modelo (raciocínio interno)
+                if item.get('type') == 'thinking':
+                    continue
+                if 'text' in item:
+                    parts.append(str(item['text']))
+                elif 'content' in item:
+                    parts.append(str(item['content']))
+                else:
+                    parts.append(str(item))
             elif isinstance(item, str):
                 parts.append(item)
+            elif hasattr(item, 'text'):
+                parts.append(str(item.text))
+            elif hasattr(item, 'content'):
+                parts.append(str(item.content))
             else:
                 parts.append(str(item))
         content = "\n".join(parts)
-    if content is None:
-        return ""
-    content = str(content)
-    # Converte escaped newlines literais (\n como texto) para quebras reais
-    content = content.replace("\\n", "\n")
-    return content
+        content = content.replace("\\n", "\n")
+        return content.strip()
+
+    # Se é dict (ex: JSON response acidental)
+    if isinstance(content, dict):
+        if 'text' in content:
+            return str(content['text']).strip()
+        if 'content' in content:
+            return str(content['content']).strip()
+        # Serializa como JSON legível
+        import json as _json
+        return _json.dumps(content, ensure_ascii=False, indent=2)
+
+    # Fallback total: converte para string
+    result = str(content)
+    result = result.replace("\\n", "\n")
+    return result.strip()
 
 
 def clean_llm_text(text: str) -> str:

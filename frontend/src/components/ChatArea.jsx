@@ -200,8 +200,16 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, sty
  * No external dependency needed.
  */
 function formatMarkdown(text) {
+    // Robust type coercion: handle non-string inputs (objects, arrays, null, etc.)
+    if (text === null || text === undefined) return '';
+    if (typeof text !== 'string') {
+        // If it's an object with a text/content field, extract it
+        if (typeof text === 'object' && text.text) text = String(text.text);
+        else if (typeof text === 'object' && text.content) text = String(text.content);
+        else if (Array.isArray(text)) text = text.map(item => typeof item === 'string' ? item : (item?.text || item?.content || JSON.stringify(item))).join('\n');
+        else text = String(text);
+    }
     if (!text) return '';
-    // Pre-processing: convert escaped newlines to real newlines
     let processed = text.replace(/\\n/g, '\n');
     let html = processed
         // Escape HTML
