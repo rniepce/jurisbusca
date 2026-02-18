@@ -60,7 +60,7 @@ class ChatRequest(BaseModel):
 MODEL_MAP = {
     "gemini": {"provider": "google", "model": "gemini-2.5-flash", "key_env": "GOOGLE_API_KEY"},
     "gpt": {"provider": "openai", "model": "gpt-4o", "key_env": "OPENAI_API_KEY"},
-    "claude": {"provider": "anthropic", "model": "claude-sonnet-4-20250514", "key_env": "ANTHROPIC_API_KEY"},
+    "claude": {"provider": "anthropic", "model": "claude-sonnet-4-6", "key_env": "ANTHROPIC_API_KEY"},
     "deepseek": {"provider": "openai", "model": "deepseek-reasoner", "key_env": "DEEPSEEK_API_KEY"},
 }
 
