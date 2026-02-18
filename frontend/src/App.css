@@ -23,8 +23,19 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   padding: 0;
   overflow-y: auto;
   min-height: 0;
+}
+
+.main-content.with-batch {
+  flex-direction: row;
+  overflow: hidden;
+}
+
+.main-content.with-batch> :first-child {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0;
 }

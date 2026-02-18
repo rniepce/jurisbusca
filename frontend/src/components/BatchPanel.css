@@ -1,0 +1,224 @@
+/* ===== BATCH PANEL (Right Side) ===== */
+.batch-panel {
+    width: 300px;
+    min-width: 300px;
+    height: 100%;
+    background: #fafbfc;
+    border-left: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    animation: batchSlideIn 0.3s ease-out;
+    overflow: hidden;
+}
+
+@keyframes batchSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* ── Header ── */
+.batch-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 16px 12px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.batch-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.batch-panel-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #9ca3af;
+    padding: 4px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.batch-panel-close:hover {
+    background: #f3f4f6;
+    color: #4b5563;
+}
+
+/* ── Summary ── */
+.batch-panel-summary {
+    display: flex;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.batch-summary-ok {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #16a34a;
+    font-weight: 500;
+}
+
+.batch-summary-err {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #dc2626;
+    font-weight: 500;
+}
+
+/* ── Card List ── */
+.batch-panel-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* ── Individual Card ── */
+.batch-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s ease;
+    position: relative;
+    width: 100%;
+}
+
+.batch-card:hover {
+    background: #f0f2ff;
+    border-color: #c7d2fe;
+    transform: translateX(-2px);
+}
+
+.batch-card.selected {
+    background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+    border-color: #818cf8;
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.12);
+}
+
+.batch-card.error {
+    border-color: #fecaca;
+}
+
+.batch-card.error:hover {
+    background: #fef2f2;
+    border-color: #f87171;
+}
+
+.batch-card.error.selected {
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    border-color: #f87171;
+}
+
+/* ── Card Icon ── */
+.batch-card-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: #f0f2ff;
+    color: #6366f1;
+}
+
+.batch-card.error .batch-card-icon {
+    background: #fef2f2;
+    color: #ef4444;
+}
+
+.batch-card.selected .batch-card-icon {
+    background: #4F46E5;
+    color: white;
+}
+
+/* ── Card Info ── */
+.batch-card-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.batch-card-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #1a1a1a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.batch-card-meta {
+    font-size: 10.5px;
+    color: #9ca3af;
+}
+
+/* ── Selected Indicator ── */
+.batch-card-indicator {
+    position: absolute;
+    left: -1px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 18px;
+    background: #4F46E5;
+    border-radius: 0 3px 3px 0;
+}
+
+/* ── Scrollbar ── */
+.batch-panel-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.batch-panel-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.batch-panel-list::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 2px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+    .batch-panel {
+        width: 260px;
+        min-width: 260px;
+    }
+}
+
+@media (max-width: 768px) {
+    .batch-panel {
+        display: none;
+    }
+}

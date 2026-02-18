@@ -5,6 +5,7 @@ import WelcomeContent from './components/WelcomeContent';
 import ChatArea from './components/ChatArea';
 import ChatInput from './components/ChatInput';
 import XRayDashboard from './components/XRayDashboard';
+import BatchPanel from './components/BatchPanel';
 import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster } from './services/api';
 import './App.css';
 
@@ -23,6 +24,8 @@ function App() {
   const [styleDossier, setStyleDossier] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
   const [ragStatus, setRagStatus] = useState(null);
+  const [batchResults, setBatchResults] = useState([]);
+  const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
 
   // Fetch template/RAG status on mount
   useEffect(() => {
@@ -194,6 +197,10 @@ function App() {
       };
 
       setMessages((prev) => [...prev, summary, ...resultMessages]);
+
+      // Populate batch panel with results
+      setBatchResults(result.results);
+      setBatchSelectedIndex(null);
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -203,6 +210,31 @@ function App() {
       setIsLoading(false);
     }
   }, [xrayTextCache, activeAgent]);
+
+  // ── When user selects a batch card, show its content in chat ────────
+  const handleBatchSelect = useCallback((index) => {
+    setBatchSelectedIndex(index);
+    const res = batchResults[index];
+    if (!res) return;
+
+    const raw = res.response;
+    const safeText = typeof raw === 'string' ? raw : (raw?.text || raw?.content || JSON.stringify(raw));
+    const content = res.status === 'ok'
+      ? `## 📄 ${res.filename}\n\n${safeText}`
+      : `## ⚠️ ${res.filename}\n\n${safeText}`;
+
+    // Replace messages with just this result
+    setMessages([{
+      role: 'assistant',
+      content,
+      model: res.model,
+    }]);
+  }, [batchResults]);
+
+  const handleBatchClose = useCallback(() => {
+    setBatchResults([]);
+    setBatchSelectedIndex(null);
+  }, []);
 
   // ── Files uploaded → run OCR immediately ─────────────────────────────
   const handleFilesUploaded = useCallback(async (files, ocrEngine) => {
@@ -360,6 +392,8 @@ function App() {
     return <WelcomeContent />;
   };
 
+  const showBatchPanel = batchResults.length > 0;
+
   return (
     <div className="app-layout">
       <Sidebar
@@ -375,8 +409,16 @@ function App() {
       <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
         <Header onMenuClick={toggleSidebar} />
 
-        <div className="main-content">
+        <div className={`main-content ${showBatchPanel ? 'with-batch' : ''}`}>
           {renderContent()}
+          {showBatchPanel && (
+            <BatchPanel
+              results={batchResults}
+              selectedIndex={batchSelectedIndex}
+              onSelect={handleBatchSelect}
+              onClose={handleBatchClose}
+            />
+          )}
         </div>
 
         <ChatInput
