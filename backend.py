@@ -379,8 +379,8 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
              return "Nenhum texto extraído.", None
 
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=2000,
-            chunk_overlap=400,
+            chunk_size=4000,
+            chunk_overlap=200,
             separators=["\n\n", "\n", " ", ""]
         )
         splits = text_splitter.split_documents(docs)
@@ -593,8 +593,8 @@ def extract_text_with_gemini_flash(file_path, api_key):
         if sample_file.state.name == "FAILED":
              raise ValueError("Google File API processing failed.")
              
-        # Generate Content (Vision)
-        model = genai.GenerativeModel(model_name="gemini-2.5-flash-preview-05-20")
+        # Generate Content (Vision) — usa 2.0 Flash (mais rápido para OCR)
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash")
         
         prompt = """
         Aja como um transcritor jurídico de elite. 
