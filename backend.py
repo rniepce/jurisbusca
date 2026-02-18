@@ -385,20 +385,46 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
         )
         splits = text_splitter.split_documents(docs)
         
-        # Cria Vector Store em memória (ou temp dir que apagamos depois)
-        # Usando Chroma
-        embedding_function = get_embedding_function(api_key=api_key)
-        
-        vectorstore = Chroma.from_documents(
-            documents=splits,
-            embedding=embedding_function,
-            collection_name="temp_process_analysis" 
-            # Não definimos persist_directory para ser in-memory (ephemeral)
-        )
-        
-        retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
-        
-        return full_text, retriever
+        # Cria Vector Store em memória (ephemeral)
+        # Usando Chroma com timeout para evitar hang
+        try:
+            embedding_function = get_embedding_function(api_key=api_key)
+            
+            # Processa em batches menores para evitar rate limit e timeout
+            print(f"📊 Vetorizando {len(splits)} chunks...")
+            
+            import signal
+            
+            # Timeout para a vetorização inteira (5 min max)
+            RAG_TIMEOUT = 300
+            
+            def _timeout_handler(signum, frame):
+                raise TimeoutError(f"Vetorização excedeu {RAG_TIMEOUT}s")
+            
+            # Configura timeout (apenas em Unix/Mac)
+            old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+            signal.alarm(RAG_TIMEOUT)
+            
+            try:
+                vectorstore = Chroma.from_documents(
+                    documents=splits,
+                    embedding=embedding_function,
+                    collection_name="temp_process_analysis"
+                )
+                retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+            finally:
+                signal.alarm(0)  # Cancela o alarm
+                signal.signal(signal.SIGALRM, old_handler)  # Restaura handler
+            
+            print(f"✅ RAG indexado: {len(splits)} chunks vetorizados.")
+            return full_text, retriever
+            
+        except TimeoutError as e:
+            print(f"⚠️ RAG Timeout: {e}. Retornando texto sem vetorização.")
+            return full_text, None
+        except Exception as e:
+            print(f"⚠️ Erro na vetorização RAG: {e}. Retornando texto sem retriever.")
+            return full_text, None
         
     except Exception as e:
         import traceback
@@ -551,11 +577,16 @@ def extract_text_with_gemini_flash(file_path, api_key):
         
         # Wait for processing (with timeout)
         t_poll = time.time()
-        OCR_TIMEOUT = 120  # segundos
+        OCR_TIMEOUT = 180  # segundos (aumentado para PDFs grandes)
+        poll_interval = 2  # segundos entre polls
         while sample_file.state.name == "PROCESSING":
             if time.time() - t_poll > OCR_TIMEOUT:
+                try:
+                    genai.delete_file(sample_file.name)
+                except Exception:
+                    pass
                 raise TimeoutError(f"Google File API não processou o arquivo em {OCR_TIMEOUT}s")
-            time.sleep(1)
+            time.sleep(poll_interval)
             sample_file = genai.get_file(sample_file.name)
         print(f"⏱️ Polling/Processamento em {time.time() - t_poll:.1f}s")
             
@@ -563,7 +594,7 @@ def extract_text_with_gemini_flash(file_path, api_key):
              raise ValueError("Google File API processing failed.")
              
         # Generate Content (Vision)
-        model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+        model = genai.GenerativeModel(model_name="gemini-2.5-flash-preview-05-20")
         
         prompt = """
         Aja como um transcritor jurídico de elite. 
@@ -579,7 +610,10 @@ def extract_text_with_gemini_flash(file_path, api_key):
         """
         
         t_gen = time.time()
-        response = model.generate_content([sample_file, prompt])
+        response = model.generate_content(
+            [sample_file, prompt],
+            request_options={"timeout": 180}  # 3 min timeout para PDFs grandes
+        )
         print(f"⏱️ Geração de conteúdo (Vision) em {time.time() - t_gen:.1f}s")
         
         # Cleanup
@@ -944,7 +978,7 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     Fluxo:
     1. Gemini 3 Pro -> Extração de Fatos e Análise Formal (Input Massivo).
     2. DeepSeek R1 -> Análise Material/Mérito e Lógica Jurídica (Reasoning).
-    3. Claude 4.5 Sonnet -> Redação Final (Minuta) com base nos insumos.
+    3. Claude 4.6 Sonnet -> Redação Final (Minuta) com base nos insumos.
     """
     def update(msg):
          if status_callback: status_callback(msg)

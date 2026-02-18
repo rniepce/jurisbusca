@@ -11,7 +11,7 @@ import './ChatInput.css';
 const LLM_MODELS = [
     { id: 'gemini', name: 'Gemini 2.5 Pro', color: '#4285F4' },
     { id: 'gpt', name: 'GPT-5', color: '#10A37F' },
-    { id: 'claude', name: 'Claude 4.5 Sonnet', color: '#D97706' },
+    { id: 'claude', name: 'Claude 4.6 Sonnet', color: '#D97706' },
     { id: 'deepseek', name: 'DeepSeek-R1', color: '#6366F1' },
 ];
 
