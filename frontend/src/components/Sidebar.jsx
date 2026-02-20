@@ -5,6 +5,7 @@ import {
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
     FaBookOpen, FaPenNib, FaComments
 } from 'react-icons/fa6';
+import { useAuth } from '../context/AuthContext';
 import './Sidebar.css';
 import agentDefinitions from '../config/agents';
 
@@ -19,6 +20,7 @@ const iconMap = {
 
 const Sidebar = ({ isOpen, onToggle, history = [], activeAgent, onAgentSelect, onNewChat, onLoadChat }) => {
     const [agentsOpen, setAgentsOpen] = useState(true);
+    const { user } = useAuth();
 
     const handleAgentClick = (agent) => {
         if (onAgentSelect) onAgentSelect(agent);
@@ -77,7 +79,11 @@ const Sidebar = ({ isOpen, onToggle, history = [], activeAgent, onAgentSelect, o
             {/* History Section */}
             <div className="sidebar-history">
                 <span className="section-label-static">Histórico</span>
-                {history.length > 0 ? (
+                {!user ? (
+                    <div className="history-login-prompt" style={{ padding: '10px 16px', fontSize: '12px', color: '#666', lineHeight: '1.4' }}>
+                        Faça login para ter acesso ao histórico de conversas e gerenciar seus modelos.
+                    </div>
+                ) : history.length > 0 ? (
                     <>
                         {history.map((group, gi) => (
                             <div key={gi} className="history-group">

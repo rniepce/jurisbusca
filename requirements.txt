@@ -8,6 +8,7 @@ plotly
 fastapi
 uvicorn
 python-multipart
+google-auth
 
 # V1: Google Gemini (Native)
 langchain-google-genai

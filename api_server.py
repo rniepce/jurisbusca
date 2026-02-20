@@ -15,7 +15,8 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,8 +43,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── In-memory conversation store (per session) ──────────────────────────────
-conversations: dict[str, list[dict]] = {}
+# ── In-memory conversation store (fallback) ──────────────────────────────
+conversations_fallback: dict[str, list[dict]] = {}
+
+# ── Auth Dependency ─────────────────────────────────────────────────────────
+security = HTTPBearer(auto_error=False)
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "COLOQUE_SEU_CLIENT_ID_AQUI.apps.googleusercontent.com")
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Validates the Google JWT and returns the user's email if valid, or None if not logged in."""
+    if not credentials:
+        return None
+        
+    token = credentials.credentials
+    try:
+        # id_token.verify_oauth2_token will verify signature and expiration
+        id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
+        return id_info.get("email")
+    except ValueError as e:
+        print(f"Token validation failed: {e}")
+        return None
 
 
 class ChatRequest(BaseModel):
@@ -51,7 +70,7 @@ class ChatRequest(BaseModel):
     model: str = "gemini"
     conversation_id: Optional[str] = None
     agent_prompt: Optional[str] = None
-    ocr_engine: str = "gemini_flash"
+    ocr_engine: str = "paddle"
     uploaded_text: Optional[str] = None  # pre-extracted text from uploaded file
     style_dossier: Optional[str] = None  # cloning prompt from style report
 
@@ -101,7 +120,7 @@ async def debug_routes():
 
 
 @app.post("/api/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, current_user: Optional[str] = Depends(get_current_user)):
     """Process a chat message and return LLM response."""
     try:
         api_key = _get_api_key(req.model)
@@ -115,10 +134,18 @@ async def chat(req: ChatRequest):
             temperature=0.3,
         )
 
-        # Conversation history
         conv_id = req.conversation_id or str(uuid.uuid4())
-        if conv_id not in conversations:
-            conversations[conv_id] = []
+
+        # Fetch history
+        past_messages = []
+        if current_user:
+            past_messages = history_db.get_messages(conv_id, current_user)
+            if past_messages is None:
+                past_messages = []
+        else:
+            if conv_id not in conversations_fallback:
+                conversations_fallback[conv_id] = []
+            past_messages = conversations_fallback[conv_id]
 
         # ── Build LangChain message list with full history ──────────────
         messages = []
@@ -143,7 +170,13 @@ async def chat(req: ChatRequest):
             try:
                 google_key = os.getenv("GOOGLE_API_KEY", "")
                 if google_key:
-                    rag_retriever = be.load_persistent_rag(google_key)
+                    # Provide collection_name if logged in
+                    collection_name = "rag_templates_persistent"
+                    if current_user:
+                        import hashlib
+                        collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
+                        
+                    rag_retriever = be.load_persistent_rag(google_key, collection_name=collection_name)
                     if rag_retriever:
                         # Search for similar cases
                         relevant_docs = rag_retriever.invoke(req.uploaded_text[:6000])
@@ -186,7 +219,7 @@ async def chat(req: ChatRequest):
             messages.append(SystemMessage(content="\n".join(system_parts)))
 
         # Append previous conversation turns
-        for turn in conversations[conv_id]:
+        for turn in past_messages:
             if turn["role"] == "user":
                 messages.append(HumanMessage(content=turn["content"]))
             else:
@@ -207,14 +240,24 @@ async def chat(req: ChatRequest):
         messages.append(HumanMessage(content=user_content))
 
         # Persist user turn in history
-        conversations[conv_id].append({"role": "user", "content": user_content})
+        chat_title = "Nova Conversa"
+        if len(past_messages) == 0 and user_content:
+            chat_title = user_content[:50] + "..." if len(user_content) > 50 else user_content
+
+        if current_user:
+            history_db.save_message(conv_id, current_user, "user", user_content, title=chat_title)
+        else:
+            conversations_fallback[conv_id].append({"role": "user", "content": user_content})
 
         # Call LLM with full conversation
         response = llm.invoke(messages)
         response_text = be.safe_content(response)
 
         # Persist assistant turn in history
-        conversations[conv_id].append({"role": "assistant", "content": response_text})
+        if current_user:
+            history_db.save_message(conv_id, current_user, "assistant", response_text, title=chat_title)
+        else:
+            conversations_fallback[conv_id].append({"role": "assistant", "content": response_text})
 
         return {
             "conversation_id": conv_id,
@@ -229,10 +272,25 @@ async def chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=f"Erro ao processar: {str(e)}")
 
 
+@app.get("/api/history")
+async def get_history(current_user: Optional[str] = Depends(get_current_user)):
+    """Fetch user's conversation history."""
+    if not current_user:
+        return {"conversations": []}
+    
+    try:
+        conversations = history_db.get_conversations(current_user)
+        # Format for Sidebar (Group by logical time later, just return list for now)
+        return {"conversations": conversations}
+    except Exception as e:
+        print(f"Error fetching history: {e}")
+        return {"conversations": []}
+
+
 @app.post("/api/upload")
 async def upload_file(
     file: UploadFile = File(...),
-    ocr_engine: str = Form("gemini_flash"),
+    ocr_engine: str = Form("paddle"),
 ):
     """Upload and extract text from a file (PDF/DOCX/TXT)."""
     try:
@@ -365,7 +423,7 @@ class ClusterAnalyzeRequest(BaseModel):
     model: str = "gemini"
 
 
-def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_cfg: dict, api_key: str):
+def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_cfg: dict, api_key: str, collection_name: str = "rag_templates_persistent"):
     """Analyze one process. Runs in a thread pool."""
     try:
         llm = be.get_llm(
@@ -389,7 +447,7 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_c
         google_key = os.getenv("GOOGLE_API_KEY", "")
         if google_key:
             try:
-                rag_retriever = be.load_persistent_rag(google_key)
+                rag_retriever = be.load_persistent_rag(google_key, collection_name=collection_name)
                 if rag_retriever:
                     relevant_docs = rag_retriever.invoke(text[:6000])
                     if relevant_docs:
@@ -436,7 +494,7 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_c
 
 
 @app.post("/api/cluster-analyze")
-async def cluster_analyze(req: ClusterAnalyzeRequest):
+async def cluster_analyze(req: ClusterAnalyzeRequest, current_user: Optional[str] = Depends(get_current_user)):
     """
     Process all files in a cluster individually, in parallel.
     Returns a list of individual analysis results.
@@ -450,6 +508,11 @@ async def cluster_analyze(req: ClusterAnalyzeRequest):
         if not req.processes:
             raise HTTPException(status_code=400, detail="Nenhum processo para analisar.")
 
+        collection_name = "rag_templates_persistent"
+        if current_user:
+            import hashlib
+            collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
+
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = {
@@ -460,6 +523,7 @@ async def cluster_analyze(req: ClusterAnalyzeRequest):
                     req.agent_prompt or "",
                     cfg,
                     api_key,
+                    collection_name
                 ): p["filename"]
                 for p in req.processes
                 if p.get("text")
@@ -486,12 +550,19 @@ async def cluster_analyze(req: ClusterAnalyzeRequest):
 # ── Template Management (Persistent RAG) ─────────────────────────────────────
 
 @app.post("/api/templates")
-async def upload_templates(files: list[UploadFile] = File(...)):
+async def upload_templates(
+    files: list[UploadFile] = File(...),
+    current_user: str = Depends(get_current_user)
+):
     """
     Upload and index template files in ChromaDB for persistent RAG.
     Also auto-generates the style dossier.
+    Isolated per user.
     """
     import io
+
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Precisa estar logado para salvar modelos.")
 
     try:
         api_key = os.getenv("GOOGLE_API_KEY", "")
@@ -507,8 +578,9 @@ async def upload_templates(files: list[UploadFile] = File(...)):
             buf.seek(0)
             file_objects.append(buf)
 
-        # 1. Index in ChromaDB (persistent)
-        retriever, docs = be.process_templates(file_objects, api_key)
+        # 1. Index in ChromaDB (persistent, user isolated)
+        collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
+        retriever, docs = be.process_templates(file_objects, api_key, collection_name=collection_name)
         indexed_count = len(docs) if docs else 0
 
         # 2. Auto-generate style dossier (cached)
@@ -534,26 +606,25 @@ async def upload_templates(files: list[UploadFile] = File(...)):
 
 
 @app.get("/api/templates/status")
-async def templates_status():
-    """Check how many templates are indexed in the persistent RAG."""
+async def templates_status(current_user: Optional[str] = Depends(get_current_user)):
+    """Check how many templates are indexed in the persistent RAG for this user."""
     try:
         api_key = os.getenv("GOOGLE_API_KEY", "")
         count = 0
-        if api_key:
-            retriever = be.load_persistent_rag(api_key)
-            if retriever:
-                # Get count from the vectorstore
-                persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
-                if os.path.exists(persist_dir):
-                    try:
-                        import chromadb
-                        client = chromadb.PersistentClient(path=persist_dir)
-                        collection = client.get_collection("rag_templates_persistent")
-                        count = collection.count()
-                    except Exception:
-                        pass
+        if api_key and current_user:
+            # We don't need to load the full retriever just to count, but check if db exists
+            persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
+            if os.path.exists(persist_dir):
+                try:
+                    import chromadb
+                    client = chromadb.PersistentClient(path=persist_dir)
+                    collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
+                    collection = client.get_collection(collection_name)
+                    count = collection.count()
+                except Exception:
+                    pass
 
-        has_dossier = len(be._style_dossier_cache) > 0
+        has_dossier = len(be._style_dossier_cache) > 0 # Note: globally cached right now
 
         return {
             "indexed_chunks": count,
@@ -565,15 +636,19 @@ async def templates_status():
 
 
 @app.delete("/api/templates")
-async def clear_templates():
-    """Clear all indexed templates from ChromaDB and style cache."""
+async def clear_templates(current_user: str = Depends(get_current_user)):
+    """Clear all indexed templates from ChromaDB for the user."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Precisa estar logado.")
+        
     try:
         persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
         if os.path.exists(persist_dir):
             import chromadb
             client = chromadb.PersistentClient(path=persist_dir)
             try:
-                client.delete_collection("rag_templates_persistent")
+                collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
+                client.delete_collection(collection_name)
             except Exception:
                 pass
 

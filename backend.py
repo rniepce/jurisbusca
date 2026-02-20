@@ -1106,7 +1106,7 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
         "steps": logs
     }
 
-def process_templates(files, api_key):
+def process_templates(files, api_key, collection_name="rag_templates_persistent"):
     """
     Processa arquivos de template (PDF/DOCX/TXT) e cria um retriever.
     """
@@ -1188,7 +1188,7 @@ def process_templates(files, api_key):
         import chromadb
         client = chromadb.PersistentClient(path=persist_dir)
         try:
-            client.delete_collection("rag_templates_persistent")
+            client.delete_collection(collection_name)
             print("🗑️ Collection anterior removida (evita conflito de dimensões).")
         except Exception:
             pass
@@ -1199,7 +1199,7 @@ def process_templates(files, api_key):
     vectorstore = Chroma(
         persist_directory=persist_dir, 
         embedding_function=embeddings,
-        collection_name="rag_templates_persistent"
+        collection_name=collection_name
     )
     
     # Adiciona os novos documentos
@@ -1208,7 +1208,7 @@ def process_templates(files, api_key):
     # Retorna o retriever e os docs para análise de estilo imediata
     return vectorstore.as_retriever(search_kwargs={"k": 5}), documents
 
-def load_persistent_rag(api_key):
+def load_persistent_rag(api_key, collection_name="rag_templates_persistent"):
     """
     Tenta carregar o banco de dados persistente (se existir).
     """
@@ -1220,7 +1220,7 @@ def load_persistent_rag(api_key):
             vectorstore = Chroma(
                 persist_directory=persist_dir, 
                 embedding_function=embeddings,
-                collection_name="rag_templates_persistent"
+                collection_name=collection_name
             )
             # Verifica se tem dados (hack simples)
             if vectorstore._collection.count() > 0:

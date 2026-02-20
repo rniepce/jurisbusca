@@ -5,6 +5,14 @@
 const API_BASE = '/api';
 
 /**
+ * Get authentication headers if user implies to be logged in.
+ */
+function getAuthHeaders(existingHeaders = {}) {
+    const token = localStorage.getItem('jurisbusca_token');
+    return token ? { ...existingHeaders, 'Authorization': `Bearer ${token}` } : existingHeaders;
+}
+
+/**
  * Safely parse JSON from a response.
  * Detects HTML responses (common when backend is down and SPA catch-all serves index.html)
  * and provides actionable error messages.
@@ -37,13 +45,14 @@ async function safeJson(res, context) {
  * @param {string} ocrEngine
  * @returns {Promise<{filename: string, text: string, char_count: number}>}
  */
-export async function uploadFile(file, ocrEngine = 'gemini_flash') {
+export async function uploadFile(file, ocrEngine = 'paddle') {
     const form = new FormData();
     form.append('file', file);
     form.append('ocr_engine', ocrEngine);
 
     const res = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: form,
         redirect: 'error',    // Do NOT follow redirects — fail immediately
     }).catch((err) => {
@@ -75,13 +84,13 @@ export async function uploadFile(file, ocrEngine = 'gemini_flash') {
 export async function sendMessage({ message, model, agentPrompt, conversationId, uploadedText, styleDossier }) {
     const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
             message,
             model,
             conversation_id: conversationId,
             agent_prompt: agentPrompt || null,
-            ocr_engine: 'gemini_flash',
+            ocr_engine: 'paddle',
             uploaded_text: uploadedText || null,
             style_dossier: styleDossier || null,
         }),
@@ -112,6 +121,7 @@ export async function uploadBatchXray(files) {
 
     const res = await fetch(`${API_BASE}/xray`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: form,
         redirect: 'error',
     }).catch((err) => {
@@ -138,7 +148,7 @@ export async function uploadBatchXray(files) {
 export async function analyzeCluster(processes, agentPrompt = '', model = 'gemini') {
     const res = await fetch(`${API_BASE}/cluster-analyze`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ processes, agent_prompt: agentPrompt, model }),
     });
 
@@ -161,6 +171,7 @@ export async function generateStyleReport(files) {
 
     const res = await fetch(`${API_BASE}/style-report`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: form,
         redirect: 'error',
     }).catch((err) => {
@@ -189,6 +200,7 @@ export async function uploadTemplates(files) {
 
     const res = await fetch(`${API_BASE}/templates`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: form,
     });
 
@@ -205,7 +217,9 @@ export async function uploadTemplates(files) {
  * @returns {Promise<{indexed_chunks: number, has_dossier: boolean}>}
  */
 export async function getTemplateStatus() {
-    const res = await fetch(`${API_BASE}/templates/status`);
+    const res = await fetch(`${API_BASE}/templates/status`, {
+        headers: getAuthHeaders()
+    });
     if (!res.ok) return { indexed_chunks: 0, has_dossier: false };
     return safeJson(res, 'Template Status');
 }
@@ -215,7 +229,10 @@ export async function getTemplateStatus() {
  * @returns {Promise<{status: string, message: string}>}
  */
 export async function clearTemplates() {
-    const res = await fetch(`${API_BASE}/templates`, { method: 'DELETE' });
+    const res = await fetch(`${API_BASE}/templates`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+    });
     if (!res.ok) {
         const err = await safeJson(res, 'Clear Templates').catch(() => ({}));
         throw new Error(err.detail || `Erro ao limpar modelos (${res.status})`);

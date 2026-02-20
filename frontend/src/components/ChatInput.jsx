@@ -29,7 +29,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading =
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [files, setFiles] = useState([]);
     const [templateFiles, setTemplateFiles] = useState([]);
-    const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[0].id);
+    const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[1].id);
     const [indexing, setIndexing] = useState(false);
     const dropdownRef = useRef(null);
     const fileInputRef = useRef(null);

@@ -521,7 +521,7 @@ with st.sidebar:
     ocr_option = st.radio(
         "Motor de Leitura:",
         ["Gemini 2.0 Flash (Nuvem/Rápido)", "PaddleOCR (Local/CPU)", "DeepSeek-OCR-2 (Local/GPU)"],
-        index=0,
+        index=1,
         help="Gemini: Usa API Vision (Melhor Geral). Paddle: Leve. DeepSeek: Requer GPU (Ótimo para tabelas)."
     )
     
