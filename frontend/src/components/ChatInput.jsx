@@ -8,24 +8,23 @@ import { IoSend } from 'react-icons/io5';
 import { uploadTemplates, clearTemplates } from '../services/api';
 import './ChatInput.css';
 
-const LLM_MODELS = [
-    { id: 'gemini', name: 'Gemini 2.5 Pro', color: '#4285F4' },
-    { id: 'gpt', name: 'GPT-5', color: '#10A37F' },
-    { id: 'claude', name: 'Claude 4.6 Sonnet', color: '#D97706' },
-    { id: 'deepseek', name: 'DeepSeek-R1', color: '#6366F1' },
+const ENGINE_VERSIONS = [
+    { id: 'v1', name: 'Gabinete V1 (Default)', color: '#4285F4' },
+    { id: 'v2', name: 'Gabinete V2 (Agêntico)', color: '#D97706' },
+    { id: 'v3', name: 'Gabinete V3 (Autônomo)', color: '#6366F1' },
 ];
 
 const ACCEPTED_TYPES = '.pdf,.docx,.txt';
 
 const OCR_ENGINES = [
-    { id: 'gemini_flash', label: 'Gemini Flash' },
+    { id: 'gpt4o_mini', label: 'GPT-4o mini' },
     { id: 'paddle', label: 'PaddleOCR' },
     { id: 'deepseek', label: 'DeepSeek-OCR' },
 ];
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange }) => {
     const [message, setMessage] = useState('');
-    const [selectedModel, setSelectedModel] = useState(LLM_MODELS[0]);
+    const [selectedModel, setSelectedModel] = useState(ENGINE_VERSIONS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [files, setFiles] = useState([]);
     const [templateFiles, setTemplateFiles] = useState([]);
@@ -70,6 +69,9 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading =
 
     const handleSelectModel = (model) => {
         setSelectedModel(model);
+        if (onModelChange) {
+            onModelChange(model);
+        }
         setDropdownOpen(false);
     };
 
@@ -135,8 +137,8 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, isLoading =
 
                         {dropdownOpen && (
                             <div className="model-dropdown">
-                                <div className="dropdown-header">Selecionar Modelo</div>
-                                {LLM_MODELS.map((model) => (
+                                <div className="dropdown-header">Selecionar Versão do Gabinete</div>
+                                {ENGINE_VERSIONS.map((model) => (
                                     <button
                                         key={model.id}
                                         className={`dropdown-item ${selectedModel.id === model.id ? 'selected' : ''}`}

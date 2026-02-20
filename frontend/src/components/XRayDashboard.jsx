@@ -74,6 +74,48 @@ function PieLegend({ slices }) {
     );
 }
 
+/* ── Situation Progress Bar (Mini Chart) ────────────────────────────── */
+function SituationChart({ distribution }) {
+    if (!distribution) return null;
+
+    const items = [
+        { label: 'Sentença', value: distribution['Pronto para Sentença'] || 0, color: '#22c55e' }, // Green
+        { label: 'Saneador', value: distribution['Pronto para Saneador'] || 0, color: '#f97316' }, // Orange
+        { label: 'Despacho', value: distribution['Pronto para Despacho'] || 0, color: '#3b82f6' }, // Blue
+    ];
+
+    const total = items.reduce((sum, item) => sum + item.value, 0);
+    if (total === 0) return null;
+
+    return (
+        <div className="xray-situation-chart">
+            <div className="xray-situation-bars">
+                {items.map((item, i) => (
+                    item.value > 0 && (
+                        <div
+                            key={i}
+                            className="xray-situation-bar"
+                            style={{
+                                width: `${(item.value / total) * 100}%`,
+                                backgroundColor: item.color
+                            }}
+                            title={`${item.label}: ${item.value}`}
+                        />
+                    )
+                ))}
+            </div>
+            <div className="xray-situation-labels">
+                {items.map((item, i) => (
+                    <span key={i} className="xray-situation-label">
+                        <span className="xray-situation-dot" style={{ backgroundColor: item.color }}></span>
+                        {item.value} {item.label}
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 /* ── Cluster Card ──────────────────────────────────────────────────── */
 function ClusterCard({ cluster, index, onActionClick }) {
     const color = PALETTE[index % PALETTE.length];
@@ -91,6 +133,11 @@ function ClusterCard({ cluster, index, onActionClick }) {
                     💡 {cluster.sugestao_minuta}
                 </p>
             )}
+
+            {cluster.distribuicao_situacao && (
+                <SituationChart distribution={cluster.distribuicao_situacao} />
+            )}
+
             <div className="xray-cluster-files">
                 {(cluster.arquivos || []).map((fname, j) => (
                     <span key={j} className="xray-file-chip">
@@ -126,9 +173,16 @@ function StatCard({ icon: Icon, label, value }) {
 
 /* ── Main Dashboard ────────────────────────────────────────────────── */
 export default function XRayDashboard({ report, onClose, onClusterAction }) {
-    const clusters = report?.clusters || [];
-    const temas = report?.temas_predominantes || [];
-    const alertas = report?.alertas_globais || [];
+    // Defensive array casting: LLMs may return string or dict instead of array for these keys
+    let clusters = report?.clusters || [];
+    if (!Array.isArray(clusters)) clusters = [clusters];
+
+    let temas = report?.temas_predominantes || [];
+    if (!Array.isArray(temas)) temas = typeof temas === 'string' ? [temas] : Object.values(temas);
+
+    let alertas = report?.alertas_globais || [];
+    if (!Array.isArray(alertas)) alertas = typeof alertas === 'string' ? [alertas] : Object.values(alertas);
+
     const stats = report?.estatisticas || {};
 
     const slices = useMemo(

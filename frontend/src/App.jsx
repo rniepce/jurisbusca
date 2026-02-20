@@ -7,13 +7,14 @@ import ChatInput from './components/ChatInput';
 import XRayDashboard from './components/XRayDashboard';
 import BatchPanel from './components/BatchPanel';
 import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster } from './services/api';
+import agentDefinitions from './config/agents';
 import './App.css';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeAgent, setActiveAgent] = useState(null);
+  const [activeAgent, setActiveAgent] = useState(agentDefinitions[0]);
   const [conversationId, setConversationId] = useState(null);
   const [uploadedText, setUploadedText] = useState(null);
   const [xrayReport, setXrayReport] = useState(null);
@@ -26,6 +27,7 @@ function App() {
   const [ragStatus, setRagStatus] = useState(null);
   const [batchResults, setBatchResults] = useState([]);
   const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
+  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'v1', name: 'Gabinete V1 (Default)', color: '#4285F4' }); // Provides fallback
 
   // Fetch template/RAG status on mount
   useEffect(() => {
@@ -104,10 +106,14 @@ function App() {
       setConversationId(result.conversation_id);
 
       // 4. Add assistant response — ensure content is always a string
-      const rawResponse = result.response;
+      let rawResponse = result.response;
+      if (typeof rawResponse === 'object' && rawResponse !== null) {
+        rawResponse = rawResponse.text || rawResponse.content || rawResponse.output || JSON.stringify(rawResponse);
+      }
+
       const assistantMsg = {
         role: 'assistant',
-        content: typeof rawResponse === 'string' ? rawResponse : (rawResponse?.text || rawResponse?.content || JSON.stringify(rawResponse)),
+        content: typeof rawResponse === 'string' ? rawResponse : String(rawResponse),
         model: result.model,
       };
       setMessages((prev) => [...prev, assistantMsg]);
@@ -174,12 +180,17 @@ function App() {
     ]);
 
     try {
-      const result = await analyzeCluster(processes, activeAgent?.prompt || '');
+      // Usa o globalSelectedModel que veio do ChatInput
+      const result = await analyzeCluster(processes, activeAgent?.prompt || '', globalSelectedModel.id);
 
       // Add each individual result as a separate message
       const resultMessages = result.results.map((r) => {
-        const raw = r.response;
-        const safeText = typeof raw === 'string' ? raw : (raw?.text || raw?.content || JSON.stringify(raw));
+        let raw = r.response;
+        if (typeof raw === 'object' && raw !== null) {
+          raw = raw.text || raw.content || raw.output || JSON.stringify(raw);
+        }
+        const safeText = typeof raw === 'string' ? raw : String(raw);
+
         return {
           role: 'assistant',
           content: r.status === 'ok'
@@ -217,8 +228,12 @@ function App() {
     const res = batchResults[index];
     if (!res) return;
 
-    const raw = res.response;
-    const safeText = typeof raw === 'string' ? raw : (raw?.text || raw?.content || JSON.stringify(raw));
+    let raw = res.response;
+    if (typeof raw === 'object' && raw !== null) {
+      raw = raw.text || raw.content || raw.output || JSON.stringify(raw);
+    }
+    const safeText = typeof raw === 'string' ? raw : String(raw);
+
     const content = res.status === 'ok'
       ? `## 📄 ${res.filename}\n\n${safeText}`
       : `## ⚠️ ${res.filename}\n\n${safeText}`;
@@ -407,7 +422,7 @@ function App() {
       />
 
       <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
-        <Header onMenuClick={toggleSidebar} />
+        <Header onMenuClick={toggleSidebar} isOpen={sidebarOpen} />
 
         <div className={`main-content ${showBatchPanel ? 'with-batch' : ''}`}>
           {renderContent()}
@@ -426,6 +441,7 @@ function App() {
           onXray={handleXray}
           onFilesUploaded={handleFilesUploaded}
           onStyleReport={handleStyleReport}
+          onModelChange={setGlobalSelectedModel}
           isLoading={isLoading || xrayLoading || styleAnalyzing}
           ocrProcessing={ocrProcessing}
           hasContext={!!(uploadedText || activeAgent)}

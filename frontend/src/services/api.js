@@ -145,7 +145,7 @@ export async function uploadBatchXray(files) {
  * @param {string} [model] - LLM model ID
  * @returns {Promise<{results: Array, total: number, ok_count: number}>}
  */
-export async function analyzeCluster(processes, agentPrompt = '', model = 'gemini') {
+export async function analyzeCluster(processes, agentPrompt = '', model = 'claude') {
     const res = await fetch(`${API_BASE}/cluster-analyze`, {
         method: 'POST',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),

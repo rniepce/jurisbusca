@@ -526,7 +526,7 @@ with st.sidebar:
     )
     
     ocr_map = {
-        "Gemini 2.0 Flash (Nuvem/Rápido)": "gemini_flash",
+        "GPT-4o mini (Nuvem/Rápido)": "gpt4o_mini",
         "PaddleOCR (Local/CPU)": "paddle", 
         "DeepSeek-OCR-2 (Local/GPU)": "deepseek"
     }

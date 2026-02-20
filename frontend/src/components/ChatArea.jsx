@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    FaRobot, FaUser,
+    FaUser,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
     FaBookOpen, FaPenNib
 } from 'react-icons/fa6';
 import OcrPreview from './OcrPreview';
+import logoSvg from '../assets/logo.svg';
 import './ChatArea.css';
 
 // ── Analysis phases for the style animation ──
@@ -130,7 +131,7 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, sty
                                 {msg.role === 'user' ? (
                                     <FaUser size={14} />
                                 ) : (
-                                    <FaRobot size={14} />
+                                    <img src={logoSvg} alt="Assistente" style={{ width: 14, height: 14, borderRadius: '2px' }} />
                                 )}
                             </div>
                             <div className={`message-bubble ${msg.role}`}>
@@ -177,7 +178,7 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, sty
                 {isLoading && (
                     <div className="message-row assistant">
                         <div className="message-avatar">
-                            <FaRobot size={14} />
+                            <img src={logoSvg} alt="Assistente" style={{ width: 14, height: 14, borderRadius: '2px' }} />
                         </div>
                         <div className="message-bubble assistant">
                             <div className="typing-indicator">
@@ -195,21 +196,30 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, sty
     );
 };
 
-/**
- * Lightweight markdown → HTML (bold, italic, headers, code blocks, lists, line breaks).
- * No external dependency needed.
- */
 function formatMarkdown(text) {
     // Robust type coercion: handle non-string inputs (objects, arrays, null, etc.)
     if (text === null || text === undefined) return '';
+
+    // Deep Extraction algorithm for bizarre LLM/Langchain JSON formats arriving at the UI
     if (typeof text !== 'string') {
-        // If it's an object with a text/content field, extract it
-        if (typeof text === 'object' && text.text) text = String(text.text);
-        else if (typeof text === 'object' && text.content) text = String(text.content);
-        else if (Array.isArray(text)) text = text.map(item => typeof item === 'string' ? item : (item?.text || item?.content || JSON.stringify(item))).join('\n');
-        else text = String(text);
+        if (Array.isArray(text)) {
+            // Aggregate all array items into a single string recursively
+            text = text.map(item => {
+                if (typeof item === 'string') return item;
+                if (item?.type === 'thinking') return ''; // ignore logic blocks from deepseek/claude if they leak
+                return item?.text || item?.content || item?.message || JSON.stringify(item);
+            }).filter(Boolean).join('\n');
+        } else if (typeof text === 'object') {
+            // It's a dict. Try known LLM response keys
+            text = text.text || text.content || text.message || text.output || JSON.stringify(text);
+        } else {
+            // Fallback for numbers, booleans, etc
+            text = String(text);
+        }
     }
-    if (!text) return '';
+
+    if (!text || typeof text !== 'string') return '';
+
     let processed = text.replace(/\\n/g, '\n');
     let html = processed
         // Escape HTML

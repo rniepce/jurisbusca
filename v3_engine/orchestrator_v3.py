@@ -16,9 +16,10 @@ except ImportError:
 from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE, PROMPT_V3_HYBRID_FALLBACK
 
 # Internal Imports for LLM
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import tool
 
 # Define State
 class MagistrateState(TypedDict):
@@ -40,31 +41,44 @@ def node_magistrate(state: MagistrateState):
     """
     keys = state["keys"]
     
-    # 1. Select Model (Prefer Gemini 1.5 Pro for massive context + tool use)
-    # Or GPT-4o.
-    llm = None
-    if keys.get("google"):
-        llm = ChatGoogleGenerativeAI(model="gemini-3-pro-preview", google_api_key=keys["google"], temperature=0.1)
-    elif keys.get("openai"):
-        llm = ChatOpenAI(model="gpt-4o", api_key=keys["openai"], temperature=0.1)
+    # 1. Select Model (Use Claude 4.6 Sonnet for massive context + tool use)
+    anthropic_key = keys.get("anthropic")
     
-    if not llm:
-        return {"logs": state["logs"] + ["❌ No suitable LLM found for Magistrate."]}
+    if not anthropic_key:
+        return {"logs": state["logs"] + ["❌ No Anthropic key found for Magistrate."]}
+
+    llm = ChatAnthropic(model="claude-4-6-sonnet-20260220", api_key=anthropic_key, temperature=0.1)
+
+    @tool
+    def run_python_code(code: str) -> str:
+        """
+        Executes Python code in a secure REPL environment.
+        The full process text is available as a string variable named `text` and `PROCESS_TEXT`.
+        Helper functions available: search_dates(keyword_context, window), search_money(keyword_context), search_parties(), grep(pattern).
+        Always use `print()` or output the result of your code so that you can see it.
+        """
+        pass
+        
+    llm_with_tools = llm.bind_tools([run_python_code])
 
     # 2. System Prompt Injection
     if not state["messages"]:
         # Format the prompt with tribunal_local (default: TJMG)
         tribunal = state.get("tribunal_local", "TJMG")
         core_prompt = PROMPT_V3_MAGISTRATE_CORE.replace("{tribunal_local}", tribunal)
-        sys_msg = SystemMessage(content=core_prompt + "\n" + PROMPT_V3_HYBRID_FALLBACK)
-        # Gemini handles large contexts — pass the full text directly.
+        
+        # Adding a specific guidance for tool utilization with Claude
+        claude_tool_instruction = "\n\nCRÍTICO: Use a ferramenta 'run_python_code' para ler o processo usando Python. Após ler os dados, elabore o JSON com a 'minuta_final'."
+        
+        sys_msg = SystemMessage(content=core_prompt + "\n" + PROMPT_V3_HYBRID_FALLBACK + claude_tool_instruction)
+        # Claude handles large contexts — pass the full text directly.
         user_msg = HumanMessage(content=f"AUTOS DO PROCESSO:\n{state['raw_text']}")
         messages = [sys_msg, user_msg]
     else:
         messages = state["messages"]
 
     # 3. Invoke
-    response = llm.invoke(messages)
+    response = llm_with_tools.invoke(messages)
     
     return {
         "messages": messages + [response],
@@ -77,57 +91,74 @@ def node_computer(state: MagistrateState):
     The Tool Executor. Runs Python code.
     """
     last_msg = state["messages"][-1]
-    content = last_msg.content
     
+    tool_outputs = []
+    
+    if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+        repl = state.get("repl_tool")
+        if not repl:
+            repl = LegalREPL(state["raw_text"])
+            
+        for tool_call in last_msg.tool_calls:
+            if tool_call["name"] == "run_python_code":
+                code = tool_call["args"].get("code", "")
+                result = repl.run_code(code)
+                tool_output = f"OBSERVATION (PYTHON):\n{result}"
+                
+                tool_outputs.append(ToolMessage(content=tool_output, tool_call_id=tool_call["id"]))
+                
+        return {
+            "messages": state["messages"] + tool_outputs,
+            "logs": state["logs"] + ["💻 Código executado via Native Tool Calling."]
+        }
+    
+    # Fallback to old regex parsing just in case LLM hallucinated
+    content = last_msg.content
     tool_output = "NO_CODE_FOUND"
     
-    # Parse Code Block
-    # Look for ```python ... ```
-    if "```python" in content:
+    if isinstance(content, str) and "```python" in content:
         import re
         code_match = re.search(r"```python(.*?)```", content, re.DOTALL)
         if code_match:
             code = code_match.group(1).strip()
-            
-            # Execute
             repl = state.get("repl_tool")
             if not repl:
-                # Init if missing (should be in state)
                 repl = LegalREPL(state["raw_text"])
                 
             result = repl.run_code(code)
             tool_output = f"OBSERVATION (PYTHON):\n{result}"
         else:
             tool_output = "ERROR: Failed to parse Python block."
-    
+            
     return {
         "messages": state["messages"] + [HumanMessage(content=tool_output)],
-        "logs": state["logs"] + ["💻 Código executado."]
+        "logs": state["logs"] + ["💻 Código executado via Regex Fallback."]
     }
 
 def should_continue(state: MagistrateState):
     """
     Edge Condition: 
+    - If LAST message requested tool call -> COMPUTER
     - If LAST message contains '```json' -> FINISH
-    - If LAST message contains '```python' -> COMPUTER
     - If Iterations > 5 -> FORCE FINISH
     """
     last_msg = state["messages"][-1]
-    content = last_msg.content
     
-    if "```json" in content and "minuta_final" in content:
-        return "end"
-    
-    if "```python" in content:
+    if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
         return "computer"
         
+    content = last_msg.content
+    if isinstance(content, str):
+        if "```json" in content and "minuta_final" in content:
+            return "end"
+        if "```python" in content:
+            return "computer"
+            
     if state["iterations"] > 5:
         # Force finish or return final
         return "end" # Fail safe
         
-    # If standard text, maybe it's asking a question? 
-    # For V3 Autonomous, it shouldn't ask user. 
-    # It might mean it's "Thinking" out loud. We loop back to Magistrate.
+    # If standard text, it might mean it's "Thinking" out loud. We loop back to Magistrate.
     return "magistrate" # Self-correction or continued thought
 
 # --- GRAPH ---

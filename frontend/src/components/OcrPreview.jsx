@@ -13,7 +13,7 @@ const OcrPreview = ({ filename, text, engine, charCount }) => {
     const displayCharCount = charCount || (text ? text.length : 0);
 
     const engineLabels = {
-        gemini_flash: 'Gemini Flash',
+        gpt4o_mini: 'GPT-4o mini',
         paddle: 'PaddleOCR',
         deepseek: 'DeepSeek-OCR',
     };

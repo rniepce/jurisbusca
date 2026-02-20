@@ -363,3 +363,46 @@
         grid-template-columns: repeat(2, 1fr);
     }
 }
+
+/* ── Situation Progress Bar (Mini Chart) ────────────────────────────── */
+.xray-situation-chart {
+    margin-top: 12px;
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.xray-situation-bars {
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.xray-situation-bar {
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.xray-situation-labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 0.75rem;
+    color: var(--xray-text-secondary);
+}
+
+.xray-situation-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.xray-situation-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}

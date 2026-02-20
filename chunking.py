@@ -4,7 +4,6 @@ from typing import List, Dict, Any, Optional
 from langchain_core.documents import Document
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_openai import OpenAIEmbeddings
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import os
 
 class HybridSemanticChunker:
@@ -18,12 +17,12 @@ class HybridSemanticChunker:
     # User requested: DO DIREITO, DOS FATOS, DOS PEDIDOS, II -, III -, etc.
     LEGAL_HEADERS_REGEX = r"(?im)^(?:\s*|.*[\.\:])\s*(DOS FATOS|DO DIREITO|DA FUNDAMENTAÇÃO|DOS PEDIDOS|DO MÉRITO|DO DISPOSITIVO|RELATÓRIO|DISPOSITIVO|CONCLUSÃO|PRELIMINARMENTE|DA TUTELA|EMENTA|[IVXLCDM]+\s+\-)(?::|\s|$)"
 
-    def __init__(self, api_key: str, provider: str = "google", threshold_type: str = "percentile", threshold_amount: float = 90.0):
+    def __init__(self, api_key: str, provider: str = "openai", threshold_type: str = "percentile", threshold_amount: float = 90.0):
         """
         Inicializa o Chunker Híbrido.
         Args:
-            api_key: Chave da API (OpenAI ou Google).
-            provider: 'openai' ou 'google'.
+            api_key: Chave da API (OpenAI).
+            provider: 'openai'.
             threshold_type: 'percentile', 'standard_deviation', etc.
             threshold_amount: Valor do percentile (ex: 90.0 para alta coesão).
         """
@@ -42,12 +41,10 @@ class HybridSemanticChunker:
     def _get_embeddings(self, key, provider):
         try:
             if provider == "openai":
-                return OpenAIEmbeddings(api_key=key)
-            elif provider == "google":
-                return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=key)
+                return OpenAIEmbeddings(model="text-embedding-3-small", api_key=key)
             else:
-                # Fallback to Google if unknown
-                return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=key)
+                # Fallback to OpenAI if unknown
+                return OpenAIEmbeddings(model="text-embedding-3-small", api_key=key)
         except Exception as e:
             print(f"Erro ao iniciar Embeddings ({provider}): {e}")
             return None

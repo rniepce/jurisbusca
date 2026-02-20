@@ -77,10 +77,16 @@ class ChatRequest(BaseModel):
 
 # ── Model mapping ───────────────────────────────────────────────────────────
 MODEL_MAP = {
-    "gemini": {"provider": "google", "model": "gemini-2.5-flash", "key_env": "GOOGLE_API_KEY"},
-    "gpt": {"provider": "openai", "model": "gpt-4o", "key_env": "OPENAI_API_KEY"},
-    "claude": {"provider": "anthropic", "model": "claude-sonnet-4-6", "key_env": "ANTHROPIC_API_KEY"},
+    # Redireciona o antigo 'gemini' no frontend pro sonnet pra manter retrocompatibilidade
+    "gemini": {"provider": "anthropic", "model": "claude-4-6-sonnet-20260220", "key_env": "ANTHROPIC_API_KEY"},
+    "claude": {"provider": "anthropic", "model": "claude-4-6-sonnet-20260220", "key_env": "ANTHROPIC_API_KEY"},
+    "gpt": {"provider": "openai", "model": "gpt-5.2", "key_env": "OPENAI_API_KEY"},
     "deepseek": {"provider": "openai", "model": "deepseek-reasoner", "key_env": "DEEPSEEK_API_KEY"},
+    
+    # NOVAS ENGINE VERSIONS DO GABINETE
+    "v1": {"provider": "anthropic", "model": "claude-4-6-sonnet-20260220", "key_env": "ANTHROPIC_API_KEY"},
+    "v2": {"provider": "anthropic", "model": "claude-4-6-sonnet-20260220", "key_env": "ANTHROPIC_API_KEY"},
+    "v3": {"provider": "anthropic", "model": "claude-4-6-sonnet-20260220", "key_env": "ANTHROPIC_API_KEY"},
 }
 
 
@@ -168,15 +174,15 @@ async def chat(req: ChatRequest, current_user: Optional[str] = Depends(get_curre
         # ── Auto RAG: retrieve mirror context from persisted templates ──
         if req.uploaded_text:
             try:
-                google_key = os.getenv("GOOGLE_API_KEY", "")
-                if google_key:
+                op_key = os.getenv("OPENAI_API_KEY", "")
+                if op_key:
                     # Provide collection_name if logged in
                     collection_name = "rag_templates_persistent"
                     if current_user:
                         import hashlib
                         collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
                         
-                    rag_retriever = be.load_persistent_rag(google_key, collection_name=collection_name)
+                    rag_retriever = be.load_persistent_rag(op_key, collection_name=collection_name)
                     if rag_retriever:
                         # Search for similar cases
                         relevant_docs = rag_retriever.invoke(req.uploaded_text[:6000])
@@ -249,9 +255,39 @@ async def chat(req: ChatRequest, current_user: Optional[str] = Depends(get_curre
         else:
             conversations_fallback[conv_id].append({"role": "user", "content": user_content})
 
-        # Call LLM with full conversation
-        response = llm.invoke(messages)
-        response_text = be.safe_content(response)
+        # Call LLM or specific Engine workflow
+        if req.model == "v2":
+            # Call Orchestrator V2 (Hybrid/Linear 3-Stage Workflow)
+            if getattr(be, "run_hybrid_orchestration", None):
+                keys = {
+                    "anthropic": os.getenv("ANTHROPIC_API_KEY"),
+                    "google": os.getenv("GOOGLE_API_KEY"),
+                    "openai": os.getenv("OPENAI_API_KEY"),
+                    "deepseek": os.getenv("DEEPSEEK_API_KEY")
+                }
+                
+                context_str = req.uploaded_text or ""
+                user_msg = req.message or ""
+                full_text = f"DADOS DO PROCESSO:\\n{context_str}\\n\\nPEDIDO:\\n{user_msg}"
+                style_guide = req.style_dossier or ""
+                
+                v2_result = be.run_hybrid_orchestration(full_text, keys, style_guide)
+                
+                response_text = f"**Relatório V2 (Triagem):**\\n{v2_result.get('final_report', '')}\\n\\n**Minuta (Drafting):**\\n{v2_result.get('final_output', '')}\\n\\n**Auditoria (QA):**\\n{v2_result.get('audit_report', '')}"
+            else:
+                response_text = "Erro: V2 Engine (run_hybrid_orchestration) não importada ou indisponível"
+                
+        elif req.model == "v3":
+            # Call Orchestrator V3 (Autonomous Magistrate)
+            if getattr(be, "run_autonomous_magistrate", None):
+                # Currently a placeholder - requires implementation logic for V3
+                response_text = "⚠️ Modo V3 (Autônomo) acionado, mas o backend requer integração completa com o LangGraph."
+            else:
+                response_text = "Erro: V3 Engine não implementada."
+        else:
+            # Default V1 - just invoke LLM (Chat-based logic)
+            response = llm.invoke(messages)
+            response_text = be.safe_content(response)
 
         # Persist assistant turn in history
         if current_user:
@@ -294,7 +330,7 @@ async def upload_file(
 ):
     """Upload and extract text from a file (PDF/DOCX/TXT)."""
     try:
-        api_key = os.getenv("GOOGLE_API_KEY", "")
+        api_key = os.getenv("OPENAI_API_KEY", "")
 
         # Save to temp file
         suffix = os.path.splitext(file.filename or "doc.pdf")[1]
@@ -339,9 +375,10 @@ async def batch_xray(files: list[UploadFile] = File(...)):
     import io
 
     try:
-        api_key = os.getenv("GOOGLE_API_KEY", "")
+        # GPT-4o vision or text-embedding api keys
+        api_key = os.getenv("OPENAI_API_KEY", "")
         if not api_key:
-            raise HTTPException(status_code=400, detail="GOOGLE_API_KEY não configurada")
+            raise HTTPException(status_code=400, detail="OPENAI_API_KEY não configurada")
 
         # Convert UploadFiles into file-like objects with .name attribute
         file_objects = []
@@ -380,9 +417,10 @@ async def style_report(files: list[UploadFile] = File(...)):
     import io
 
     try:
-        api_key = os.getenv("GOOGLE_API_KEY", "")
+        # Claude is used for style dossiers
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
         if not api_key:
-            raise HTTPException(status_code=400, detail="GOOGLE_API_KEY não configurada")
+            raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY não configurada")
 
         # Convert UploadFiles into file-like objects with .name attribute
         file_objects = []
@@ -444,10 +482,10 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_c
         )
 
         # Auto-RAG: inject golden sample from persistent templates
-        google_key = os.getenv("GOOGLE_API_KEY", "")
-        if google_key:
+        op_key = os.getenv("OPENAI_API_KEY", "")
+        if op_key:
             try:
-                rag_retriever = be.load_persistent_rag(google_key, collection_name=collection_name)
+                rag_retriever = be.load_persistent_rag(op_key, collection_name=collection_name)
                 if rag_retriever:
                     relevant_docs = rag_retriever.invoke(text[:6000])
                     if relevant_docs:
@@ -565,9 +603,14 @@ async def upload_templates(
         raise HTTPException(status_code=401, detail="Precisa estar logado para salvar modelos.")
 
     try:
-        api_key = os.getenv("GOOGLE_API_KEY", "")
-        if not api_key:
-            raise HTTPException(status_code=400, detail="GOOGLE_API_KEY não configurada")
+        # Templates and style dossiers require embeddings and generation
+        op_key = os.getenv("OPENAI_API_KEY", "")
+        anth_key = os.getenv("ANTHROPIC_API_KEY", "")
+        
+        if not op_key:
+            raise HTTPException(status_code=400, detail="OPENAI_API_KEY não configurada")
+        if not anth_key:
+            raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY não configurada")
 
         # Convert UploadFiles into file-like objects
         file_objects = []
@@ -578,16 +621,16 @@ async def upload_templates(
             buf.seek(0)
             file_objects.append(buf)
 
-        # 1. Index in ChromaDB (persistent, user isolated)
+        # 1. Index in ChromaDB (persistent, user isolated) -> Uses Embeddings (OpenAI)
         collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
-        retriever, docs = be.process_templates(file_objects, api_key, collection_name=collection_name)
+        retriever, docs = be.process_templates(file_objects, op_key, collection_name=collection_name)
         indexed_count = len(docs) if docs else 0
 
-        # 2. Auto-generate style dossier (cached)
+        # 2. Auto-generate style dossier (cached) -> Uses Core Text Generation (Anthropic)
         # Reset file positions for re-read
         for f in file_objects:
             f.seek(0)
-        dossier_result = be.generate_style_dossier(file_objects, api_key)
+        dossier_result = be.generate_style_dossier(file_objects, anth_key)
         has_dossier = bool(dossier_result and not dossier_result.get("error"))
 
         return {
@@ -609,7 +652,7 @@ async def upload_templates(
 async def templates_status(current_user: Optional[str] = Depends(get_current_user)):
     """Check how many templates are indexed in the persistent RAG for this user."""
     try:
-        api_key = os.getenv("GOOGLE_API_KEY", "")
+        api_key = os.getenv("OPENAI_API_KEY", "")
         count = 0
         if api_key and current_user:
             # We don't need to load the full retriever just to count, but check if db exists

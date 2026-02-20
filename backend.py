@@ -84,14 +84,13 @@ import gc
 # Provider Integrations
 try:
     import google.generativeai as genai
-    from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+    from langchain_google_genai import ChatGoogleGenerativeAI
     HAS_GEMINI = True
     GEMINI_IMPORT_ERROR = None
 except ImportError as e:
     HAS_GEMINI = False
     GEMINI_IMPORT_ERROR = str(e)
     ChatGoogleGenerativeAI = None
-    GoogleGenerativeAIEmbeddings = None
 
 try:
     from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -109,7 +108,7 @@ except ImportError:
 # from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
 # (Re-enabling imports for V2 Ensemble)
 from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_JUIZ_DEEPSEEK, PROMPT_REDATOR_CLAUDE, PROMPT_AUDITOR_GPT
-from prompts_gemini import PROMPT_GEMINI_INTEGRAL, PROMPT_GEMINI_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH, PROMPT_GEMINI_FIXER
+from prompts_claude import PROMPT_CLAUDE_INTEGRAL, PROMPT_CLAUDE_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH, PROMPT_CLAUDE_FIXER
 # V1 Imports
 # (Already imported above)
 
@@ -269,26 +268,20 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 def get_embedding_function(api_key=None):
-    # Detecta tipo de chave
+    # Detecta tipo de chave para evitar instanciar embeddings incorretamente
     if api_key:
-        if api_key.startswith("AIza"):
-            if HAS_GEMINI:
-                return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
-            else:
-                print("⚠️ Chave Google detectada mas lib não instalada. Usando local.")
-        elif api_key.startswith("sk-") and HAS_OPENAI:
-            return OpenAIEmbeddings(openai_api_key=api_key)
+        if api_key.startswith("sk-") and HAS_OPENAI:
+            return OpenAIEmbeddings(model="text-embedding-3-small", openai_api_key=api_key)
             
-    # Modelo leve para rodar localmente no Mac M3
     # Fallback to Environment Variable if available
-    env_key = os.getenv("GOOGLE_API_KEY")
-    if env_key and HAS_GEMINI:
-        return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=env_key)
+    env_key = os.getenv("OPENAI_API_KEY")
+    if env_key and HAS_OPENAI:
+        return OpenAIEmbeddings(model="text-embedding-3-small", openai_api_key=env_key)
         
-    raise ValueError("Nenhum provedor de Embeddings configurado. Por favor, insira a Google API Key.")
+    raise ValueError("Nenhum provedor de Embeddings configurado. Por favor, insira a OPENAI_API_KEY (começa com sk-).")
     # return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") # REMOVIDO PARA EVITAR ERRO
 
-def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="gemini_flash"):
+def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="gpt4o_mini"):
     """
     Salva arquivo temp, faz OCR se necessário, vetoriza e retorna (full_text, retriever).
     """
@@ -312,27 +305,30 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
             # Aumentei o threshold para 500 chars para ser mais seguro em docs grandes
             total_chars = sum(len(d.page_content) for d in docs)
             
-            # 2. Se falhar (PDF escaneado/imagem) ou texto for muito curto, aciona SEMANTIC OCR (Gemini Vision)
+            # 2. Se falhar (PDF escaneado/imagem) ou texto for muito curto, aciona OCR
             if total_chars < 500:
                 print(f"📉 Texto insuficiente ({total_chars} chars). Acionando OCR ({ocr_engine_choice})...")
-                # Usa chave do ambiente ou passada
-                g_key = api_key if api_key and api_key.startswith("AIza") else os.getenv("GOOGLE_API_KEY")
+                
+                # Default agressivo para OCR Open Source (Custo ZERO)
+                if ocr_engine_choice in ["claude_vision", "gpt4o_mini", "paddle"]:
+                    ocr_engine_choice = "paddle"
+                    print("⚠️ OCR: Usando PaddleOCR local como padrão principal.")
+                
                 t_ocr_start = time.time()
                 
-                if ocr_engine_choice == "gemini_flash":
-                    if g_key:
-                        ocr_text = extract_text_with_gemini_flash(tmp_path, g_key)
+                if ocr_engine_choice == "gpt4o_mini":
+                    op_key = api_key if api_key and api_key.startswith("sk-") else os.getenv("OPENAI_API_KEY")
+                    if op_key:
+                        ocr_text = extract_text_with_gpt4o_mini(tmp_path, op_key)
                         if "Erro" not in ocr_text:
-                                # Substitui o docs pelo resultado do OCR
-                                # Cria um documento único pois o OCR retorna tudo junto
-                                from langchain_core.documents import Document
-                                docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "semantic_flash"})]
-                                print(f"✅ Semantic OCR (Gemini) concluído em {time.time() - t_ocr_start:.1f}s")
+                            from langchain_core.documents import Document
+                            docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "gpt4o_mini"})]
+                            print(f"✅ Semantic OCR (GPT-4o-mini) concluído em {time.time() - t_ocr_start:.1f}s")
                         else:
-                                text += f"[ERRO OCR: {ocr_text}]\n"
+                            text += f"[ERRO OCR: {ocr_text}]\n"
                     else:
-                        text += "[AVISO: PDF Imagem detectado, mas sem Chave Google para OCR Semântico.]\n"
-                
+                        text += "[AVISO: PDF Imagem detectado, mas sem Chave OpenAI para OCR Semântico.]\n"
+                        
                 elif ocr_engine_choice in ["paddle", "deepseek"]:
                     if not HAS_OCR:
                         text += f"[ERRO: ocr_engine não disponível. Instale paddleocr ou use Gemini Flash.]\n"
@@ -482,12 +478,11 @@ def run_reflexion_loop(draft_text, source_text, api_key):
     2. Fixer: Se houver erro, reescreve a minuta e devolve.
     """
     try:
-        # Usa Gemini Flash para Auditoria (Rápido e Barato)
-        # Note: Flash 1.5/2.0 é ótimo para ler long context
-        auditor_llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.0)
+        # Usa GPT-4o ou modelo similar para auditoria
+        auditor_llm = get_llm("openai", "gpt-4o", api_key=api_key, temperature=0.0)
         
         # 1. Auditoria
-        # Precisamos parsear o draft. Se for JSON (V1 atualizado), extraímos a 'minuta_final'.
+        # Precisamos parsear o draft. Se for JSON, extraímos a 'minuta_final'.
         # Se for string (fallback), usamos ela mesma.
         draft_content = draft_text
         if isinstance(draft_text, str) and draft_text.strip().startswith("{"):
@@ -503,7 +498,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
 
         print("🛡️ Iniciando Auditoria Ativa (Reflexion Loop)...")
         msg_audit = [
-            SystemMessage(content=PROMPT_GEMINI_AUDITOR),
+            SystemMessage(content=PROMPT_GPT_AUDITOR),
             HumanMessage(content=f"DADOS DO PROCESSO:\n{source_text[:50000]}\n\nMINUTA PARA AUDITORIA:\n{draft_content}")
         ]
         
@@ -526,10 +521,10 @@ def run_reflexion_loop(draft_text, source_text, api_key):
             errors = audit_json.get("erros_criticos", [])
             print(f"❌ Auditoria Reprovou. Erros: {errors}. Iniciando Auto-Correção...")
             
-            # 3. Fixer (Usa o mesmo modelo ou um mais capaz se quisesse, mas Flash serve)
-            fixer_llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.1)
+            # 3. Fixer (Usa o mesmo modelo)
+            fixer_llm = get_llm("openai", "gpt-4o", api_key=api_key, temperature=0.1)
             
-            msg_fix = PROMPT_GEMINI_FIXER.format(
+            msg_fix = PROMPT_GPT_FIXER.format(
                 draft=draft_content,
                 critique=json.dumps(errors, ensure_ascii=False)
             )
@@ -555,80 +550,74 @@ def run_reflexion_loop(draft_text, source_text, api_key):
         print(f"Erro no Reflexion Loop: {e}")
         return draft_text, str(e)
 
-def extract_text_with_gemini_flash(file_path, api_key):
+def extract_text_with_gpt4o_mini(file_path, api_key):
     """
-    SEMANTIC OCR (Vision API via Gemini Flash).
-    Lê o PDF como imagem/vídeo, extrai o texto e já faz a limpeza estrutural.
+    SEMANTIC OCR (Vision API via GPT-4o-mini).
+    Lê o PDF renderizando páginas como imagem e extrai texto limpo e barato.
     """
-    if not HAS_GEMINI:
-        return "Erro: Biblioteca Google GenAI não encontrada."
+    if not HAS_OPENAI:
+        return "Erro: Biblioteca langchain-openai não encontrada."
 
     try:
         t_start = time.time()
+        import fitz
+        import base64
         
-        # Config API
-        genai.configure(api_key=api_key)
+        doc = fitz.open(file_path)
+        base64_images = []
         
-        # Upload via File API (Mais robusto que converter para imagem localmente)
-        print(f"📤 Uploading {os.path.basename(file_path)} to Google File API...")
-        t_upload = time.time()
-        sample_file = genai.upload_file(path=file_path, display_name=os.path.basename(file_path))
-        print(f"⏱️ Upload concluído em {time.time() - t_upload:.1f}s")
+        # Limita a 25 páginas para não estourar o limite da API (4o-mini)
+        for i, page in enumerate(doc):
+            if i >= 25:
+                print("⚠️ OCR GPT-4o-mini truncado em 25 páginas para evitar limite de Tokens.")
+                break
+                
+            # Renderiza página com qualidade média-alta para leitura
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+            img_bytes = pix.tobytes("jpeg")
+            encoded = base64.b64encode(img_bytes).decode("utf-8")
+            base64_images.append(encoded)
+
+        # Inicializa o modelo GPT-4o-mini (Vision)
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import HumanMessage
         
-        # Wait for processing (with timeout)
-        t_poll = time.time()
-        OCR_TIMEOUT = 180  # segundos (aumentado para PDFs grandes)
-        poll_interval = 2  # segundos entre polls
-        while sample_file.state.name == "PROCESSING":
-            if time.time() - t_poll > OCR_TIMEOUT:
-                try:
-                    genai.delete_file(sample_file.name)
-                except Exception:
-                    pass
-                raise TimeoutError(f"Google File API não processou o arquivo em {OCR_TIMEOUT}s")
-            time.sleep(poll_interval)
-            sample_file = genai.get_file(sample_file.name)
-        print(f"⏱️ Polling/Processamento em {time.time() - t_poll:.1f}s")
-            
-        if sample_file.state.name == "FAILED":
-             raise ValueError("Google File API processing failed.")
-             
-        # Generate Content (Vision) — usa 2.0 Flash (mais rápido para OCR)
-        model = genai.GenerativeModel(model_name="gemini-2.0-flash")
+        llm = ChatOpenAI(model="gpt-4o-mini", api_key=api_key, max_tokens=10000, temperature=0.1)
         
-        prompt = """
+        prompt_text = """
         Aja como um transcritor jurídico de elite. 
-        Extraia o texto integral deste documento, preservando a formatação de tópicos. 
+        Você está recebendo imagens de páginas de um processo.
+        Extraia o texto integral deste documento nas imagens, preservando a formatação e tabelas. 
         
-        ⚠️ REGRAS DE LIMPEZA (IGNORE TUDO ISSO):
-        1. Cabeçalhos repetitivos de cada página (ex: "Processo nº...").
-        2. Rodapés de sistema (ex: "PJe - Assinado eletronicamente...").
-        3. Carimbos, QR Codes e Assinaturas digitais (hash).
-        4. Margens laterais com números de linha.
+        ⚠️ REGRAS DE LIMPEZA JURÍDICA:
+        1. Ignore cabeçalhos repetitivos de paginação.
+        2. Ignore rodapés (ex: "PJe - Assinado eletronicamente").
+        3. Ignore Carimbos, QR Codes, Assinaturas (hash).
         
-        Retorne APENAS o texto limpo e estruturado.
+        Retorne APENAS o texto limpo, linear e perfeitamente estruturado das páginas."
         """
         
+        # Monta a estrutura da mensagem multimodal
+        content_parts = [{"type": "text", "text": prompt_text}]
+        for b64 in base64_images:
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "high"}
+            })
+            
+        print(f"📤 Enviando {len(base64_images)} imagens de alta qualidade para rotina GPT-4o-mini OCR...")
         t_gen = time.time()
-        response = model.generate_content(
-            [sample_file, prompt],
-            request_options={"timeout": 180}  # 3 min timeout para PDFs grandes
-        )
-        print(f"⏱️ Geração de conteúdo (Vision) em {time.time() - t_gen:.1f}s")
         
-        # Cleanup
-        try:
-            genai.delete_file(sample_file.name)
-        except Exception:
-            pass
+        msg = HumanMessage(content=content_parts)
+        response = llm.invoke([msg])
         
-        print(f"✅ OCR Gemini total: {time.time() - t_start:.1f}s")
+        print(f"⏱️ OCR GPT-4o-mini concluído em {time.time() - t_gen:.1f}s")
         return safe_content(response)
         
-    except TimeoutError as e:
-        return f"Erro no Semantic OCR (Timeout): {str(e)}"
     except Exception as e:
-        return f"Erro no Semantic OCR: {str(e)}"
+        import traceback
+        traceback.print_exc()
+        return f"Erro no Semantic OCR GPT-4o-mini: {str(e)}"
 
 def _extract_template_texts(template_files):
     """
@@ -689,9 +678,9 @@ def generate_style_dossier(template_files, api_key):
         print(f"✅ Dossiê de estilo recuperado do cache (key: {cache_key[:8]}...)")
         return _style_dossier_cache[cache_key]
     
-    if not HAS_GEMINI:
-        print("⚠️ Google GenAI não instalado. Dossiê de estilo não disponível.")
-        return {"error": "Google GenAI não instalado. Dossiê de estilo não disponível."}
+    if not HAS_ANTHROPIC:
+        print("⚠️ Anthropic não instalado. Dossiê de estilo (Claude) indisponível.")
+        return {"error": "Anthropic não instalado. Dossiê de estilo não disponível."}
     
     try:
         print("🧬 Gerando Dossiê de Identidade Decisional (5 Pilares)...")
@@ -719,10 +708,11 @@ def generate_style_dossier(template_files, api_key):
                 break
         
         # 3. Chamar LLM com o prompt forense de 5 pilares
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash", 
-            google_api_key=api_key, 
-            temperature=0.3
+        llm = ChatAnthropic(
+            model="claude-4-6-sonnet-20260220", # Sonnet domina esse prompt textualmente
+            anthropic_api_key=api_key, 
+            temperature=0.3,
+            max_tokens=8000
         )
         
         messages = [
@@ -893,7 +883,7 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
     kb_text = ""
     try:
         # NOTE: Mantendo Knowledge Base, mas REMOVENDO a substituição forçada de Prompt V3.
-        # Queremos usar PROMPT_GEMINI_INTEGRAL (JSON Mode)
+        # Queremos usar PROMPT_CLAUDE_INTEGRAL (JSON Mode)
         base_path = "data/knowledge_base"
         files_map = {
             "ARQUIVO A (Sobrestamento) 30.10.2025.txt": "ARQUIVO A (SOBRESTAMENTOS)",
@@ -913,12 +903,12 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
                     kb_text += f"\n=== {label} ===\n{content}\n"
         
         # GARANTE USO DO PROMPT V1 OTIMIZADO (JSON)
-        final_prompt_integral = PROMPT_GEMINI_INTEGRAL
+        final_prompt_integral = PROMPT_CLAUDE_INTEGRAL
         if kb_text:
             final_prompt_integral += f"\n\n## 6. BASE DE CONHECIMENTO VINCULANTE (CARREGADA)\n{kb_text}"
             
     except Exception as e:
-        final_prompt_integral = PROMPT_GEMINI_INTEGRAL 
+        final_prompt_integral = PROMPT_CLAUDE_INTEGRAL 
         print(f"Erro KB ou Prompt: {e}")
 
     # Injeta contexto RAG (Estilo)
@@ -1306,50 +1296,48 @@ def process_batch(files, api_key):
                 
     return processed_texts
 
-from prompts_gemini import PROMPT_XRAY_MAP, PROMPT_XRAY_BATCH
+from prompts_claude import PROMPT_XRAY_MAP, PROMPT_XRAY_BATCH
 
 def map_process_individual(text_content, filename, api_key):
     """
     ETAPA MAP: Analisa um único processo e retorna JSON estruturado.
-    Usa Gemini Flash para rapidez.
+    Usa GPT-4o-mini para rapidez e custo baixíssimo nesta triagem massiva paralela.
     """
-    # Lista de modelos para tentar (Fallback Strategy)
-    # ATENÇÃO: Usuário tem acesso a modelos bleeding-edge (2.0/2.5/3.0) e NÃO tem 1.5.
-    candidate_models = [
-        "gemini-2.0-flash", 
-        "gemini-2.5-flash", 
-        "gemini-3-flash-preview",
-        "models/gemini-2.0-flash",
-        "gemini-1.5-flash" # Fallback legado
-    ]
-    
-    last_error = None
-    
-    for model_name in candidate_models:
-        try:
-            # print(f"Tentando modelo: {model_name}...") # Debug
-            llm = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=0.1)
-            messages = [
-                SystemMessage(content=PROMPT_XRAY_MAP),
-                HumanMessage(content=f"Arquivo: {filename}\n\n{text_content[:20000]}")
-            ]
-            response = safe_content(llm.invoke(messages))
-            
-            # Limpa JSON
-            cleaned = response.replace("```json", "").replace("```", "").strip()
-            data = json.loads(cleaned)
-            data["filename"] = filename # Garante que o nome do arquivo persista
-            return data
-            
-        except Exception as e:
-            last_error = e
-            # Se for erro de API (404/Not Found), tenta o próximo
-            if "NOT_FOUND" in str(e) or "404" in str(e):
-                continue
-            else:
-                # Se for outro erro (ex: Overload), falha logo
-                print(f"Erro no Map de {filename} ({model_name}): {e}")
-                break
+    # Usaremos ChatOpenAI com gpt-4o-mini no lugar do antigo Gemini Flash
+    try:
+        from langchain_openai import ChatOpenAI
+        
+        # Pega a chave da OpenAI injetada no backend (pode vir no api_key dict se ajustado ou buscar environ)
+        openai_key = api_key if isinstance(api_key, str) and api_key.startswith("sk-") else os.getenv("OPENAI_API_KEY")
+        
+        if not openai_key:
+            return {"filename": filename, "error": "Falta OPENAI_API_KEY para mapeamento O-mini", "tags_juridicas": ["ERRO"]}
+
+        llm = ChatOpenAI(model="gpt-4o-mini", api_key=openai_key, temperature=0.1)
+        
+        # Força strict JSON no prompt
+        map_prompt = PROMPT_XRAY_MAP + "\n\nCRÍTICO: Retorne APENAS UM JSON (Strict JSON). Nenhuma palavra fora das chaves {}."
+        
+        messages = [
+            SystemMessage(content=map_prompt),
+            HumanMessage(content=f"Arquivo: {filename}\n\n{text_content[:20000]}")
+        ]
+        response = safe_content(llm.invoke(messages))
+        
+        # Limpa JSON
+        cleaned = response.replace("```json", "").replace("```", "").strip()
+        data = json.loads(cleaned)
+        data["filename"] = filename # Garante que o nome do arquivo persista
+        return data
+        
+    except Exception as e:
+        print(f"Falha total no Map de {filename} com gpt-4o-mini. Erro: {e}")
+        return {
+            "filename": filename, 
+            "error": f"Falha na leitura (GPT-4o-mini). Err: {str(e)}", 
+            "sintese_fatos": "Erro de leitura estruturada", 
+            "tags_juridicas": ["ERRO"]
+        }
     
     # Se saiu do loop, falhou em todos
     print(f"Falha total no Map de {filename}. Último erro: {last_error}")
@@ -1451,42 +1439,31 @@ def generate_batch_xray(files, api_key, template_files=None):
             HumanMessage(content=human_msg)
         ]
         
-        # Lista de modelos para tentar no Reduce
-        candidate_models = [
-             "gemini-2.0-flash", 
-             "gemini-2.5-flash", 
-             "gemini-3-flash-preview",
-             "models/gemini-2.0-flash",
-             "gemini-1.5-flash"
-        ]
-        
-        content = None
-        last_error = None
-
-        for model_name in candidate_models:
-            try:
-                # print(f"Tentando Reduce com: {model_name}...")
-                llm_flash = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=0.1)
-                response = llm_flash.invoke(messages)
-                content = safe_content(response)
+        # Usa Claude 4.6 Sonnet para agregação de altíssima qualidade
+        try:
+            from langchain_anthropic import ChatAnthropic
+            
+            anthropic_key = api_key if isinstance(api_key, str) and api_key.startswith("sk-ant") else os.getenv("ANTHROPIC_API_KEY")
+            
+            if not anthropic_key:
+                return {"error": "Falta ANTHROPIC_API_KEY para a etapa de consolidação (Reduce).", "raw_content": ""}, text_cache
                 
-                # Se chegou aqui, funcionou
-                break
-                
-            except Exception as e:
-                last_error = e
-                if "NOT_FOUND" in str(e) or "404" in str(e):
-                    continue
-                else:
-                    print(f"Erro no Reduce ({model_name}): {e}")
-                    # Se não for 404, pode ser erro de contexto (token limit) ou server overload.
-                    # Vamos tentar o proximo mesmo assim? Para 1.5 flash o contexto é grande. 
-                    # Se for token limit, trocar de modelo não ajuda se forem todos flash.
-                    # Mas se for server overload, ajuda.
-                    continue
-
-        if content is None:
-             return {"error": f"Falha no Reduce (Todos modelos falharam). Err: {str(last_error)}", "raw_content": ""}, text_cache
+            llm_reduce = ChatAnthropic(model="claude-4-6-sonnet-20260220", api_key=anthropic_key, temperature=0.1)
+            
+            # Força JSON
+            reduce_prompt = PROMPT_XRAY_BATCH + "\n\nCRÍTICO: Retorne APENAS UM JSON VÁLIDO. Sem Markdown, sem formatação extra, inicie com { e termine com }."
+            
+            messages = [
+                SystemMessage(content=reduce_prompt),
+                HumanMessage(content=human_msg)
+            ]
+            
+            response = safe_content(llm_reduce.invoke(messages))
+            content = response
+            
+        except Exception as e:
+            print(f"Erro Crítico no Reduce (Claude 4.6): {e}")
+            return {"error": f"Erro na consolidação de dados. Detalhe: {str(e)}", "raw_content": ""}, text_cache
 
         
         # Garante que content é string (algumas versões retornam lista)
@@ -1776,7 +1753,7 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
     except Exception as e:
         return {"error": str(e), "filename": filename}
 
-def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None, mode="v1", keys=None, ocr_engine_choice="gemini_flash"):
+def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None, mode="v1", keys=None, ocr_engine_choice="gpt4o_mini"):
     """
     Processa lista de arquivos EM SÉRIE (para evitar Rate Limit).
     Suporta V1/V2/V3 via worker.
