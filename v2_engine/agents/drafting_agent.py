@@ -47,17 +47,17 @@ def search_templates_database(query: str) -> str:
     # Exemplo mock simples
     query_lower = query.lower()
     if "voo" in query_lower or "atraso" in query_lower:
-        return \"\"\"
+        return """
         MODELO: SENTENÇA - ATRASO DE VOO
         [RELATÓRIO]
         [FUNDAMENTAÇÃO] Aplica-se o Código de Defesa do Consumidor. A falha na prestação do serviço de transporte aéreo...
         [DISPOSITIVO] Ante o exposto, julgo PROCEDENTES...
-        \"\"\"
+        """
     elif "ato ordinário" in query_lower or "ordinatório" in query_lower:
-        return \"\"\"
+        return """
         MODELO: ATO ORDINATÓRIO PADRÃO
         De ordem do MM. Juiz de Direito, nos termos do art. 64 do Provimento 355/2018...
-        \"\"\"
+        """
     return "Nenhum modelo encontrado para esta pesquisa. Proceda utilizando o template padrão alinhado ao estilo do relatório."
 
 def run_drafting_agent(triage_report: str, api_key: str) -> str:

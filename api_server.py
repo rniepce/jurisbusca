@@ -5,9 +5,11 @@ Exposes chat and file upload endpoints, wiring into existing backend.py orchestr
 import os
 import json
 import uuid
+import hashlib
 import tempfile
 import traceback
 from pathlib import Path
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -23,17 +25,26 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import backend as be
+import history_db
 
-app = FastAPI(title="Jurisbusca API", version="1.0.0")
+# Google OAuth2 token validation
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
-@app.on_event("startup")
-async def log_routes():
+
+@asynccontextmanager
+async def lifespan(app):
     print("\n🚀 Registered routes:")
     for route in app.routes:
         methods = getattr(route, 'methods', None)
         path = getattr(route, 'path', getattr(route, 'path_regex', '?'))
         print(f"   {methods or 'MOUNT'} {path}")
     print()
+    yield
+
+app = FastAPI(title="Jurisbusca API", version="1.0.0", lifespan=lifespan)
+
+# (startup logging moved to lifespan context manager above)
 
 # CORS — allow Vite dev server
 app.add_middleware(
@@ -179,7 +190,6 @@ async def chat(req: ChatRequest, current_user: Optional[str] = Depends(get_curre
                     # Provide collection_name if logged in
                     collection_name = "rag_templates_persistent"
                     if current_user:
-                        import hashlib
                         collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
                         
                     rag_retriever = be.load_persistent_rag(op_key, collection_name=collection_name)
@@ -268,12 +278,12 @@ async def chat(req: ChatRequest, current_user: Optional[str] = Depends(get_curre
                 
                 context_str = req.uploaded_text or ""
                 user_msg = req.message or ""
-                full_text = f"DADOS DO PROCESSO:\\n{context_str}\\n\\nPEDIDO:\\n{user_msg}"
+                full_text = f"DADOS DO PROCESSO:\n{context_str}\n\nPEDIDO:\n{user_msg}"
                 style_guide = req.style_dossier or ""
                 
                 v2_result = be.run_hybrid_orchestration(full_text, keys, style_guide)
                 
-                response_text = f"**Relatório V2 (Triagem):**\\n{v2_result.get('final_report', '')}\\n\\n**Minuta (Drafting):**\\n{v2_result.get('final_output', '')}\\n\\n**Auditoria (QA):**\\n{v2_result.get('audit_report', '')}"
+                response_text = f"**Relatório V2 (Triagem):**\n{v2_result.get('final_report', '')}\n\n**Minuta (Drafting):**\n{v2_result.get('final_output', '')}\n\n**Auditoria (QA):**\n{v2_result.get('audit_report', '')}"
             else:
                 response_text = "Erro: V2 Engine (run_hybrid_orchestration) não importada ou indisponível"
                 
@@ -548,7 +558,6 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, current_user: Optional[str
 
         collection_name = "rag_templates_persistent"
         if current_user:
-            import hashlib
             collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
 
         results = []

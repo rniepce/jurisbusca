@@ -1,8 +1,4 @@
 // Central agent definitions — single source of truth for all sidebar agents
-import {
-    FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
-    FaBookOpen, FaPenNib
-} from 'react-icons/fa6';
 
 const agents = [
     {

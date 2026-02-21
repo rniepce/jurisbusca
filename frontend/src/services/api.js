@@ -150,6 +150,7 @@ export async function analyzeCluster(processes, agentPrompt = '', model = 'claud
         method: 'POST',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ processes, agent_prompt: agentPrompt, model }),
+        redirect: 'error',
     });
 
     if (!res.ok) {
