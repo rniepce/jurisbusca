@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_22", "python311"]
+nixPkgs = ["nodejs_22", "python311", "ghostscript"]
 
 [phases.install]
 cmds = [

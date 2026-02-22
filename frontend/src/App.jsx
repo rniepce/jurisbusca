@@ -37,7 +37,7 @@ function App() {
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
   // ── Send message handler ────────────────────────────────────────────
-  const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles) => {
+  const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles, useRag = false) => {
     // Use a default prompt if user sends empty message but has context
     const effectiveMessage = message.trim() ||
       (uploadedText && activeAgent ? 'Analise o documento anexado conforme as instruções do agente.' :
@@ -101,6 +101,7 @@ function App() {
         conversationId,
         uploadedText,
         styleDossier: currentStyleDossier,
+        useRag: useRag,
       });
 
       setConversationId(result.conversation_id);
@@ -252,12 +253,12 @@ function App() {
   }, []);
 
   // ── Files uploaded → run OCR immediately ─────────────────────────────
-  const handleFilesUploaded = useCallback(async (files, ocrEngine) => {
-    if (files.length === 0) return;
+  const handleFilesUploaded = useCallback(async (files, ocrEngine, compress = true) => {
+    if (files.length === 0) return [];
     setOcrProcessing(true);
 
     try {
-      const uploadPromises = files.map((f) => uploadFile(f, ocrEngine));
+      const uploadPromises = files.map((f) => uploadFile(f, ocrEngine, compress));
       const results = await Promise.all(uploadPromises);
 
       // Store the extracted text for future chat messages
@@ -273,11 +274,14 @@ function App() {
         charCount: r.char_count,
       }));
       setMessages((prev) => [...prev, ...ocrMessages]);
+
+      return results; // Return results so ChatInput can check rag_available
     } catch (err) {
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: `⚠️ **Erro no OCR:** ${err.message}`, model: 'erro' },
       ]);
+      return [];
     } finally {
       setOcrProcessing(false);
     }

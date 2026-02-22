@@ -375,6 +375,52 @@
     font-weight: 500;
 }
 
+/* ── Compress Toggle ── */
+.ocr-separator {
+    width: 1px;
+    height: 14px;
+    background: #ddd;
+    margin: 0 4px;
+}
+
+.compress-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.compress-toggle input[type="checkbox"] {
+    width: 13px;
+    height: 13px;
+    accent-color: #4F46E5;
+    cursor: pointer;
+    margin: 0;
+}
+
+.compress-label {
+    font-size: 10px;
+    color: #888;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: color 0.15s;
+}
+
+.compress-toggle:hover .compress-label {
+    color: #555;
+}
+
+/* ── RAG Toggle (green accent when active) ── */
+.rag-toggle.rag-active .compress-label {
+    color: #059669;
+    font-weight: 600;
+}
+
+.rag-toggle.rag-active input[type="checkbox"] {
+    accent-color: #059669;
+}
+
 /* ── Template files — compact pill ── */
 .template-bar {
     display: flex;

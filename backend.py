@@ -281,7 +281,7 @@ def get_embedding_function(api_key=None):
     raise ValueError("Nenhum provedor de Embeddings configurado. Por favor, insira a OPENAI_API_KEY (começa com sk-).")
     # return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") # REMOVIDO PARA EVITAR ERRO
 
-def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="gpt4o_mini"):
+def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="gpt4o_mini", compress=True):
     """
     Salva arquivo temp, faz OCR se necessário, vetoriza e retorna (full_text, retriever).
     """
@@ -296,52 +296,29 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
 
     try:
         if suffix == ".pdf":
-            # 1. Tenta extração padrão rápida
-            loader = PyPDFLoader(tmp_path)
-            docs = loader.load()
-            
-            # Verifica se extraiu texto suficiente
-            # Documentos PDFs digitalizados como imagem retornam pouquíssimo texto (só metadados)
-            # Aumentei o threshold para 500 chars para ser mais seguro em docs grandes
-            total_chars = sum(len(d.page_content) for d in docs)
-            
-            # 2. Se falhar (PDF escaneado/imagem) ou texto for muito curto, aciona OCR
-            if total_chars < 500:
-                print(f"📉 Texto insuficiente ({total_chars} chars). Acionando OCR ({ocr_engine_choice})...")
-                
-                # Default agressivo para OCR Open Source (Custo ZERO)
-                if ocr_engine_choice in ["claude_vision", "gpt4o_mini", "paddle"]:
-                    ocr_engine_choice = "paddle"
-                    print("⚠️ OCR: Usando PaddleOCR local como padrão principal.")
-                
-                t_ocr_start = time.time()
-                
-                if ocr_engine_choice == "gpt4o_mini":
-                    op_key = api_key if api_key and api_key.startswith("sk-") else os.getenv("OPENAI_API_KEY")
-                    if op_key:
-                        ocr_text = extract_text_with_gpt4o_mini(tmp_path, op_key)
-                        if "Erro" not in ocr_text:
-                            from langchain_core.documents import Document
-                            docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "gpt4o_mini"})]
-                            print(f"✅ Semantic OCR (GPT-4o-mini) concluído em {time.time() - t_ocr_start:.1f}s")
-                        else:
-                            text += f"[ERRO OCR: {ocr_text}]\n"
-                    else:
-                        text += "[AVISO: PDF Imagem detectado, mas sem Chave OpenAI para OCR Semântico.]\n"
-                        
-                elif ocr_engine_choice in ["paddle", "deepseek"]:
-                    if not HAS_OCR:
-                        text += f"[ERRO: ocr_engine não disponível. Instale paddleocr ou use Gemini Flash.]\n"
-                        print(f"❌ OCR Engine ({ocr_engine_choice}) não disponível - módulo não importado")
-                    else:
-                        print(f"📉 Acionando OCR Engine ({ocr_engine_choice})...")
-                        ocr_text = ocr_engine.extract_text_from_pdf(tmp_path, engine=ocr_engine_choice)
+            # ── Hybrid Extract: page-level triage (text vs OCR) ──
+            try:
+                from core.hybrid_extract import hybrid_extract
+                ocr_choice = ocr_engine_choice
+                # Normalize OCR engine choice
+                if ocr_choice in ["claude_vision", "gpt4o_mini"]:
+                    ocr_choice = "paddle"
+                docs, stats = hybrid_extract(tmp_path, ocr_choice, compress)
+                print(f"📊 {stats['text_pages']} págs texto | {stats['ocr_pages']} págs OCR | {stats['total_chars']} chars | {stats['elapsed_seconds']}s")
+            except ImportError:
+                print("⚠️ core.hybrid_extract não disponível. Usando extração legada.")
+                # ── Fallback: extração legada (PyPDFLoader) ──
+                from langchain_community.document_loaders import PyPDFLoader
+                loader = PyPDFLoader(tmp_path)
+                docs = loader.load()
+                total_chars = sum(len(d.page_content) for d in docs)
+                if total_chars < 500:
+                    print(f"📉 Texto insuficiente ({total_chars} chars). Acionando OCR ({ocr_engine_choice})...")
+                    if HAS_OCR:
+                        ocr_text = ocr_engine.extract_text_from_pdf(tmp_path, engine="paddle")
                         if ocr_text and "[ERRO]" not in ocr_text:
-                             from langchain_core.documents import Document
-                             docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": ocr_engine_choice})]
-                             print(f"✅ OCR ({ocr_engine_choice}) concluído em {time.time() - t_ocr_start:.1f}s")
-                        else:
-                            text += f"[ERRO OCR {ocr_engine_choice}]: {ocr_text}\n"
+                            from langchain_core.documents import Document
+                            docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "paddle"})]
         
         elif suffix == ".docx":
             from langchain_community.document_loaders import Docx2txtLoader
@@ -431,45 +408,30 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-def get_llm(provider: str, model_name: str, api_key: str, temperature: float = 0.2):
+def get_llm(model_name: str = "claude-sonnet-4-6", temperature: float = 0.2, **kwargs):
     """
-    Factory para instanciar LLMs de diferentes provedores.
+    Factory centralizada — todos os modelos passam pelo Azure AI Foundry.
+    O Foundry expõe a API Anthropic padrão, então usamos ChatAnthropic
+    com base_url apontando para o endpoint Azure.
     """
-    if provider == "google":
-        if not HAS_GEMINI: raise ImportError("langchain-google-genai não instalado.")
-        return ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=temperature)
-    
-    elif provider == "openai":
-        if not HAS_OPENAI: raise ImportError("langchain-openai não instalado.")
-        return ChatOpenAI(model=model_name, api_key=api_key, temperature=temperature)
+    if not HAS_ANTHROPIC:
+        raise ImportError("langchain-anthropic não instalado.")
 
-    elif provider == "deepseek":
-        if not HAS_OPENAI: raise ImportError("langchain-openai não instalado (Necessário para DeepSeek).")
-        return ChatOpenAI(
-            model=model_name, 
-            api_key=api_key, 
-            base_url="https://api.deepseek.com", 
-            temperature=temperature
+    azure_key = os.getenv("AZURE_AI_KEY", "")
+    azure_url = os.getenv("AZURE_AI_BASE_URL", "")
+
+    if not azure_key or not azure_url:
+        raise ValueError(
+            "AZURE_AI_KEY e AZURE_AI_BASE_URL devem estar configurados no .env ou variáveis de ambiente."
         )
-        
-    elif provider == "anthropic":
-        if not HAS_ANTHROPIC: raise ImportError("langchain-anthropic não instalado.")
-        return ChatAnthropic(model=model_name, api_key=api_key, temperature=temperature)
-    
-    elif provider == "amazonia":
-        # Amazônia IA - API compatível com OpenAI
-        # Modelo: rodrigomalossi/amazonia-a
-        # Endpoint: https://amazonia-a.amazoniaia.com.br/v1
-        if not HAS_OPENAI: raise ImportError("langchain-openai não instalado (Necessário para Amazônia IA).")
-        return ChatOpenAI(
-            model=model_name,
-            api_key=api_key,
-            base_url="https://amazonia-a.amazoniaia.com.br/v1",
-            temperature=temperature
-        )
-        
-    else:
-        raise ValueError(f"Provedor desconhecido: {provider}")
+
+    return ChatAnthropic(
+        model=model_name,
+        anthropic_api_key=azure_key,
+        anthropic_api_url=azure_url,
+        temperature=temperature,
+        **kwargs,
+    )
 
 def run_reflexion_loop(draft_text, source_text, api_key):
     """
@@ -478,8 +440,8 @@ def run_reflexion_loop(draft_text, source_text, api_key):
     2. Fixer: Se houver erro, reescreve a minuta e devolve.
     """
     try:
-        # Usa GPT-4o ou modelo similar para auditoria
-        auditor_llm = get_llm("openai", "gpt-4o", api_key=api_key, temperature=0.0)
+        # Usa Claude Sonnet via Azure para auditoria
+        auditor_llm = get_llm("claude-sonnet-4-6", temperature=0.0)
         
         # 1. Auditoria
         # Precisamos parsear o draft. Se for JSON, extraímos a 'minuta_final'.
@@ -522,7 +484,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
             print(f"❌ Auditoria Reprovou. Erros: {errors}. Iniciando Auto-Correção...")
             
             # 3. Fixer (Usa o mesmo modelo)
-            fixer_llm = get_llm("openai", "gpt-4o", api_key=api_key, temperature=0.1)
+            fixer_llm = get_llm("claude-sonnet-4-6", temperature=0.1)
             
             msg_fix = PROMPT_GPT_FIXER.format(
                 draft=draft_content,
@@ -579,10 +541,9 @@ def extract_text_with_gpt4o_mini(file_path, api_key):
             base64_images.append(encoded)
 
         # Inicializa o modelo GPT-4o-mini (Vision)
-        from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage
         
-        llm = ChatOpenAI(model="gpt-4o-mini", api_key=api_key, max_tokens=10000, temperature=0.1)
+        llm = get_llm("claude-sonnet-4-6", temperature=0.1)
         
         prompt_text = """
         Aja como um transcritor jurídico de elite. 
@@ -708,12 +669,7 @@ def generate_style_dossier(template_files, api_key):
                 break
         
         # 3. Chamar LLM com o prompt forense de 5 pilares
-        llm = ChatAnthropic(
-            model="claude-4-6-sonnet-20260220", # Sonnet domina esse prompt textualmente
-            anthropic_api_key=api_key, 
-            temperature=0.3,
-            max_tokens=8000
-        )
+        llm = get_llm("claude-sonnet-4-6", temperature=0.3, max_tokens=8000)
         
         messages = [
             SystemMessage(content=PROMPT_STYLE_ANALYZER),
@@ -850,9 +806,9 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
         if status_callback: status_callback(msg)
 
     try:
-        # Instancia LLMs
-        main_llm = get_llm(main_llm_config['provider'], main_llm_config['model'], main_llm_config['key'], temperature=0.2)
-        style_llm = get_llm(style_llm_config['provider'], style_llm_config['model'], style_llm_config['key'], temperature=0.3)
+        # Instancia LLMs via Azure AI Foundry
+        main_llm = get_llm("claude-sonnet-4-6", temperature=0.2)
+        style_llm = get_llm("claude-sonnet-4-6", temperature=0.3)
     except Exception as e:
         return {"final_report": f"Erro na inicialização dos modelos: {str(e)}", "steps": {}}
 
@@ -975,26 +931,12 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
 
     # 1. Setup Models
     try:
-        # Step A: Analista de Triagem (Gemini - Context Window Grande e Barato)
-        analista_fatos = get_llm("google", "gemini-3-pro-preview", keys['google'], temperature=0.1)
-        
-        # Step B: Juiz Substituto (DeepSeek - Raciocínio Complexo)
-        # Se deepseek key nao existir, fallback para openai ou google
-        ds_key = keys.get('deepseek')
-        if ds_key:
-             juiz_logico = get_llm("deepseek", "deepseek-reasoner", ds_key, temperature=0.3) # Updated provider
-        else:
-             update("⚠️ Chave DeepSeek não encontrada. Usando GPT-4o para raciocínio.")
-             juiz_logico = get_llm("openai", "gpt-4o", keys['openai'], temperature=0.3)
-             
-        # Step C: Assessor Redator (Claude - Melhor Prosa)
-        # Se claude key nao existir, fallback para openai
-        cl_key = keys.get('anthropic')
-        if cl_key:
-             redator_final = get_llm("anthropic", "claude-sonnet-4-6", cl_key, temperature=0.2)
-        else:
-             update("⚠️ Chave Anthropic não encontrada. Usando GPT-4o para redação.")
-             redator_final = get_llm("openai", "gpt-4o", keys['openai'], temperature=0.2)
+        # Todos os modelos via Azure AI Foundry (Claude Sonnet 4.6)
+        analista_fatos = get_llm("claude-sonnet-4-6", temperature=0.1)
+
+        juiz_logico = get_llm("claude-sonnet-4-6", temperature=0.3)
+              
+        redator_final = get_llm("claude-sonnet-4-6", temperature=0.2)
              
     except Exception as e:
         return {"final_report": f"Erro ao inicializar Banca Digital: {e}", "steps": {}}
@@ -1441,14 +1383,7 @@ def generate_batch_xray(files, api_key, template_files=None):
         
         # Usa Claude 4.6 Sonnet para agregação de altíssima qualidade
         try:
-            from langchain_anthropic import ChatAnthropic
-            
-            anthropic_key = api_key if isinstance(api_key, str) and api_key.startswith("sk-ant") else os.getenv("ANTHROPIC_API_KEY")
-            
-            if not anthropic_key:
-                return {"error": "Falta ANTHROPIC_API_KEY para a etapa de consolidação (Reduce).", "raw_content": ""}, text_cache
-                
-            llm_reduce = ChatAnthropic(model="claude-4-6-sonnet-20260220", api_key=anthropic_key, temperature=0.1)
+            llm_reduce = get_llm("claude-sonnet-4-6", temperature=0.1)
             
             # Força JSON
             reduce_prompt = PROMPT_XRAY_BATCH + "\n\nCRÍTICO: Retorne APENAS UM JSON VÁLIDO. Sem Markdown, sem formatação extra, inicie com { e termine com }."

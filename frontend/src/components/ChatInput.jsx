@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
     FaPaperclip, FaBook, FaSlash,
     FaArrowRotateRight, FaChevronDown, FaCheck,
-    FaXmark, FaFile, FaPalette, FaDatabase
+    FaXmark, FaFile, FaPalette, FaDatabase,
+    FaBullseye
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
 import { uploadTemplates, clearTemplates } from '../services/api';
@@ -29,6 +30,9 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     const [files, setFiles] = useState([]);
     const [templateFiles, setTemplateFiles] = useState([]);
     const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[1].id);
+    const [compressEnabled, setCompressEnabled] = useState(true);
+    const [ragEnabled, setRagEnabled] = useState(false);
+    const [ragAvailable, setRagAvailable] = useState(false);
     const [indexing, setIndexing] = useState(false);
     const dropdownRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -48,7 +52,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     const handleSend = () => {
         if (isLoading) return;
         if (message.trim() || files.length > 0 || hasContext) {
-            if (onSend) onSend(message, selectedModel, files, ocrEngine, templateFiles);
+            if (onSend) onSend(message, selectedModel, files, ocrEngine, templateFiles, ragEnabled);
             setMessage('');
             setFiles([]);
         }
@@ -87,8 +91,14 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         const selected = Array.from(e.target.files);
         if (selected.length > 0) {
             setFiles((prev) => [...prev, ...selected]);
-            // Trigger OCR immediately
-            if (onFilesUploaded) onFilesUploaded(selected, ocrEngine);
+            // Trigger OCR immediately - callback returns rag_available info
+            if (onFilesUploaded) {
+                onFilesUploaded(selected, ocrEngine, compressEnabled).then((results) => {
+                    if (results && results.some((r) => r.rag_available)) {
+                        setRagAvailable(true);
+                    }
+                }).catch(() => { });
+            }
         }
         e.target.value = '';
     };
@@ -317,7 +327,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                 </button>
             </div>
 
-            {/* OCR Engine Selector */}
+            {/* OCR Engine Selector + Compress Toggle */}
             <div className="ocr-bar">
                 <span className="ocr-label">OCR:</span>
                 {OCR_ENGINES.map((engine) => (
@@ -329,6 +339,28 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                         {engine.label}
                     </button>
                 ))}
+                <span className="ocr-separator" />
+                <label className="compress-toggle" title="Comprimir PDF para otimizar análise (reduz imagens, preserva texto)">
+                    <input
+                        type="checkbox"
+                        checked={compressEnabled}
+                        onChange={(e) => setCompressEnabled(e.target.checked)}
+                    />
+                    <span className="compress-label">📦 Comprimir</span>
+                </label>
+                {ragAvailable && (
+                    <>
+                        <span className="ocr-separator" />
+                        <label className={`compress-toggle rag-toggle ${ragEnabled ? 'rag-active' : ''}`} title="RAG: enviar apenas trechos relevantes ao LLM (economiza tokens e melhora precisão)">
+                            <input
+                                type="checkbox"
+                                checked={ragEnabled}
+                                onChange={(e) => setRagEnabled(e.target.checked)}
+                            />
+                            <span className="compress-label">🎯 RAG Processo</span>
+                        </label>
+                    </>
+                )}
             </div>
         </div>
     );

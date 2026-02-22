@@ -57,6 +57,10 @@ app.add_middleware(
 # ── In-memory conversation store (fallback) ──────────────────────────────
 conversations_fallback: dict[str, list[dict]] = {}
 
+# ── In-memory process RAG cache (retriever per session) ──────────────────
+# Key: hash of uploaded filename+size, Value: (retriever, full_text, char_count)
+_process_rag_cache: dict[str, tuple] = {}
+
 # ── Auth Dependency ─────────────────────────────────────────────────────────
 security = HTTPBearer(auto_error=False)
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "COLOQUE_SEU_CLIENT_ID_AQUI.apps.googleusercontent.com")
@@ -84,29 +88,18 @@ class ChatRequest(BaseModel):
     ocr_engine: str = "paddle"
     uploaded_text: Optional[str] = None  # pre-extracted text from uploaded file
     style_dossier: Optional[str] = None  # cloning prompt from style report
+    use_rag: bool = False  # if True, use RAG retrieval instead of full text
 
 
-# ── Model mapping ───────────────────────────────────────────────────────────
+# ── Model mapping (Azure AI Foundry) ──────────────────────────────────────────
 MODEL_MAP = {
-    # Redireciona o antigo 'gemini' no frontend pro sonnet pra manter retrocompatibilidade
-    "gemini": {"provider": "anthropic", "model": "claude-4-6-sonnet-20260220", "key_env": "ANTHROPIC_API_KEY"},
-    "claude": {"provider": "anthropic", "model": "claude-4-6-sonnet-20260220", "key_env": "ANTHROPIC_API_KEY"},
-    "gpt": {"provider": "openai", "model": "gpt-5.2", "key_env": "OPENAI_API_KEY"},
-    "deepseek": {"provider": "openai", "model": "deepseek-reasoner", "key_env": "DEEPSEEK_API_KEY"},
-    
-    # NOVAS ENGINE VERSIONS DO GABINETE
-    "v1": {"provider": "anthropic", "model": "claude-4-6-sonnet-20260220", "key_env": "ANTHROPIC_API_KEY"},
-    "v2": {"provider": "anthropic", "model": "claude-4-6-sonnet-20260220", "key_env": "ANTHROPIC_API_KEY"},
-    "v3": {"provider": "anthropic", "model": "claude-4-6-sonnet-20260220", "key_env": "ANTHROPIC_API_KEY"},
+    "gemini": "claude-sonnet-4-6",   # retrocompatibilidade frontend
+    "claude": "claude-sonnet-4-6",
+    "gpt":    "claude-sonnet-4-6",   # consolidado no Azure Foundry
+    "v1":     "claude-sonnet-4-6",
+    "v2":     "claude-sonnet-4-6",
+    "v3":     "claude-sonnet-4-6",
 }
-
-
-def _get_api_key(model_id: str) -> str:
-    cfg = MODEL_MAP.get(model_id, MODEL_MAP["gemini"])
-    key = os.getenv(cfg["key_env"], "")
-    if not key:
-        raise HTTPException(status_code=400, detail=f"API key não configurada: {cfg['key_env']}")
-    return key
 
 
 def _build_prompt(message: str, agent_prompt: Optional[str], uploaded_text: Optional[str]) -> str:
@@ -140,16 +133,10 @@ async def debug_routes():
 async def chat(req: ChatRequest, current_user: Optional[str] = Depends(get_current_user)):
     """Process a chat message and return LLM response."""
     try:
-        api_key = _get_api_key(req.model)
-        cfg = MODEL_MAP.get(req.model, MODEL_MAP["gemini"])
+        model_name = MODEL_MAP.get(req.model, "claude-sonnet-4-6")
 
-        # Build the LLM instance
-        llm = be.get_llm(
-            provider=cfg["provider"],
-            model_name=cfg["model"],
-            api_key=api_key,
-            temperature=0.3,
-        )
+        # Build the LLM instance via Azure AI Foundry
+        llm = be.get_llm(model_name=model_name, temperature=0.3)
 
         conv_id = req.conversation_id or str(uuid.uuid4())
 
@@ -171,7 +158,46 @@ async def chat(req: ChatRequest, current_user: Optional[str] = Depends(get_curre
         system_parts = []
         if req.agent_prompt:
             system_parts.append(req.agent_prompt)
-        if req.uploaded_text:
+
+        # ── Process RAG: retrieve relevant chunks instead of full text ──
+        if req.use_rag and req.uploaded_text and _process_rag_cache:
+            try:
+                # Find the cached retriever (use first available)
+                retriever = None
+                for cache_key, (cached_ret, _, _) in _process_rag_cache.items():
+                    if cached_ret:
+                        retriever = cached_ret
+                        break
+
+                if retriever:
+                    relevant_chunks = retriever.invoke(req.message)
+                    if relevant_chunks:
+                        chunks_text = "\n\n".join([
+                            f"[Pág. {doc.metadata.get('page', '?')} — {doc.metadata.get('extraction', 'text')}]\n{doc.page_content}"
+                            for doc in relevant_chunks
+                        ])
+                        system_parts.append(
+                            f"\n\n---\n🎯 **TRECHOS RELEVANTES DO PROCESSO (RAG — {len(relevant_chunks)} chunks):**\n\n"
+                            f"{chunks_text}\n---"
+                        )
+                        total_tokens_approx = sum(len(d.page_content) for d in relevant_chunks) // 4
+                        print(f"🎯 RAG Processo: {len(relevant_chunks)} chunks recuperados (~{total_tokens_approx} tokens vs full text)")
+                    else:
+                        # Fallback to full text if no chunks found
+                        system_parts.append(
+                            f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
+                        )
+                else:
+                    # No retriever cached, use full text
+                    system_parts.append(
+                        f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
+                    )
+            except Exception as e:
+                print(f"⚠️ Process RAG falhou, usando texto completo: {e}")
+                system_parts.append(
+                    f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
+                )
+        elif req.uploaded_text:
             system_parts.append(
                 f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
             )
@@ -269,12 +295,8 @@ async def chat(req: ChatRequest, current_user: Optional[str] = Depends(get_curre
         if req.model == "v2":
             # Call Orchestrator V2 (Hybrid/Linear 3-Stage Workflow)
             if getattr(be, "run_hybrid_orchestration", None):
-                keys = {
-                    "anthropic": os.getenv("ANTHROPIC_API_KEY"),
-                    "google": os.getenv("GOOGLE_API_KEY"),
-                    "openai": os.getenv("OPENAI_API_KEY"),
-                    "deepseek": os.getenv("DEEPSEEK_API_KEY")
-                }
+                # keys dict is no longer needed — get_llm() reads Azure env vars directly
+                keys = {}
                 
                 context_str = req.uploaded_text or ""
                 user_msg = req.message or ""
@@ -337,6 +359,7 @@ async def get_history(current_user: Optional[str] = Depends(get_current_user)):
 async def upload_file(
     file: UploadFile = File(...),
     ocr_engine: str = Form("paddle"),
+    compress: bool = Form(True),
 ):
     """Upload and extract text from a file (PDF/DOCX/TXT)."""
     try:
@@ -351,11 +374,12 @@ async def upload_file(
 
         # Extract text using backend
         try:
-            full_text, _ = be.process_uploaded_file(
+            full_text, retriever = be.process_uploaded_file(
                 open(tmp_path, "rb"),
                 file.filename or "documento",
                 api_key=api_key,
                 ocr_engine_choice=ocr_engine,
+                compress=compress,
             )
         finally:
             os.unlink(tmp_path)
@@ -363,10 +387,19 @@ async def upload_file(
         if not full_text or not full_text.strip():
             raise HTTPException(status_code=422, detail="Não foi possível extrair texto do arquivo.")
 
+        # Cache the retriever for RAG mode
+        rag_available = False
+        if retriever:
+            cache_key = hashlib.md5(f"{file.filename}:{len(full_text)}".encode()).hexdigest()
+            _process_rag_cache[cache_key] = (retriever, full_text, len(full_text))
+            rag_available = True
+            print(f"🎯 Process RAG cached: key={cache_key[:8]}")
+
         return {
             "filename": file.filename,
             "text": full_text,
             "char_count": len(full_text),
+            "rag_available": rag_available,
         }
 
     except HTTPException:
@@ -471,15 +504,10 @@ class ClusterAnalyzeRequest(BaseModel):
     model: str = "gemini"
 
 
-def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_cfg: dict, api_key: str, collection_name: str = "rag_templates_persistent"):
+def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_name: str, collection_name: str = "rag_templates_persistent"):
     """Analyze one process. Runs in a thread pool."""
     try:
-        llm = be.get_llm(
-            provider=model_cfg["provider"],
-            model_name=model_cfg["model"],
-            api_key=api_key,
-            temperature=0.3,
-        )
+        llm = be.get_llm(model_name=model_name, temperature=0.3)
 
         messages = []
         system_parts = []
@@ -550,8 +578,7 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, current_user: Optional[str
     import concurrent.futures
 
     try:
-        api_key = _get_api_key(req.model)
-        cfg = MODEL_MAP.get(req.model, MODEL_MAP["gemini"])
+        model_name = MODEL_MAP.get(req.model, "claude-sonnet-4-6")
 
         if not req.processes:
             raise HTTPException(status_code=400, detail="Nenhum processo para analisar.")
@@ -568,8 +595,7 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, current_user: Optional[str
                     p["filename"],
                     p["text"],
                     req.agent_prompt or "",
-                    cfg,
-                    api_key,
+                    model_name,
                     collection_name
                 ): p["filename"]
                 for p in req.processes

@@ -45,10 +45,11 @@ async function safeJson(res, context) {
  * @param {string} ocrEngine
  * @returns {Promise<{filename: string, text: string, char_count: number}>}
  */
-export async function uploadFile(file, ocrEngine = 'paddle') {
+export async function uploadFile(file, ocrEngine = 'paddle', compress = true) {
     const form = new FormData();
     form.append('file', file);
     form.append('ocr_engine', ocrEngine);
+    form.append('compress', compress.toString());
 
     const res = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
@@ -81,7 +82,7 @@ export async function uploadFile(file, ocrEngine = 'paddle') {
  * @param {string|null} params.uploadedText
  * @returns {Promise<{conversation_id: string, response: string, model: string}>}
  */
-export async function sendMessage({ message, model, agentPrompt, conversationId, uploadedText, styleDossier }) {
+export async function sendMessage({ message, model, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false }) {
     const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -93,6 +94,7 @@ export async function sendMessage({ message, model, agentPrompt, conversationId,
             ocr_engine: 'paddle',
             uploaded_text: uploadedText || null,
             style_dossier: styleDossier || null,
+            use_rag: useRag,
         }),
         redirect: 'error',    // Do NOT follow redirects
     }).catch((err) => {
