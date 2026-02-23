@@ -11,7 +11,7 @@ import './ChatInput.css';
 
 const ENGINE_VERSIONS = [
     { id: 'v0', name: 'Gabinete V0 (Prompt 4.5)', color: '#10B981' },
-    { id: 'v1', name: 'Gabinete V1 (Prompt 4.7)', color: '#4285F4' },
+    { id: 'v1', name: 'Gabinete V1 (Prompt 5.0)', color: '#4285F4' },
     { id: 'v2', name: 'Gabinete V2 (Agêntico)', color: '#D97706' },
     { id: 'v3', name: 'Gabinete V3 (Autônomo)', color: '#6366F1' },
 ];
