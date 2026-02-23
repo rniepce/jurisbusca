@@ -5,14 +5,12 @@
 const API_BASE = '/api';
 
 /**
- * Get authentication headers if user implies to be logged in.
- * Also includes Azure OpenAI key if stored.
+ * Get headers for API requests.
+ * Includes Azure OpenAI key if stored.
  */
 function getAuthHeaders(existingHeaders = {}) {
-    const token = localStorage.getItem('jurisbusca_token');
     const azureKey = localStorage.getItem('azure_openai_key');
     const headers = { ...existingHeaders };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
     if (azureKey) headers['X-Azure-Key'] = azureKey;
     return headers;
 }

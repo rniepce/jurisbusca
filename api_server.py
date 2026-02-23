@@ -17,8 +17,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,10 +25,6 @@ from pydantic import BaseModel
 
 import backend as be
 import history_db
-
-# Google OAuth2 token validation
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
 
 
 @asynccontextmanager
@@ -61,23 +56,7 @@ conversations_fallback: dict[str, list[dict]] = {}
 # Key: hash of uploaded filename+size, Value: (retriever, full_text, char_count)
 _process_rag_cache: dict[str, tuple] = {}
 
-# ── Auth Dependency ─────────────────────────────────────────────────────────
-security = HTTPBearer(auto_error=False)
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "COLOQUE_SEU_CLIENT_ID_AQUI.apps.googleusercontent.com")
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Validates the Google JWT and returns the user's email if valid, or None if not logged in."""
-    if not credentials:
-        return None
-        
-    token = credentials.credentials
-    try:
-        # id_token.verify_oauth2_token will verify signature and expiration
-        id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
-        return id_info.get("email")
-    except ValueError as e:
-        print(f"Token validation failed: {e}")
-        return None
+# ── Auth (disabled — open access) ─────────────────────────────────────────
 
 
 class ChatRequest(BaseModel):
@@ -151,7 +130,7 @@ async def debug_routes():
 
 
 @app.post("/api/chat")
-async def chat(req: ChatRequest, request: Request, current_user: Optional[str] = Depends(get_current_user)):
+async def chat(req: ChatRequest, request: Request):
     """Process a chat message and return LLM response."""
     try:
         model_name = MODEL_MAP.get(req.model, "gpt-5.2-chat")
@@ -164,16 +143,11 @@ async def chat(req: ChatRequest, request: Request, current_user: Optional[str] =
 
         conv_id = req.conversation_id or str(uuid.uuid4())
 
-        # Fetch history
+        # Fetch history (in-memory fallback, no auth)
         past_messages = []
-        if current_user:
-            past_messages = history_db.get_messages(conv_id, current_user)
-            if past_messages is None:
-                past_messages = []
-        else:
-            if conv_id not in conversations_fallback:
-                conversations_fallback[conv_id] = []
-            past_messages = conversations_fallback[conv_id]
+        if conv_id not in conversations_fallback:
+            conversations_fallback[conv_id] = []
+        past_messages = conversations_fallback[conv_id]
 
         # ── Build LangChain message list with full history ──────────────
         messages = []
@@ -237,11 +211,7 @@ async def chat(req: ChatRequest, request: Request, current_user: Optional[str] =
             try:
                 op_key = os.getenv("OPENAI_API_KEY", "")
                 if op_key:
-                    # Provide collection_name if logged in
                     collection_name = "rag_templates_persistent"
-                    if current_user:
-                        collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
-                        
                     rag_retriever = be.load_persistent_rag(op_key, collection_name=collection_name)
                     if rag_retriever:
                         # Search for similar cases
@@ -305,15 +275,8 @@ async def chat(req: ChatRequest, request: Request, current_user: Optional[str] =
                 raise HTTPException(status_code=400, detail="Mensagem não pode estar vazia.")
         messages.append(HumanMessage(content=user_content))
 
-        # Persist user turn in history
-        chat_title = "Nova Conversa"
-        if len(past_messages) == 0 and user_content:
-            chat_title = user_content[:50] + "..." if len(user_content) > 50 else user_content
-
-        if current_user:
-            history_db.save_message(conv_id, current_user, "user", user_content, title=chat_title)
-        else:
-            conversations_fallback[conv_id].append({"role": "user", "content": user_content})
+        # Persist user turn in history (in-memory)
+        conversations_fallback[conv_id].append({"role": "user", "content": user_content})
 
         # Call LLM or specific Engine workflow
         if req.model == "v2":
@@ -345,11 +308,8 @@ async def chat(req: ChatRequest, request: Request, current_user: Optional[str] =
             response = llm.invoke(messages)
             response_text = be.safe_content(response)
 
-        # Persist assistant turn in history
-        if current_user:
-            history_db.save_message(conv_id, current_user, "assistant", response_text, title=chat_title)
-        else:
-            conversations_fallback[conv_id].append({"role": "assistant", "content": response_text})
+        # Persist assistant turn in history (in-memory)
+        conversations_fallback[conv_id].append({"role": "assistant", "content": response_text})
 
         return {
             "conversation_id": conv_id,
@@ -365,18 +325,9 @@ async def chat(req: ChatRequest, request: Request, current_user: Optional[str] =
 
 
 @app.get("/api/history")
-async def get_history(current_user: Optional[str] = Depends(get_current_user)):
-    """Fetch user's conversation history."""
-    if not current_user:
-        return {"conversations": []}
-    
-    try:
-        conversations = history_db.get_conversations(current_user)
-        # Format for Sidebar (Group by logical time later, just return list for now)
-        return {"conversations": conversations}
-    except Exception as e:
-        print(f"Error fetching history: {e}")
-        return {"conversations": []}
+async def get_history():
+    """Fetch conversation history (currently returns empty — no auth)."""
+    return {"conversations": []}
 
 
 @app.post("/api/upload")
@@ -594,7 +545,7 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
 
 
 @app.post("/api/cluster-analyze")
-async def cluster_analyze(req: ClusterAnalyzeRequest, current_user: Optional[str] = Depends(get_current_user)):
+async def cluster_analyze(req: ClusterAnalyzeRequest):
     """
     Process all files in a cluster individually, in parallel.
     Returns a list of individual analysis results.
@@ -608,8 +559,6 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, current_user: Optional[str
             raise HTTPException(status_code=400, detail="Nenhum processo para analisar.")
 
         collection_name = "rag_templates_persistent"
-        if current_user:
-            collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
 
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
@@ -649,17 +598,12 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, current_user: Optional[str
 @app.post("/api/templates")
 async def upload_templates(
     files: list[UploadFile] = File(...),
-    current_user: str = Depends(get_current_user)
 ):
     """
     Upload and index template files in ChromaDB for persistent RAG.
     Also auto-generates the style dossier.
-    Isolated per user.
     """
     import io
-
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Precisa estar logado para salvar modelos.")
 
     try:
         # Templates and style dossiers require embeddings and generation
@@ -680,8 +624,8 @@ async def upload_templates(
             buf.seek(0)
             file_objects.append(buf)
 
-        # 1. Index in ChromaDB (persistent, user isolated) -> Uses Embeddings (OpenAI)
-        collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
+        # 1. Index in ChromaDB (persistent) -> Uses Embeddings (OpenAI)
+        collection_name = "rag_templates_persistent"
         retriever, docs = be.process_templates(file_objects, op_key, collection_name=collection_name)
         indexed_count = len(docs) if docs else 0
 
@@ -708,20 +652,18 @@ async def upload_templates(
 
 
 @app.get("/api/templates/status")
-async def templates_status(current_user: Optional[str] = Depends(get_current_user)):
-    """Check how many templates are indexed in the persistent RAG for this user."""
+async def templates_status():
+    """Check how many templates are indexed in the persistent RAG."""
     try:
         api_key = os.getenv("OPENAI_API_KEY", "")
         count = 0
-        if api_key and current_user:
-            # We don't need to load the full retriever just to count, but check if db exists
+        if api_key:
             persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
             if os.path.exists(persist_dir):
                 try:
                     import chromadb
                     client = chromadb.PersistentClient(path=persist_dir)
-                    collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
-                    collection = client.get_collection(collection_name)
+                    collection = client.get_collection("rag_templates_persistent")
                     count = collection.count()
                 except Exception:
                     pass
@@ -738,19 +680,15 @@ async def templates_status(current_user: Optional[str] = Depends(get_current_use
 
 
 @app.delete("/api/templates")
-async def clear_templates(current_user: str = Depends(get_current_user)):
-    """Clear all indexed templates from ChromaDB for the user."""
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Precisa estar logado.")
-        
+async def clear_templates():
+    """Clear all indexed templates from ChromaDB."""
     try:
         persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
         if os.path.exists(persist_dir):
             import chromadb
             client = chromadb.PersistentClient(path=persist_dir)
             try:
-                collection_name = f"templates_{hashlib.md5(current_user.encode()).hexdigest()[:10]}"
-                client.delete_collection(collection_name)
+                client.delete_collection("rag_templates_persistent")
             except Exception:
                 pass
 

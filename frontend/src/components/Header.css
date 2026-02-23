@@ -57,43 +57,7 @@
     align-items: center;
 }
 
-.user-profile {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
 
-.user-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 1px solid #eee;
-}
-
-.user-name {
-    font-size: 14px;
-    font-weight: 500;
-    color: #333;
-}
-
-.logout-button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: #888;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 6px;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-}
-
-.logout-button:hover {
-    color: #d32f2f;
-    background-color: #ffebee;
-}
 
 /* ── API Key Config ─────────────────────────────────────────── */
 

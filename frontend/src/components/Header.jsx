@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaSignOutAlt, FaKey } from 'react-icons/fa';
+import { FaKey } from 'react-icons/fa';
 import { LuPanelLeftClose, LuPanelLeftOpen } from 'react-icons/lu';
-import { GoogleLogin } from '@react-oauth/google';
-import { useAuth } from '../context/AuthContext';
 import { validateAzureKey } from '../services/api';
 import logoSvg from '../assets/logo.svg';
 import './Header.css';
 
 const Header = ({ onMenuClick, isOpen }) => {
-    const { user, isAuthLoaded, login, logout } = useAuth();
     const [keyOpen, setKeyOpen] = useState(false);
     const [keyValue, setKeyValue] = useState('');
     const [keyStatus, setKeyStatus] = useState('unknown'); // 'unknown' | 'valid' | 'invalid' | 'checking'
@@ -124,27 +121,6 @@ const Header = ({ onMenuClick, isOpen }) => {
                         </div>
                     )}
                 </div>
-
-                {/* Auth Section */}
-                {isAuthLoaded && (
-                    user ? (
-                        <div className="user-profile">
-                            <img src={user.picture} alt="Avatar" className="user-avatar" />
-                            <span className="user-name">{user.name}</span>
-                            <button className="logout-button" onClick={logout} title="Sair">
-                                <FaSignOutAlt />
-                            </button>
-                        </div>
-                    ) : (
-                        <GoogleLogin
-                            onSuccess={login}
-                            onError={() => console.error('Login Failed')}
-                            useOneTap
-                            shape="pill"
-                            size="medium"
-                        />
-                    )
-                )}
             </div>
         </header>
     );
