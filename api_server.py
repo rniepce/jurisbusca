@@ -96,6 +96,7 @@ MODEL_MAP = {
     "gemini": "claude-sonnet-4-6",   # retrocompatibilidade frontend
     "claude": "claude-sonnet-4-6",
     "gpt":    "claude-sonnet-4-6",   # consolidado no Azure Foundry
+    "v0":     "claude-sonnet-4-6",
     "v1":     "claude-sonnet-4-6",
     "v2":     "claude-sonnet-4-6",
     "v3":     "claude-sonnet-4-6",

@@ -1,4 +1,4 @@
-from langchain_anthropic import ChatAnthropic
+import backend as be
 from langchain_core.messages import SystemMessage, HumanMessage
 import os
 
@@ -91,11 +91,7 @@ def run_revision_agent(triage_report: str, draft_text: str, api_key: str, knowle
         if not api_key:
             return "Erro: Chave Anthropic não encontrada."
 
-        llm = ChatAnthropic(
-            model="claude-4-6-sonnet-20260220",
-            api_key=api_key,
-            temperature=0.1
-        )
+        llm = be.get_llm("claude-sonnet-4-6", temperature=0.1)
         
         system_message = SystemMessage(content=PROMPT_REVISION_AGENT)
         

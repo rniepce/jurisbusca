@@ -1,4 +1,4 @@
-from langchain_anthropic import ChatAnthropic
+import backend as be
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 import os
@@ -69,11 +69,7 @@ def run_drafting_agent(triage_report: str, api_key: str) -> str:
         if not api_key:
             return "Erro: Chave Anthropic não encontrada."
 
-        llm = ChatAnthropic(
-            api_key=api_key,
-            model="claude-4-6-sonnet-20260220",
-            temperature=0.3
-        )
+        llm = be.get_llm("claude-sonnet-4-6", temperature=0.3)
         
         tools = [search_templates_database]
         llm_with_tools = llm.bind_tools(tools)

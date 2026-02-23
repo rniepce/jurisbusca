@@ -27,7 +27,7 @@ function App() {
   const [ragStatus, setRagStatus] = useState(null);
   const [batchResults, setBatchResults] = useState([]);
   const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
-  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'v1', name: 'Gabinete V1 (Default)', color: '#4285F4' }); // Provides fallback
+  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'v0', name: 'Gabinete V0 (Prompt 4.5)', color: '#10B981' }); // Provides fallback
 
   // Fetch template/RAG status on mount
   useEffect(() => {
@@ -82,12 +82,18 @@ function App() {
       // Files are already processed by handleFilesUploaded (auto-OCR),
       // so we just use the uploadedText that was populated earlier.
 
-      // 2. Load agent prompt if active
+      // 2. Load agent prompt if active (version-aware: V0 uses 4.5, V1+ uses 4.6)
       let agentPrompt = null;
       if (activeAgent?.promptModule) {
         try {
-          const mod = await activeAgent.promptModule();
-          agentPrompt = mod.default || null;
+          // Check if V0 is selected — use the V4.5 prompt instead
+          if (selectedModel.id === 'v0') {
+            const mod = await import('../prompts/gabineteCivelV0.js');
+            agentPrompt = mod.default || null;
+          } else {
+            const mod = await activeAgent.promptModule();
+            agentPrompt = mod.default || null;
+          }
         } catch {
           console.warn('Could not load agent prompt');
         }
