@@ -88,7 +88,7 @@ function App() {
         try {
           // Check if V0 is selected — use the V4.5 prompt instead
           if (selectedModel.id === 'v0') {
-            const mod = await import('../prompts/gabineteCivelV0.js');
+            const mod = await import('./prompts/gabineteCivelV0.js');
             agentPrompt = mod.default || null;
           } else {
             const mod = await activeAgent.promptModule();
