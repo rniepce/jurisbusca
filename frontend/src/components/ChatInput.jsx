@@ -10,10 +10,11 @@ import { uploadTemplates, clearTemplates } from '../services/api';
 import './ChatInput.css';
 
 const ENGINE_VERSIONS = [
-    { id: 'v0', name: 'Gabinete V0 (Prompt 4.5)', color: '#10B981' },
-    { id: 'v1', name: 'Gabinete V1 (Prompt 5.0)', color: '#4285F4' },
+    { id: 'v0', name: 'Gabinete V0 (GPT-4.1 Mini)', color: '#10B981' },
+    { id: 'v1', name: 'Gabinete V1 (GPT-5.2)', color: '#4285F4' },
     { id: 'v2', name: 'Gabinete V2 (Agêntico)', color: '#D97706' },
     { id: 'v3', name: 'Gabinete V3 (Autônomo)', color: '#6366F1' },
+    { id: 'mini', name: 'GPT-4.1 Mini (Rápido)', color: '#8B5CF6' },
 ];
 
 const ACCEPTED_TYPES = '.pdf,.docx,.txt';
@@ -116,7 +117,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         setFiles((prev) => prev.filter((_, i) => i !== index));
     };
 
-    const removeTemplate = (index) => {
+    const _removeTemplate = (index) => {
         setTemplateFiles((prev) => prev.filter((_, i) => i !== index));
     };
 

@@ -69,7 +69,7 @@ def run_drafting_agent(triage_report: str, api_key: str) -> str:
         if not api_key:
             return "Erro: Chave Anthropic não encontrada."
 
-        llm = be.get_llm("claude-sonnet-4-6", temperature=0.3)
+        llm = be.get_llm("gpt-5.2-chat", temperature=0.3)
         
         tools = [search_templates_database]
         llm_with_tools = llm.bind_tools(tools)

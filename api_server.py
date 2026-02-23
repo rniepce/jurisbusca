@@ -93,13 +93,14 @@ class ChatRequest(BaseModel):
 
 # ── Model mapping (Azure AI Foundry) ──────────────────────────────────────────
 MODEL_MAP = {
-    "gemini": "claude-sonnet-4-6",   # retrocompatibilidade frontend
-    "claude": "claude-sonnet-4-6",
-    "gpt":    "claude-sonnet-4-6",   # consolidado no Azure Foundry
-    "v0":     "claude-sonnet-4-6",
-    "v1":     "claude-sonnet-4-6",
-    "v2":     "claude-sonnet-4-6",
-    "v3":     "claude-sonnet-4-6",
+    "gemini": "gpt-5.2-chat",
+    "claude": "gpt-5.2-chat",
+    "gpt":    "gpt-5.2-chat",
+    "v0":     "gpt-4.1-mini",       # tarefas leves, rápido e econômico
+    "v1":     "gpt-5.2-chat",
+    "v2":     "gpt-5.2-chat",
+    "v3":     "gpt-5.2-chat",
+    "mini":   "gpt-4.1-mini",       # acesso direto ao mini
 }
 
 
@@ -119,6 +120,25 @@ async def health():
     return {"status": "ok", "routes": len(app.routes)}
 
 
+@app.post("/api/validate-key")
+async def validate_key(request: Request):
+    """Test if an Azure OpenAI API key is valid by making a minimal LLM call."""
+    key = request.headers.get("X-Azure-Key", "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Chave não fornecida. Envie no header X-Azure-Key.")
+
+    try:
+        from langchain_core.messages import HumanMessage as HM
+        llm = be.get_llm(temperature=0.0, api_key=key, max_tokens=10)
+        response = llm.invoke([HM(content="Diga OK")])
+        return {"valid": True, "message": "Chave válida!"}
+    except Exception as e:
+        error_str = str(e)
+        if "401" in error_str or "Unauthorized" in error_str or "invalid" in error_str.lower():
+            return {"valid": False, "message": "Chave inválida ou sem permissão."}
+        return {"valid": False, "message": f"Erro ao validar: {error_str[:200]}"}
+
+
 @app.get("/api/debug-routes")
 async def debug_routes():
     """Diagnostic: list all registered routes."""
@@ -131,13 +151,16 @@ async def debug_routes():
 
 
 @app.post("/api/chat")
-async def chat(req: ChatRequest, current_user: Optional[str] = Depends(get_current_user)):
+async def chat(req: ChatRequest, request: Request, current_user: Optional[str] = Depends(get_current_user)):
     """Process a chat message and return LLM response."""
     try:
-        model_name = MODEL_MAP.get(req.model, "claude-sonnet-4-6")
+        model_name = MODEL_MAP.get(req.model, "gpt-5.2-chat")
 
-        # Build the LLM instance via Azure AI Foundry
-        llm = be.get_llm(model_name=model_name, temperature=0.3)
+        # Read Azure key from header (frontend sends it), fallback to env var
+        azure_key = request.headers.get("X-Azure-Key", "").strip() or None
+
+        # Build the LLM instance via Azure OpenAI
+        llm = be.get_llm(model_name=model_name, temperature=0.3, api_key=azure_key)
 
         conv_id = req.conversation_id or str(uuid.uuid4())
 
@@ -331,7 +354,7 @@ async def chat(req: ChatRequest, current_user: Optional[str] = Depends(get_curre
         return {
             "conversation_id": conv_id,
             "response": response_text,
-            "model": cfg["model"],
+            "model": model_name,
         }
 
     except HTTPException:
@@ -559,14 +582,14 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
             "filename": filename,
             "status": "ok",
             "response": response_text,
-            "model": model_cfg["model"],
+            "model": model_name,
         }
     except Exception as e:
         return {
             "filename": filename,
             "status": "error",
             "response": f"Erro: {str(e)}",
-            "model": model_cfg.get("model", "?"),
+            "model": model_name if 'model_name' in dir() else "?",
         }
 
 
@@ -579,7 +602,7 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, current_user: Optional[str
     import concurrent.futures
 
     try:
-        model_name = MODEL_MAP.get(req.model, "claude-sonnet-4-6")
+        model_name = MODEL_MAP.get(req.model, "gpt-5.2-chat")
 
         if not req.processes:
             raise HTTPException(status_code=400, detail="Nenhum processo para analisar.")

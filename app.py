@@ -388,7 +388,7 @@ with st.sidebar:
                  "Gemini Flash (Rápido)": {"provider": "google", "model": "gemini-3-flash-preview"},
                  "DeepSeek R1 (Lógica Extrema)": {"provider": "deepseek", "model": "deepseek-reasoner"}, # Via DeepSeek API (OpenAI compat)
                  "GPT-5.1 Preview (Simulado/GPT-4o)": {"provider": "openai", "model": "gpt-4o"},
-                 "Claude 4.6 Sonnet": {"provider": "anthropic", "model": "claude-sonnet-4-6"},
+                 "GPT-5.2 (Azure OpenAI)": {"provider": "azure_openai", "model": "gpt-5.2-chat"},
                  "Amazônia IA (Soberano BR)": {"provider": "amazonia", "model": "rodrigomalossi/amazonia-a"}
              }
              
@@ -526,7 +526,7 @@ with st.sidebar:
     )
     
     ocr_map = {
-        "GPT-4o mini (Nuvem/Rápido)": "gpt4o_mini",
+        "Gemini 2.0 Flash (Nuvem/Rápido)": "gpt4o_mini",
         "PaddleOCR (Local/CPU)": "paddle", 
         "DeepSeek-OCR-2 (Local/GPU)": "deepseek"
     }
@@ -945,13 +945,13 @@ if uploaded_files:
                     
                     # 1. PARSEAMENTO DO OUTPUT (Separar Diagnóstico vs Minuta)
                     # Type guard: Ensure results is always a dict
-                    print(f"DEBUG: results type = {type(results)}")  # Debug log
+                    # results type: {type(results)}
                     if not isinstance(results, dict):
                         if isinstance(results, list):
                             results = {"final_report": "\n".join([str(x) for x in results]), "steps": {}}
                         else:
                             results = {"final_report": str(results) if results else "", "steps": {}}
-                        print(f"DEBUG: results converted to dict")
+                        pass  # results converted to dict
                     
                     # === PARSEAMENTO ROBUSTO (V1/V2/V3) ===
                     
@@ -960,7 +960,7 @@ if uploaded_files:
                     
                     # CASO 1: V2 ou V3 (Já estruturado no dicionário)
                     if st.session_state.app_mode in ["v2", "v3"]:
-                         print(f"DEBUG: Modo {st.session_state.app_mode} - Usando campos diretos.")
+                         pass  # Modo V2/V3 - Usando campos diretos
                          minuta_text = results.get("final_report", "")
                          
                          # Diagnóstico vem dos steps/logs
@@ -977,12 +977,12 @@ if uploaded_files:
 
                     # CASO 2: V1 (Pode ser JSON ou Markdown Raw)
                     else:
-                        print(f"DEBUG: Modo V1 - Tentando Parse JSON ou Regex.")
+                        pass  # Modo V1 - Tentando Parse JSON ou Regex
                         raw_output = results.get("final_report", "")
                         
                         # Fix for unexpected List type (e.g. [{'type': 'text', 'text': ...}])
                         if isinstance(raw_output, list):
-                            print(f"DEBUG: raw_output is list. Extracting text.")
+                            pass  # raw_output is list, extracting text
                             cleaned_parts = []
                             for part in raw_output:
                                 if isinstance(part, dict) and 'text' in part:
@@ -1020,12 +1020,12 @@ if uploaded_files:
                                 if fund:
                                      diagnostic_text += f"\n\n**Fundamentação Lógica:**\n{fund}"
                                      
-                                print("DEBUG: V1 JSON Parse Sucesso")
+                                pass  # V1 JSON Parse Sucesso
                             else:
                                 raise ValueError("JSON não é dict")
                                 
                         except Exception as e:
-                            print(f"DEBUG: V1 JSON Parse Falhou ({e}). Tentando Regex Legacy.")
+                            pass  # V1 JSON Parse Fallback to Regex
                             # Fallback: Regex Splitting (Legacy Prompt)
                             full_text = raw_output
                             if isinstance(full_text, list):

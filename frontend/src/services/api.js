@@ -6,10 +6,28 @@ const API_BASE = '/api';
 
 /**
  * Get authentication headers if user implies to be logged in.
+ * Also includes Azure OpenAI key if stored.
  */
 function getAuthHeaders(existingHeaders = {}) {
     const token = localStorage.getItem('jurisbusca_token');
-    return token ? { ...existingHeaders, 'Authorization': `Bearer ${token}` } : existingHeaders;
+    const azureKey = localStorage.getItem('azure_openai_key');
+    const headers = { ...existingHeaders };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (azureKey) headers['X-Azure-Key'] = azureKey;
+    return headers;
+}
+
+/**
+ * Validate an Azure OpenAI API key.
+ * @param {string} key
+ * @returns {Promise<{valid: boolean, message: string}>}
+ */
+export async function validateAzureKey(key) {
+    const res = await fetch(`${API_BASE}/validate-key`, {
+        method: 'POST',
+        headers: { 'X-Azure-Key': key },
+    });
+    return safeJson(res, 'Validar Chave');
 }
 
 /**

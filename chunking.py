@@ -3,8 +3,13 @@ import re
 from typing import List, Dict, Any, Optional
 from langchain_core.documents import Document
 from langchain_experimental.text_splitter import SemanticChunker
-from langchain_openai import OpenAIEmbeddings
 import os
+
+# Import centralized embedding function
+try:
+    from backend import get_embedding_function as _get_backend_embeddings
+except ImportError:
+    _get_backend_embeddings = None
 
 class HybridSemanticChunker:
     """
@@ -14,39 +19,42 @@ class HybridSemanticChunker:
     """
     
     # Regex combinada baseada no feedback do usuário + padrões comuns
-    # User requested: DO DIREITO, DOS FATOS, DOS PEDIDOS, II -, III -, etc.
     LEGAL_HEADERS_REGEX = r"(?im)^(?:\s*|.*[\.\:])\s*(DOS FATOS|DO DIREITO|DA FUNDAMENTAÇÃO|DOS PEDIDOS|DO MÉRITO|DO DISPOSITIVO|RELATÓRIO|DISPOSITIVO|CONCLUSÃO|PRELIMINARMENTE|DA TUTELA|EMENTA|[IVXLCDM]+\s+\-)(?::|\s|$)"
 
-    def __init__(self, api_key: str, provider: str = "openai", threshold_type: str = "percentile", threshold_amount: float = 90.0):
+    def __init__(self, api_key: str = None, provider: str = "openai", threshold_type: str = "percentile", threshold_amount: float = 90.0):
         """
         Inicializa o Chunker Híbrido.
         Args:
-            api_key: Chave da API (OpenAI).
-            provider: 'openai'.
+            api_key: Chave da API (opcional, usa env vars se não fornecida).
+            provider: Ignorado — usa Azure OpenAI centralizado.
             threshold_type: 'percentile', 'standard_deviation', etc.
             threshold_amount: Valor do percentile (ex: 90.0 para alta coesão).
         """
-        self.embeddings = self._get_embeddings(api_key, provider)
+        self.embeddings = self._get_embeddings(api_key)
         if self.embeddings:
-            # Semantic Splitter Initialization
             self.semantic_splitter = SemanticChunker(
                 self.embeddings,
                 breakpoint_threshold_type=threshold_type,
-                breakpoint_threshold_amount=threshold_amount  # percentile default 90
+                breakpoint_threshold_amount=threshold_amount
             )
         else:
             self.semantic_splitter = None
             print("⚠️ Embeddings não inicializados. Fallback para RecursiveSplitter pode ser necessário.")
 
-    def _get_embeddings(self, key, provider):
+    def _get_embeddings(self, api_key=None):
         try:
-            if provider == "openai":
-                return OpenAIEmbeddings(model="text-embedding-3-small", api_key=key)
-            else:
-                # Fallback to OpenAI if unknown
-                return OpenAIEmbeddings(model="text-embedding-3-small", api_key=key)
+            if _get_backend_embeddings:
+                return _get_backend_embeddings(api_key=api_key)
+            # Fallback: try direct Azure OpenAI
+            from langchain_openai import AzureOpenAIEmbeddings
+            return AzureOpenAIEmbeddings(
+                azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"),
+                azure_endpoint=os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT", os.getenv("AZURE_OPENAI_ENDPOINT", "")),
+                api_key=api_key or os.getenv("AZURE_OPENAI_API_KEY", ""),
+                api_version="2024-12-01-preview",
+            )
         except Exception as e:
-            print(f"Erro ao iniciar Embeddings ({provider}): {e}")
+            print(f"Erro ao iniciar Embeddings: {e}")
             return None
 
     def split_text(self, text: str, source_metadata: Optional[Dict] = None) -> List[Document]:

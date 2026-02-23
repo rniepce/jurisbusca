@@ -17,8 +17,7 @@ from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE, PROMPT_V3_HYBRID_FA
 from knowledge_base_loader import KNOWLEDGE_BASE
 
 # Internal Imports for LLM
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI, AzureChatOpenAI
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
 
@@ -40,15 +39,20 @@ def node_magistrate(state: MagistrateState):
     """
     The Brain. Decides whether to use Code Tool or Finalize.
     """
-    keys = state["keys"]
+    # Use Azure OpenAI GPT-5.2-chat
+    azure_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.2-chat")
     
-    # 1. Select Model (Use Claude 4.6 Sonnet for massive context + tool use)
-    anthropic_key = keys.get("anthropic")
-    
-    if not anthropic_key:
-        return {"logs": state["logs"] + ["❌ No Anthropic key found for Magistrate."]}
+    if not azure_key or not azure_endpoint:
+        return {"logs": state["logs"] + ["❌ Azure OpenAI not configured (AZURE_OPENAI_API_KEY / AZURE_OPENAI_ENDPOINT)."]}
 
-    llm = ChatAnthropic(model="claude-4-6-sonnet-20260220", api_key=anthropic_key, temperature=0.1)
+    llm = AzureChatOpenAI(
+        azure_deployment=deployment,
+        azure_endpoint=azure_endpoint,
+        api_key=azure_key,
+        api_version="2024-12-01-preview",
+    )
 
     @tool
     def run_python_code(code: str) -> str:
@@ -69,10 +73,10 @@ def node_magistrate(state: MagistrateState):
         core_prompt = PROMPT_V3_MAGISTRATE_CORE.replace("{tribunal_local}", tribunal)
         
         # Adding a specific guidance for tool utilization with Claude
-        claude_tool_instruction = "\n\nCRÍTICO: Use a ferramenta 'run_python_code' para ler o processo usando Python. Após ler os dados, elabore o JSON com a 'minuta_final'."
+        gpt_tool_instruction = "\n\nCRÍTICO: Use a ferramenta 'run_python_code' para ler o processo usando Python. Após ler os dados, elabore o JSON com a 'minuta_final'."
         
         knowledge_section = "\n\n# BASE DE CONHECIMENTO (ARQUIVOS A, B e C)\n" + KNOWLEDGE_BASE if KNOWLEDGE_BASE else ""
-        sys_msg = SystemMessage(content=core_prompt + "\n" + PROMPT_V3_HYBRID_FALLBACK + knowledge_section + claude_tool_instruction)
+        sys_msg = SystemMessage(content=core_prompt + "\n" + PROMPT_V3_HYBRID_FALLBACK + knowledge_section + gpt_tool_instruction)
         # Claude handles large contexts — pass the full text directly.
         user_msg = HumanMessage(content=f"AUTOS DO PROCESSO:\n{state['raw_text']}")
         messages = [sys_msg, user_msg]

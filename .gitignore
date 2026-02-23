@@ -22,3 +22,6 @@ data/
 # Frontend
 frontend/dist/
 frontend/node_modules/
+
+# SQLite databases
+*.db

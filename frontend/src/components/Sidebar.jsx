@@ -18,7 +18,7 @@ const iconMap = {
     FaPenNib: <FaPenNib />,
 };
 
-const Sidebar = ({ isOpen, onToggle, history = [], activeAgent, onAgentSelect, onNewChat, onLoadChat }) => {
+const Sidebar = ({ isOpen, history = [], activeAgent, onAgentSelect, onNewChat, onLoadChat }) => {
     const [agentsOpen, setAgentsOpen] = useState(true);
     const { user } = useAuth();
 

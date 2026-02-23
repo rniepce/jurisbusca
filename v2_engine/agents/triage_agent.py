@@ -121,7 +121,7 @@ def run_triage_agent(process_text: str, api_key: str, knowledge_base: str = "") 
         if not api_key:
             return "Erro: Chave Anthropic não encontrada."
 
-        llm = be.get_llm("claude-sonnet-4-6", temperature=0.1)
+        llm = be.get_llm("gpt-5.2-chat", temperature=0.1)
         
         formatted_prompt = PROMPT_TRIAGE_AGENT.format(
             knowledge_base=knowledge_base if knowledge_base else KNOWLEDGE_BASE

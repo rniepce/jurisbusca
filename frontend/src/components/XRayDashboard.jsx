@@ -14,13 +14,16 @@ function PieChart({ slices }) {
     const total = slices.reduce((s, d) => s + d.value, 0);
     if (total === 0) return null;
 
-    let cumAngle = 0;
-    const paths = slices.map((slice, i) => {
+    // Pre-calculate angles to avoid mutable variable during render
+    const angledSlices = slices.reduce((acc, slice, i) => {
         const frac = slice.value / total;
-        const startAngle = cumAngle;
-        const endAngle = cumAngle + frac * 2 * Math.PI;
-        cumAngle = endAngle;
+        const prev = i > 0 ? acc[i - 1].endAngle : 0;
+        acc.push({ ...slice, frac, startAngle: prev, endAngle: prev + frac * 2 * Math.PI });
+        return acc;
+    }, []);
 
+    const paths = angledSlices.map((slice, i) => {
+        const { frac, startAngle, endAngle } = slice;
         const largeArc = frac > 0.5 ? 1 : 0;
         const x1 = 100 + 90 * Math.cos(startAngle);
         const y1 = 100 + 90 * Math.sin(startAngle);
@@ -159,10 +162,11 @@ function ClusterCard({ cluster, index, onActionClick }) {
 }
 
 /* ── Stat Card ─────────────────────────────────────────────────────── */
-function StatCard({ icon: Icon, label, value }) {
+function StatCard(props) {
+    const { icon, label, value } = props;
     return (
         <div className="xray-stat-card">
-            <Icon className="xray-stat-icon" size={20} />
+            {React.createElement(icon, { className: 'xray-stat-icon', size: 20 })}
             <div>
                 <div className="xray-stat-value">{value}</div>
                 <div className="xray-stat-label">{label}</div>

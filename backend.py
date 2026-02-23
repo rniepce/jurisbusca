@@ -101,10 +101,14 @@ except ImportError:
     OpenAIEmbeddings = None
 
 try:
-    from langchain_anthropic import ChatAnthropic
-    HAS_ANTHROPIC = True
+    from langchain_openai import AzureChatOpenAI
+    HAS_AZURE_OPENAI = True
 except ImportError:
-    HAS_ANTHROPIC = False
+    HAS_AZURE_OPENAI = False
+    AzureChatOpenAI = None
+
+# Legacy flag kept for compatibility checks elsewhere
+HAS_ANTHROPIC = HAS_AZURE_OPENAI
 # from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
 # (Re-enabling imports for V2 Ensemble)
 from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_JUIZ_DEEPSEEK, PROMPT_REDATOR_CLAUDE, PROMPT_AUDITOR_GPT
@@ -268,18 +272,28 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 def get_embedding_function(api_key=None):
-    # Detecta tipo de chave para evitar instanciar embeddings incorretamente
-    if api_key:
-        if api_key.startswith("sk-") and HAS_OPENAI:
-            return OpenAIEmbeddings(model="text-embedding-3-small", openai_api_key=api_key)
-            
-    # Fallback to Environment Variable if available
-    env_key = os.getenv("OPENAI_API_KEY")
-    if env_key and HAS_OPENAI:
-        return OpenAIEmbeddings(model="text-embedding-3-small", openai_api_key=env_key)
-        
-    raise ValueError("Nenhum provedor de Embeddings configurado. Por favor, insira a OPENAI_API_KEY (começa com sk-).")
-    # return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") # REMOVIDO PARA EVITAR ERRO
+    """
+    Factory centralizada de embeddings — usa Azure OpenAI.
+    api_key: se fornecida, tem prioridade sobre a variável de ambiente.
+    """
+    from langchain_openai import AzureOpenAIEmbeddings
+    
+    azure_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
+    azure_endpoint = os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT", os.getenv("AZURE_OPENAI_ENDPOINT", ""))
+    deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
+    
+    if not azure_key or not azure_endpoint:
+        raise ValueError(
+            "AZURE_OPENAI_API_KEY e AZURE_OPENAI_EMBEDDING_ENDPOINT devem estar configurados "
+            "no .env ou variáveis de ambiente para usar embeddings."
+        )
+    
+    return AzureOpenAIEmbeddings(
+        azure_deployment=deployment,
+        azure_endpoint=azure_endpoint,
+        api_key=azure_key,
+        api_version="2024-12-01-preview",
+    )
 
 def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="gpt4o_mini", compress=True):
     """
@@ -408,30 +422,45 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-def get_llm(model_name: str = "claude-sonnet-4-6", temperature: float = 0.2, **kwargs):
+def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key: str = None, **kwargs):
     """
-    Factory centralizada — todos os modelos passam pelo Azure AI Foundry.
-    O Foundry expõe a API Anthropic padrão, então usamos ChatAnthropic
-    com base_url apontando para o endpoint Azure.
+    Factory centralizada — todos os modelos passam pelo Azure OpenAI.
+    model_name: nome do deployment no Azure (ex: 'gpt-5.2-chat', 'gpt-4.1-mini').
+    api_key: se fornecida, tem prioridade sobre a variável de ambiente.
     """
-    if not HAS_ANTHROPIC:
-        raise ImportError("langchain-anthropic não instalado.")
+    if not HAS_AZURE_OPENAI:
+        raise ImportError("langchain-openai não instalado. Execute: pip install langchain-openai")
 
-    azure_key = os.getenv("AZURE_AI_KEY", "")
-    azure_url = os.getenv("AZURE_AI_BASE_URL", "")
+    azure_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
+    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+    # Use model_name as deployment; fallback to env var only when using the default
+    deployment = model_name or os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.2-chat")
 
-    if not azure_key or not azure_url:
+    if not azure_key or not azure_endpoint:
         raise ValueError(
-            "AZURE_AI_KEY e AZURE_AI_BASE_URL devem estar configurados no .env ou variáveis de ambiente."
+            "AZURE_OPENAI_API_KEY e AZURE_OPENAI_ENDPOINT devem estar configurados no .env ou variáveis de ambiente."
         )
 
-    return ChatAnthropic(
-        model=model_name,
-        anthropic_api_key=azure_key,
-        anthropic_api_url=azure_url,
-        temperature=temperature,
+    # Azure OpenAI uses max_completion_tokens instead of max_tokens
+    if 'max_tokens' in kwargs:
+        kwargs['max_completion_tokens'] = kwargs.pop('max_tokens')
+
+    # GPT-5.2 doesn't support custom temperature — only default (1)
+    # For models that don't support it, we omit the parameter entirely
+    models_no_temp = {"gpt-5.2-chat"}
+    use_temperature = temperature if deployment not in models_no_temp else None
+
+    llm_kwargs = dict(
+        azure_deployment=deployment,
+        azure_endpoint=azure_endpoint,
+        api_key=azure_key,
+        api_version="2024-12-01-preview",
         **kwargs,
     )
+    if use_temperature is not None:
+        llm_kwargs["temperature"] = use_temperature
+
+    return AzureChatOpenAI(**llm_kwargs)
 
 def run_reflexion_loop(draft_text, source_text, api_key):
     """
@@ -441,7 +470,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
     """
     try:
         # Usa Claude Sonnet via Azure para auditoria
-        auditor_llm = get_llm("claude-sonnet-4-6", temperature=0.0)
+        auditor_llm = get_llm("gpt-5.2-chat", temperature=0.0)
         
         # 1. Auditoria
         # Precisamos parsear o draft. Se for JSON, extraímos a 'minuta_final'.
@@ -484,7 +513,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
             print(f"❌ Auditoria Reprovou. Erros: {errors}. Iniciando Auto-Correção...")
             
             # 3. Fixer (Usa o mesmo modelo)
-            fixer_llm = get_llm("claude-sonnet-4-6", temperature=0.1)
+            fixer_llm = get_llm("gpt-5.2-chat", temperature=0.1)
             
             msg_fix = PROMPT_GPT_FIXER.format(
                 draft=draft_content,
@@ -543,7 +572,7 @@ def extract_text_with_gpt4o_mini(file_path, api_key):
         # Inicializa o modelo GPT-4o-mini (Vision)
         from langchain_core.messages import HumanMessage
         
-        llm = get_llm("claude-sonnet-4-6", temperature=0.1)
+        llm = get_llm("gpt-5.2-chat", temperature=0.1)
         
         prompt_text = """
         Aja como um transcritor jurídico de elite. 
@@ -669,7 +698,7 @@ def generate_style_dossier(template_files, api_key):
                 break
         
         # 3. Chamar LLM com o prompt forense de 5 pilares
-        llm = get_llm("claude-sonnet-4-6", temperature=0.3, max_tokens=8000)
+        llm = get_llm("gpt-5.2-chat", temperature=0.3, max_tokens=8000)
         
         messages = [
             SystemMessage(content=PROMPT_STYLE_ANALYZER),
@@ -807,8 +836,8 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
 
     try:
         # Instancia LLMs via Azure AI Foundry
-        main_llm = get_llm("claude-sonnet-4-6", temperature=0.2)
-        style_llm = get_llm("claude-sonnet-4-6", temperature=0.3)
+        main_llm = get_llm("gpt-5.2-chat", temperature=0.2)
+        style_llm = get_llm("gpt-5.2-chat", temperature=0.3)
     except Exception as e:
         return {"final_report": f"Erro na inicialização dos modelos: {str(e)}", "steps": {}}
 
@@ -932,11 +961,11 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     # 1. Setup Models
     try:
         # Todos os modelos via Azure AI Foundry (Claude Sonnet 4.6)
-        analista_fatos = get_llm("claude-sonnet-4-6", temperature=0.1)
+        analista_fatos = get_llm("gpt-5.2-chat", temperature=0.1)
 
-        juiz_logico = get_llm("claude-sonnet-4-6", temperature=0.3)
+        juiz_logico = get_llm("gpt-5.2-chat", temperature=0.3)
               
-        redator_final = get_llm("claude-sonnet-4-6", temperature=0.2)
+        redator_final = get_llm("gpt-5.2-chat", temperature=0.2)
              
     except Exception as e:
         return {"final_report": f"Erro ao inicializar Banca Digital: {e}", "steps": {}}
@@ -1383,7 +1412,7 @@ def generate_batch_xray(files, api_key, template_files=None):
         
         # Usa Claude 4.6 Sonnet para agregação de altíssima qualidade
         try:
-            llm_reduce = get_llm("claude-sonnet-4-6", temperature=0.1)
+            llm_reduce = get_llm("gpt-5.2-chat", temperature=0.1)
             
             # Força JSON
             reduce_prompt = PROMPT_XRAY_BATCH + "\n\nCRÍTICO: Retorne APENAS UM JSON VÁLIDO. Sem Markdown, sem formatação extra, inicie com { e termine com }."

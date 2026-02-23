@@ -6,9 +6,16 @@ from typing import List, Dict, Optional
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from chunking import HybridSemanticChunker
+import os
+
+# Import centralized factories
+try:
+    from backend import get_embedding_function, get_llm
+except ImportError:
+    get_embedding_function = None
+    get_llm = None
 
 class RaptorEngine:
     """
@@ -20,15 +27,24 @@ class RaptorEngine:
         self.api_key = api_key
         self.provider = provider
         
-        # Init Models
-        if provider == "openai":
-            self.embeddings = OpenAIEmbeddings(api_key=api_key)
-            self.llm = ChatOpenAI(model="gpt-4o-mini", api_key=api_key, temperature=0) # Mini for speed/cost
-        else:
+        # Init Models — use Azure OpenAI centralized
+        if get_embedding_function:
+            self.embeddings = get_embedding_function(api_key=api_key)
+            self.llm = get_llm(temperature=0) if get_llm else ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0)
+        elif provider == "google":
             self.embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
             self.llm = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0)
+        else:
+            from langchain_openai import AzureOpenAIEmbeddings
+            self.embeddings = AzureOpenAIEmbeddings(
+                azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"),
+                azure_endpoint=os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT", ""),
+                api_key=api_key,
+                api_version="2024-12-01-preview",
+            )
+            self.llm = get_llm(temperature=0) if get_llm else None
 
-        # Chunker para folhas (usamos o híbrido mas com threshold mais relaxado para garantir chunks menores)
+        # Chunker
         self.chunker = HybridSemanticChunker(api_key, provider, threshold_amount=80.0) 
 
     def _get_optimal_clusters(self, embeddings: np.ndarray, max_clusters: int = 10) -> int:

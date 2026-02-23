@@ -1,27 +1,19 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);
-    const [token, setToken] = useState(null);
-    const [isAuthLoaded, setIsAuthLoaded] = useState(false);
-
-    useEffect(() => {
-        // Carregar token e user do localStorage ao iniciar
-        const storedToken = localStorage.getItem('jurisbusca_token');
-        const storedUser = localStorage.getItem('jurisbusca_user');
-
-        if (storedToken && storedUser) {
-            setToken(storedToken);
-            try {
-                setUser(JSON.parse(storedUser));
-            } catch (e) {
-                console.error("Erro ao fazer parse do usuário salvo", e);
-            }
+    const [user, setUser] = useState(() => {
+        try {
+            const storedUser = localStorage.getItem('jurisbusca_user');
+            return storedUser ? JSON.parse(storedUser) : null;
+        } catch (e) {
+            console.error("Erro ao fazer parse do usuário salvo", e);
+            return null;
         }
-        setIsAuthLoaded(true);
-    }, []);
+    });
+    const [token, setToken] = useState(() => localStorage.getItem('jurisbusca_token'));
+    const [isAuthLoaded] = useState(true);
 
     const login = (credentialResponse) => {
         // credentialResponse possui a JWT (credential)
