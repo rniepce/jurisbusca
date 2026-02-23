@@ -14,6 +14,7 @@ except ImportError:
 # Import Prompts
 # Both variables now correctly exported from prompts_magistrate_v3.py (typo ROMPT_ -> PROMPT_ fixed)
 from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE, PROMPT_V3_HYBRID_FALLBACK
+from knowledge_base_loader import KNOWLEDGE_BASE
 
 # Internal Imports for LLM
 from langchain_openai import ChatOpenAI
@@ -70,7 +71,8 @@ def node_magistrate(state: MagistrateState):
         # Adding a specific guidance for tool utilization with Claude
         claude_tool_instruction = "\n\nCRÍTICO: Use a ferramenta 'run_python_code' para ler o processo usando Python. Após ler os dados, elabore o JSON com a 'minuta_final'."
         
-        sys_msg = SystemMessage(content=core_prompt + "\n" + PROMPT_V3_HYBRID_FALLBACK + claude_tool_instruction)
+        knowledge_section = "\n\n# BASE DE CONHECIMENTO (ARQUIVOS A, B e C)\n" + KNOWLEDGE_BASE if KNOWLEDGE_BASE else ""
+        sys_msg = SystemMessage(content=core_prompt + "\n" + PROMPT_V3_HYBRID_FALLBACK + knowledge_section + claude_tool_instruction)
         # Claude handles large contexts — pass the full text directly.
         user_msg = HumanMessage(content=f"AUTOS DO PROCESSO:\n{state['raw_text']}")
         messages = [sys_msg, user_msg]

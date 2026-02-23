@@ -1,6 +1,7 @@
-from langchain_anthropic import ChatAnthropic
+import backend as be
 from langchain_core.messages import SystemMessage, HumanMessage
 import os
+from knowledge_base_loader import KNOWLEDGE_BASE
 
 PROMPT_TRIAGE_AGENT = """
 # PROMPT: ASSISTENTE JURÍDICO INTEGRAL DE GABINETE (V 4.5)
@@ -120,14 +121,10 @@ def run_triage_agent(process_text: str, api_key: str, knowledge_base: str = "") 
         if not api_key:
             return "Erro: Chave Anthropic não encontrada."
 
-        llm = ChatAnthropic(
-            model="claude-4-6-sonnet-20260220",
-            api_key=api_key,
-            temperature=0.1
-        )
+        llm = be.get_llm("claude-sonnet-4-6", temperature=0.1)
         
         formatted_prompt = PROMPT_TRIAGE_AGENT.format(
-            knowledge_base=knowledge_base if knowledge_base else "Nenhum arquivo de jurisprudência fornecido."
+            knowledge_base=knowledge_base if knowledge_base else KNOWLEDGE_BASE
         )
         
         messages = [
