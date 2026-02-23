@@ -209,10 +209,10 @@ async def chat(req: ChatRequest, request: Request):
         # ── Auto RAG: retrieve mirror context from persisted templates ──
         if req.uploaded_text:
             try:
-                op_key = os.getenv("OPENAI_API_KEY", "")
-                if op_key:
+                azure_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+                if azure_key:
                     collection_name = "rag_templates_persistent"
-                    rag_retriever = be.load_persistent_rag(op_key, collection_name=collection_name)
+                    rag_retriever = be.load_persistent_rag(collection_name=collection_name)
                     if rag_retriever:
                         # Search for similar cases
                         relevant_docs = rag_retriever.invoke(req.uploaded_text[:6000])
@@ -338,7 +338,6 @@ async def upload_file(
 ):
     """Upload and extract text from a file (PDF/DOCX/TXT)."""
     try:
-        api_key = os.getenv("OPENAI_API_KEY", "")
 
         # Save to temp file
         suffix = os.path.splitext(file.filename or "doc.pdf")[1]
@@ -352,7 +351,6 @@ async def upload_file(
             full_text, retriever = be.process_uploaded_file(
                 open(tmp_path, "rb"),
                 file.filename or "documento",
-                api_key=api_key,
                 ocr_engine_choice=ocr_engine,
                 compress=compress,
             )
@@ -393,11 +391,6 @@ async def batch_xray(files: list[UploadFile] = File(...)):
     import io
 
     try:
-        # GPT-4o vision or text-embedding api keys
-        api_key = os.getenv("OPENAI_API_KEY", "")
-        if not api_key:
-            raise HTTPException(status_code=400, detail="OPENAI_API_KEY não configurada")
-
         # Convert UploadFiles into file-like objects with .name attribute
         file_objects = []
         for f in files:
@@ -407,8 +400,8 @@ async def batch_xray(files: list[UploadFile] = File(...)):
             buf.seek(0)
             file_objects.append(buf)
 
-        # Call the existing MAP-REDUCE pipeline
-        report, text_cache = be.generate_batch_xray(file_objects, api_key)
+        # Call the existing MAP-REDUCE pipeline (uses Azure OpenAI internally)
+        report, text_cache = be.generate_batch_xray(file_objects, None)
 
         if "error" in report:
             raise HTTPException(status_code=422, detail=report.get("error", "Erro desconhecido"))
@@ -435,11 +428,6 @@ async def style_report(files: list[UploadFile] = File(...)):
     import io
 
     try:
-        # Claude is used for style dossiers
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY não configurada")
-
         # Convert UploadFiles into file-like objects with .name attribute
         file_objects = []
         for f in files:
@@ -449,8 +437,8 @@ async def style_report(files: list[UploadFile] = File(...)):
             buf.seek(0)
             file_objects.append(buf)
 
-        # Call the existing style dossier pipeline
-        result = be.generate_style_dossier(file_objects, api_key)
+        # Call the existing style dossier pipeline (uses Azure OpenAI internally)
+        result = be.generate_style_dossier(file_objects, None)
 
         if not result or result.get("error"):
             error_detail = (result or {}).get("error", "Não foi possível gerar o dossiê de estilo.")
@@ -495,10 +483,10 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
         )
 
         # Auto-RAG: inject golden sample from persistent templates
-        op_key = os.getenv("OPENAI_API_KEY", "")
+        op_key = os.getenv("AZURE_OPENAI_API_KEY", "")
         if op_key:
             try:
-                rag_retriever = be.load_persistent_rag(op_key, collection_name=collection_name)
+                rag_retriever = be.load_persistent_rag(collection_name=collection_name)
                 if rag_retriever:
                     relevant_docs = rag_retriever.invoke(text[:6000])
                     if relevant_docs:
@@ -606,15 +594,6 @@ async def upload_templates(
     import io
 
     try:
-        # Templates and style dossiers require embeddings and generation
-        op_key = os.getenv("OPENAI_API_KEY", "")
-        anth_key = os.getenv("ANTHROPIC_API_KEY", "")
-        
-        if not op_key:
-            raise HTTPException(status_code=400, detail="OPENAI_API_KEY não configurada")
-        if not anth_key:
-            raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY não configurada")
-
         # Convert UploadFiles into file-like objects
         file_objects = []
         for f in files:
@@ -624,16 +603,16 @@ async def upload_templates(
             buf.seek(0)
             file_objects.append(buf)
 
-        # 1. Index in ChromaDB (persistent) -> Uses Embeddings (OpenAI)
+        # 1. Index in ChromaDB (persistent) -> Uses Azure OpenAI Embeddings
         collection_name = "rag_templates_persistent"
-        retriever, docs = be.process_templates(file_objects, op_key, collection_name=collection_name)
+        retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name)
         indexed_count = len(docs) if docs else 0
 
-        # 2. Auto-generate style dossier (cached) -> Uses Core Text Generation (Anthropic)
+        # 2. Auto-generate style dossier (cached) -> Uses Azure OpenAI
         # Reset file positions for re-read
         for f in file_objects:
             f.seek(0)
-        dossier_result = be.generate_style_dossier(file_objects, anth_key)
+        dossier_result = be.generate_style_dossier(file_objects, None)
         has_dossier = bool(dossier_result and not dossier_result.get("error"))
 
         return {
@@ -655,9 +634,9 @@ async def upload_templates(
 async def templates_status():
     """Check how many templates are indexed in the persistent RAG."""
     try:
-        api_key = os.getenv("OPENAI_API_KEY", "")
         count = 0
-        if api_key:
+        azure_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+        if azure_key:
             persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
             if os.path.exists(persist_dir):
                 try:

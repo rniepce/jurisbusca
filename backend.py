@@ -668,9 +668,9 @@ def generate_style_dossier(template_files, api_key):
         print(f"✅ Dossiê de estilo recuperado do cache (key: {cache_key[:8]}...)")
         return _style_dossier_cache[cache_key]
     
-    if not HAS_ANTHROPIC:
-        print("⚠️ Anthropic não instalado. Dossiê de estilo (Claude) indisponível.")
-        return {"error": "Anthropic não instalado. Dossiê de estilo não disponível."}
+    if not HAS_AZURE_OPENAI:
+        print("⚠️ Azure OpenAI não instalado. Dossiê de estilo indisponível.")
+        return {"error": "Azure OpenAI não instalado. Dossiê de estilo não disponível."}
     
     try:
         print("🧬 Gerando Dossiê de Identidade Decisional (5 Pilares)...")
@@ -847,17 +847,14 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
     style_dossier = None
     
     if template_files:
-        # Define API Key para Embeddings (Google)
-        rag_key = main_llm_config['key'] if main_llm_config['provider'] == 'google' else (google_key or os.getenv("GOOGLE_API_KEY"))
-        
-        # 1. Gerar Dossiê de Estilo Forense (cacheado)
+        # 1. Gerar Dossiê de Estilo Forense (cacheado) — usa Azure OpenAI internamente
         update("🧬 Gerando Dossiê de Identidade Decisional (5 Pilares)...")
-        style_dossier = generate_style_dossier(template_files, rag_key)
+        style_dossier = generate_style_dossier(template_files, None)
         style_report = style_dossier.get('dossier') if style_dossier else None
         
         # 2. Retrieve Mirror Context (agora com dossiê integrado)
         update("📚 Localizando Caso Espelho (Golden Sample)...")
-        rag_context = retrieve_mirror_context(text, rag_key, template_files, style_dossier=style_dossier)
+        rag_context = retrieve_mirror_context(text, None, template_files, style_dossier=style_dossier)
 
     update(f"🧠 Iniciando Análise Profunda ({main_llm_config['model']})...")
 
@@ -926,15 +923,8 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
     
     # --- REFLEXION LOOP (ACTIVE AUDITOR) ---
     update("🛡️ Rodando Auditoria Ativa (Verificando Alucinações)...")
-    # Usa a chave google disponível (preferência pela do main_llm se for google)
-    reflexion_key = main_llm_config['key'] if main_llm_config['provider'] == 'google' else (google_key or os.getenv("GOOGLE_API_KEY"))
-    
-    if reflexion_key:
-         # Loop de autocorreção
-         final_output, audit_log = run_reflexion_loop(integral_response, text, reflexion_key)
-    else:
-         final_output = integral_response
-         audit_log = "Auditoria ignorada (Sem chave Google)"
+    # run_reflexion_loop agora usa get_llm() internamente (Azure)
+    final_output, audit_log = run_reflexion_loop(integral_response, text, None)
     
     return {
         "final_report": final_output,
@@ -1073,23 +1063,15 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
     """
     documents = []
     
-    if not HAS_GEMINI:
-        print("Aviso: Google Generative AI não instalado. Pulando processamento de templates.")
-        return None, []
-
-    # Inicializa Hybrid Semantic Chunker
-    # Tenta usar OpenAI key se disponível (melhor qualidade), senão Google
-    # Como process_templates recebe apenas 'api_key' (que é google por padrão no código legado),
-    # vamos tentar inferir ou usar variável de ambiente.
-    openai_key = os.getenv("OPENAI_API_KEY")
-    
+    # Inicializa Hybrid Semantic Chunker (usa Azure OpenAI Embeddings)
     chunker = None
-    if openai_key:
-         print("Using OpenAI Embeddings for Chunking")
-         chunker = HybridSemanticChunker(api_key=openai_key, provider="openai")
-    else:
-         print("Using Google Embeddings for Chunking")
-         chunker = HybridSemanticChunker(api_key=api_key, provider="google")
+    if HybridSemanticChunker:
+        try:
+            print("Using Azure OpenAI Embeddings for Chunking")
+            chunker = HybridSemanticChunker(provider="azure")
+        except Exception as e:
+            print(f"⚠️ Erro ao inicializar chunker: {e}")
+            chunker = None
 
     # Fallback splitter if chunker fails to init
     fallback_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -1136,8 +1118,8 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
     if not documents:
         return None, []
 
-    # Embeddings e Vector Store (PERSISTENTE)
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
+    # Embeddings e Vector Store (PERSISTENTE) — Azure OpenAI
+    embeddings = get_embedding_function()
     
     # Define caminho persistente (Railway Volume ou Local)
     # No Railway, defina CHROMA_DB_PATH como variável de ambiente apontando para o volume (ex: /app/data)
@@ -1169,15 +1151,15 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
     # Retorna o retriever e os docs para análise de estilo imediata
     return vectorstore.as_retriever(search_kwargs={"k": 5}), documents
 
-def load_persistent_rag(api_key, collection_name="rag_templates_persistent"):
+def load_persistent_rag(api_key=None, collection_name="rag_templates_persistent"):
     """
     Tenta carregar o banco de dados persistente (se existir).
+    Usa Azure OpenAI Embeddings.
     """
     try:
-        if not HAS_GEMINI: return None
         persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
         if os.path.exists(persist_dir):
-            embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
+            embeddings = get_embedding_function()
             vectorstore = Chroma(
                 persist_directory=persist_dir, 
                 embedding_function=embeddings,
@@ -1269,22 +1251,13 @@ def process_batch(files, api_key):
 
 from prompts_claude import PROMPT_XRAY_MAP, PROMPT_XRAY_BATCH
 
-def map_process_individual(text_content, filename, api_key):
+def map_process_individual(text_content, filename, api_key=None):
     """
     ETAPA MAP: Analisa um único processo e retorna JSON estruturado.
-    Usa GPT-4o-mini para rapidez e custo baixíssimo nesta triagem massiva paralela.
+    Usa GPT-4.1-mini (Azure) para rapidez e custo baixíssimo nesta triagem massiva paralela.
     """
-    # Usaremos ChatOpenAI com gpt-4o-mini no lugar do antigo Gemini Flash
     try:
-        from langchain_openai import ChatOpenAI
-        
-        # Pega a chave da OpenAI injetada no backend (pode vir no api_key dict se ajustado ou buscar environ)
-        openai_key = api_key if isinstance(api_key, str) and api_key.startswith("sk-") else os.getenv("OPENAI_API_KEY")
-        
-        if not openai_key:
-            return {"filename": filename, "error": "Falta OPENAI_API_KEY para mapeamento O-mini", "tags_juridicas": ["ERRO"]}
-
-        llm = ChatOpenAI(model="gpt-4o-mini", api_key=openai_key, temperature=0.1)
+        llm = get_llm("gpt-4.1-mini", temperature=0.1)
         
         # Força strict JSON no prompt
         map_prompt = PROMPT_XRAY_MAP + "\n\nCRÍTICO: Retorne APENAS UM JSON (Strict JSON). Nenhuma palavra fora das chaves {}."
@@ -1302,22 +1275,13 @@ def map_process_individual(text_content, filename, api_key):
         return data
         
     except Exception as e:
-        print(f"Falha total no Map de {filename} com gpt-4o-mini. Erro: {e}")
+        print(f"Falha total no Map de {filename} com gpt-4.1-mini (Azure). Erro: {e}")
         return {
             "filename": filename, 
-            "error": f"Falha na leitura (GPT-4o-mini). Err: {str(e)}", 
+            "error": f"Falha na leitura (GPT-4.1-mini). Err: {str(e)}", 
             "sintese_fatos": "Erro de leitura estruturada", 
             "tags_juridicas": ["ERRO"]
         }
-    
-    # Se saiu do loop, falhou em todos
-    print(f"Falha total no Map de {filename}. Último erro: {last_error}")
-    return {
-        "filename": filename, 
-        "error": f"Falha na leitura (Modelos Esgotados). Err: {str(last_error)}", 
-        "sintese_fatos": "Erro de leitura", 
-        "tags_juridicas": ["ERRO"]
-    }
 
 def generate_batch_xray(files, api_key, template_files=None):
     """
