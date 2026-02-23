@@ -78,7 +78,7 @@ Utilize estas fontes como regra absoluta:
 **Passos:** 1) Preliminar de Vinculação (Arq. B/C); 2) Síntese Analítica; 3) Laudo Fático-Probatório; 4) Honorários Dativos; 5) Esqueleto de Decisão (aguardar direcionamento do usuário).
 
 ### ETAPA 3: ELABORAÇÃO DA MINUTA
-*(Inicia-se APÓS o usuário validar o relatório e autorizar a redação).*
+*(Inicia-se AUTOMATICAMENTE após a análise do processo. Execute na mesma resposta.)*
 
 **[⚠️ GATILHO ANTI-ALUCINAÇÃO]: O que não está expressamente escrito e provado nos autos, NÃO EXISTE. É proibido inventar dados processuais. Se faltar um dado fático, escreva `[DADO AUSENTE]`.**
 
@@ -99,9 +99,6 @@ Inicie sempre com:
 
 **OPÇÃO A (Rota 1):** Dados Básicos + Checklist de Validação + Diagnóstico e Recomendação.
 **OPÇÃO B (Rota 2/3):** Status [🔴/🟢] + Alerta de Uniformização + Análise do Fluxo + Conclusão + Próximo Passo.
-
-## 7. PROTOCOLO DE RECEBIMENTO (SANDUÍCHE)
-Aguarde os autos no formato: [COMANDO INICIAL] + [AUTOS] + [COMANDO REPETIDO].
 
 ## DADOS DO PROCESSO:
 """
