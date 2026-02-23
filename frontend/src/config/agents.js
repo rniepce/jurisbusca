@@ -9,7 +9,14 @@ const agents = [
         color: '#4F46E5',
         promptModule: () => import('../prompts/gabineteCivel.js'),
     },
-    // Futuros agentes serão adicionados aqui pelo usuário
+    {
+        id: 'auditor-qa',
+        icon: 'FaSearchCheck',
+        name: 'Revisor (QA)',
+        desc: 'Auditor de conformidade fática e eficiência em minutas',
+        color: '#10B981',
+        promptModule: () => import('../prompts/auditorQA.js'),
+    }
 ];
 
 export default agents;
