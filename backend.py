@@ -1171,7 +1171,25 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
     )
     
     # Adiciona os novos documentos
-    vectorstore.add_documents(documents)
+    # Adiciona os novos documentos EM LOTES (evita 429 rate limit do Azure)
+    import time as _time
+    BATCH_SIZE = 5
+    for i in range(0, len(documents), BATCH_SIZE):
+        batch = documents[i:i + BATCH_SIZE]
+        for attempt in range(4):
+            try:
+                vectorstore.add_documents(batch)
+                break
+            except Exception as e:
+                if "429" in str(e) and attempt < 3:
+                    wait = 2 ** (attempt + 1)  # 2s, 4s, 8s
+                    print(f"⏳ Rate limit (429). Aguardando {wait}s antes de tentar novamente...")
+                    _time.sleep(wait)
+                else:
+                    raise
+        # Small delay between batches to stay under rate limit
+        if i + BATCH_SIZE < len(documents):
+            _time.sleep(1.5)
     
     # Retorna o retriever e os docs para análise de estilo imediata
     return vectorstore.as_retriever(search_kwargs={"k": 5}), documents
