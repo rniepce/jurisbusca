@@ -212,7 +212,11 @@ async def chat(req: ChatRequest, request: Request):
                 )
         elif req.uploaded_text:
             system_parts.append(
-                f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
+                f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL — TEXTO INTEGRAL EXTRAÍDO VIA OCR):**\n"
+                f"⚠️ ATENÇÃO: O texto abaixo foi extraído automaticamente de um PDF via OCR. "
+                f"Este É o conteúdo completo do documento/processo judicial. NÃO solicite o envio do arquivo — "
+                f"ele já está aqui em formato texto. Analise este conteúdo diretamente.\n\n"
+                f"{req.uploaded_text}\n---"
             )
         if req.style_dossier:
             system_parts.append(
