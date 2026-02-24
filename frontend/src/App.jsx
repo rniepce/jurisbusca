@@ -39,14 +39,17 @@ function App() {
   // ── Send message handler ────────────────────────────────────────────
   const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles, useRag = false) => {
     // Use a default prompt if user sends empty message but has context
-    const effectiveMessage = message.trim() ||
+    const userTyped = message.trim();
+    const effectiveMessage = userTyped ||
       (uploadedText && activeAgent ? 'Analise o documento anexado conforme as instruções do agente.' :
         uploadedText ? 'Analise o documento anexado.' : '');
     if (!effectiveMessage) return;
 
-    // 1. Add user message immediately
-    const userMsg = { role: 'user', content: effectiveMessage };
-    setMessages((prev) => [...prev, userMsg]);
+    // 1. Add user message immediately (hide auto-generated messages)
+    if (userTyped) {
+      const userMsg = { role: 'user', content: userTyped };
+      setMessages((prev) => [...prev, userMsg]);
+    }
     setIsLoading(true);
 
     try {
