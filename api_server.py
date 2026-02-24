@@ -143,7 +143,18 @@ async def chat(req: ChatRequest, request: Request):
         azure_key = request.headers.get("X-Azure-Key", "").strip() or None
 
         # Build the LLM instance via Azure OpenAI
-        llm = be.get_llm(model_name=model_name, temperature=0.3, api_key=azure_key)
+        # Serverless models (Kimi, DeepSeek) can fail — fallback to GPT-5.2
+        SERVERLESS_MODELS = {"DeepSeek-V3.2-Speciale", "Kimi-K2.5"}
+        original_model = model_name
+        try:
+            llm = be.get_llm(model_name=model_name, temperature=0.3, api_key=azure_key)
+            # Quick validation: if it's a serverless model, test connectivity
+            if model_name in SERVERLESS_MODELS:
+                print(f"✅ LLM instanciado: {model_name} (serverless)")
+        except Exception as llm_err:
+            print(f"⚠️ Falha ao instanciar {model_name}: {llm_err}. Fallback para gpt-5.2-chat.")
+            model_name = "gpt-5.2-chat"
+            llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
 
         conv_id = req.conversation_id or str(uuid.uuid4())
 
@@ -387,9 +398,23 @@ async def chat(req: ChatRequest, request: Request):
             else:
                 response_text = "Erro: V3 Engine (run_autonomous_magistrate) não foi importada. Verifique se langgraph está instalado."
         else:
-            # Default V1 - just invoke LLM (Chat-based logic)
-            response = llm.invoke(messages)
-            response_text = be.safe_content(response)
+            # Default V0/V1 - just invoke LLM (Chat-based logic)
+            try:
+                response = llm.invoke(messages)
+                response_text = be.safe_content(response)
+            except Exception as invoke_err:
+                # If a serverless model (Kimi/DeepSeek) fails at invocation, retry with GPT-5.2
+                if original_model in SERVERLESS_MODELS:
+                    print(f"⚠️ {original_model} invoke falhou: {invoke_err}. Retrying com GPT-5.2.")
+                    try:
+                        fallback_llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
+                        response = fallback_llm.invoke(messages)
+                        response_text = f"{be.safe_content(response)}\n\n---\n⚠️ *Modelo {original_model} indisponível. Resultado gerado por GPT-5.2.*"
+                        model_name = "gpt-5.2-chat"
+                    except Exception as fb_err:
+                        response_text = f"⚠️ **Erro:** {original_model} falhou ({str(invoke_err)[:150]}). Fallback GPT-5.2 também falhou: {str(fb_err)[:150]}"
+                else:
+                    raise invoke_err
 
         # Persist assistant turn in history (in-memory)
         conversations_fallback[conv_id].append({"role": "assistant", "content": response_text})
