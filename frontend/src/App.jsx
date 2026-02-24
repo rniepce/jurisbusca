@@ -82,12 +82,14 @@ function App() {
       // Files are already processed by handleFilesUploaded (auto-OCR),
       // so we just use the uploadedText that was populated earlier.
 
-      // 2. Load agent prompt if active (version-aware: V0 uses 4.5, V1+ uses 4.6)
+      // 2. Load agent prompt — Gabinete engines auto-load their prompt
       let agentPrompt = null;
+      const engineId = selectedModel.id;
+
       if (activeAgent?.promptModule) {
+        // Agent explicitly selected from sidebar
         try {
-          // Check if V0 is selected — use the V4.5 prompt instead
-          if (selectedModel.id === 'v0') {
+          if (engineId === 'v0') {
             const mod = await import('./prompts/gabineteCivelV0.js');
             agentPrompt = mod.default || null;
           } else {
@@ -96,6 +98,19 @@ function App() {
           }
         } catch {
           console.warn('Could not load agent prompt');
+        }
+      } else if (['v0', 'v1', 'v2'].includes(engineId)) {
+        // No agent selected but engine is Gabinete — auto-load prompt
+        try {
+          if (engineId === 'v0') {
+            const mod = await import('./prompts/gabineteCivelV0.js');
+            agentPrompt = mod.default || null;
+          } else {
+            const mod = await import('./prompts/gabineteCivel.js');
+            agentPrompt = mod.default || null;
+          }
+        } catch {
+          console.warn('Could not auto-load Gabinete prompt');
         }
       }
 
