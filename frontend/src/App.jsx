@@ -263,7 +263,8 @@ function App() {
   // ── Files uploaded → run OCR immediately ─────────────────────────────
   const handleFilesUploaded = useCallback(async (files, ocrEngine, compress = true) => {
     if (files.length === 0) return [];
-    setOcrProcessing(true);
+    // Show OCR animation only when actually running OCR (not for 'Sem OCR')
+    if (ocrEngine !== 'none') setOcrProcessing(true);
 
     try {
       const uploadPromises = files.map((f) => uploadFile(f, ocrEngine, compress));
