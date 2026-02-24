@@ -235,6 +235,9 @@ def clean_text(text: str) -> str:
     """
     if not text or not isinstance(text, str):
         return ""
+    
+    original_text = text
+    original_len = len(text)
         
     # 1. Normalização de quebras de linha
     text = text.replace('\r', '')
@@ -269,7 +272,17 @@ def clean_text(text: str) -> str:
     # Limita múltiplas quebras de linha a no máximo duas
     text = re.sub(r'\n{3,}', '\n\n', text)
     
-    return text.strip()
+    cleaned = text.strip()
+    
+    # Safety check: if cleaning removed more than 80% of content,
+    # fall back to minimal cleaning to avoid stripping substantive text
+    if original_len > 100 and len(cleaned) < original_len * 0.2:
+        # Minimal cleaning: only whitespace normalization
+        minimal = re.sub(r'[ \t]+', ' ', original_text)
+        minimal = re.sub(r'\n{3,}', '\n\n', minimal)
+        return minimal.strip()
+    
+    return cleaned
 
 def get_embedding_function(api_key=None):
     """

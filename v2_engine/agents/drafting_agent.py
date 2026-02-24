@@ -60,15 +60,12 @@ def search_templates_database(query: str) -> str:
         """
     return "Nenhum modelo encontrado para esta pesquisa. Proceda utilizando o template padrão alinhado ao estilo do relatório."
 
-def run_drafting_agent(triage_report: str, api_key: str) -> str:
+def run_drafting_agent(triage_report: str, api_key: str = None) -> str:
     """
-    Agente de Redação (Stage 2) - Powered by Claude 4.6 Sonnet
+    Agente de Redação (Stage 2) - Powered by Azure OpenAI (GPT-5.2)
     Busca modelos e escreve a minuta.
     """
     try:
-        if not api_key:
-            return "Erro: Chave Anthropic não encontrada."
-
         llm = be.get_llm("gpt-5.2-chat", temperature=0.3)
         
         tools = [search_templates_database]

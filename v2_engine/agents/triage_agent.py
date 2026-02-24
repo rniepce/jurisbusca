@@ -113,14 +113,11 @@ Sua primeira resposta deve ser **exclusivamente** o resultado da **ETAPA 1 (Tria
 
 """
 
-def run_triage_agent(process_text: str, api_key: str, knowledge_base: str = "") -> str:
+def run_triage_agent(process_text: str, api_key: str = None, knowledge_base: str = "") -> str:
     """
-    Agente de Triagem (Stage 1) - Powered by Claude 4.6 Sonnet
+    Agente de Triagem (Stage 1) - Powered by Azure OpenAI (GPT-5.2)
     """
     try:
-        if not api_key:
-            return "Erro: Chave Anthropic não encontrada."
-
         llm = be.get_llm("gpt-5.2-chat", temperature=0.1)
         
         formatted_prompt = PROMPT_TRIAGE_AGENT.format(

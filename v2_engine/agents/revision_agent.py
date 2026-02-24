@@ -82,15 +82,12 @@ Sua resposta deve seguir estritamente a estrutura de blocos abaixo:
 > 1. *[Colar citação 1]*
 """
 
-def run_revision_agent(triage_report: str, draft_text: str, api_key: str, knowledge_base: str = "") -> str:
+def run_revision_agent(triage_report: str, draft_text: str, api_key: str = None, knowledge_base: str = "") -> str:
     """
-    Agente Revisor (Stage 3) - Powered by Claude 4.6 Sonnet
+    Agente Revisor (Stage 3) - Powered by Azure OpenAI (GPT-5.2)
     Gera o dashboard de QA Visual.
     """
     try:
-        if not api_key:
-            return "Erro: Chave Anthropic não encontrada."
-
         llm = be.get_llm("gpt-5.2-chat", temperature=0.1)
         
         system_message = SystemMessage(content=PROMPT_REVISION_AGENT)

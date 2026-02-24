@@ -42,10 +42,9 @@ def node_kimi_reader(state: MagistrateState):
     """
     EXPERT 1: O Investigador (Kimi K2.5)
     Lê os autos massivos e extrai o suprassumo fático.
+    Falls back to GPT-5.2 if Kimi is unavailable.
     """
-    llm = be.get_llm(model_name="Kimi-K2.5", temperature=0.0)
-    
-    sys_prompt = """Você é um Investigador Jurídico Senior com memória massiva (Kimi).
+    sys_prompt = """Você é um Investigador Jurídico Senior com memória massiva.
 Sua missão é ler centenas de páginas de um processo judicial e extrair APENAS os fatos relevantes, os pedidos do autor e as defesas/contestações do réu.
 NÃO julgue o mérito. NÃO elabore fundamentação legal. 
 Crie um resumo hiper-denso, cronológico e preciso (com datas e valores) para que o Juiz Relator possa decidir depois.
@@ -55,13 +54,28 @@ Formate com markdown claro, usando tópicos: "1. Fatos Principais", "2. Pedidos 
         SystemMessage(content=sys_prompt),
         HumanMessage(content=f"AUTOS TOTAIS DO PROCESSO:\n{state['raw_text']}")
     ]
-    
-    response = llm.invoke(messages)
+
+    # Try Kimi first, fallback to GPT-5.2
+    model_used = "Kimi-K2.5"
+    try:
+        llm = be.get_llm(model_name="Kimi-K2.5", temperature=0.0)
+        response = llm.invoke(messages)
+    except Exception as e:
+        model_used = "gpt-5.2-chat (fallback)"
+        try:
+            llm = be.get_llm(model_name="gpt-5.2-chat")
+            response = llm.invoke(messages)
+        except Exception as e2:
+            return {
+                "condensed_facts": f"[ERRO NA LEITURA] Kimi: {str(e)[:200]} | GPT fallback: {str(e2)[:200]}",
+                "logs": state["logs"] + [f"❌ [Reader] Erro em ambos modelos: {str(e)[:100]}"]
+            }
+
     condensed = be.safe_content(response)
     
     return {
         "condensed_facts": condensed,
-        "logs": state["logs"] + ["🦊 [Kimi K2.5] Investigação concluída. Fatos extraídos da massa de dados."]
+        "logs": state["logs"] + [f"🦊 [{model_used}] Investigação concluída. Fatos extraídos da massa de dados."]
     }
 
 
@@ -69,18 +83,14 @@ def node_deepseek_reasoner(state: MagistrateState):
     """
     EXPERT 2: O Juiz Relator (DeepSeek V3.2)
     Recebe os fatos resumidos e pensa a decisão. Pode usar o REPL para cálculos.
+    Falls back to GPT-5.2 if DeepSeek is unavailable.
     """
-    llm = be.get_llm(model_name="DeepSeek-V3.2-Speciale", temperature=0.1)
-    
     @tool
     def run_python_code(code: str) -> str:
         """Executa scripts Python. Acesse o texto cru do processo via variavel 'text'."""
         pass
-        
-    llm_with_tools = llm.bind_tools([run_python_code])
-
-    if not state["messages"]:
-        sys_prompt = f"""Você é um Juiz Relator brilhante (DeepSeek V3.2), mestre em raciocínio lógico forense.
+    
+    sys_prompt_text = f"""Você é um Juiz Relator brilhante, mestre em raciocínio lógico forense.
 Sua missão é ler o resumo fático abaixo, proferir o julgamento e escrever a fundamentação/decisão.
 
 **Fatos Condensados (Previamente extraídos por seu assistente):**
@@ -88,24 +98,44 @@ Sua missão é ler o resumo fático abaixo, proferir o julgamento e escrever a f
 
 Se você precisar validar alguma data específica, cruzar valores monetários, liquidar sentenças, ou fazer buscas exatas (regex) no amontoado caótico original, use a ferramenta 'run_python_code'.
 Não gere a minuta em JSON final, apenas redija o VOTO / DECISÃO DE FORMA CLARA E LÓGICA."""
-        
-        knowledge_section = "\n\n# JURISPRUDÊNCIA LOCAL\n" + KNOWLEDGE_BASE if KNOWLEDGE_BASE else ""
-        sys_msg = SystemMessage(content=sys_prompt + knowledge_section)
-        
-        messages = [sys_msg, HumanMessage(content="Use sua perícia lógica para julgar estes fatos. Se precisar do texto cru das folhas, use o Python.")]
-    else:
-        messages = state["messages"]
 
-    response = llm_with_tools.invoke(messages)
-    
-    # Se a resposta nao for tool call (decisão finalizada pelo DeepSeek)
+    knowledge_section = "\n\n# JURISPRUDÊNCIA LOCAL\n" + KNOWLEDGE_BASE if KNOWLEDGE_BASE else ""
+
+    model_used = "DeepSeek-V3.2-Speciale"
+    try:
+        llm = be.get_llm(model_name="DeepSeek-V3.2-Speciale", temperature=0.1)
+        llm_with_tools = llm.bind_tools([run_python_code])
+
+        if not state["messages"]:
+            sys_msg = SystemMessage(content=sys_prompt_text + knowledge_section)
+            messages = [sys_msg, HumanMessage(content="Use sua perícia lógica para julgar estes fatos. Se precisar do texto cru das folhas, use o Python.")]
+        else:
+            messages = state["messages"]
+
+        response = llm_with_tools.invoke(messages)
+    except Exception as e:
+        model_used = "gpt-5.2-chat (fallback)"
+        try:
+            llm = be.get_llm(model_name="gpt-5.2-chat")
+            sys_msg = SystemMessage(content=sys_prompt_text + knowledge_section)
+            messages = [sys_msg, HumanMessage(content="Use sua perícia lógica para julgar estes fatos.")]
+            response = llm.invoke(messages)
+        except Exception as e2:
+            return {
+                "messages": state["messages"] + [AIMessage(content=f"[ERRO] DeepSeek: {str(e)[:200]} | GPT fallback: {str(e2)[:200]}")],
+                "iterations": state["iterations"] + 1,
+                "draft_decision": f"[ERRO NO RACIOCÍNIO] {str(e)[:200]}",
+                "logs": state["logs"] + [f"❌ [Reasoner] Erro em ambos modelos: {str(e)[:100]}"]
+            }
+
+    # Se a resposta nao for tool call (decisão finalizada)
     draft = be.safe_content(response) if not hasattr(response, "tool_calls") or not response.tool_calls else state.get("draft_decision", "")
 
     return {
         "messages": messages + [response],
         "iterations": state["iterations"] + 1,
         "draft_decision": draft,
-        "logs": state["logs"] + ["🐉 [DeepSeek V3.2] Deliberou o mérito / raciocínio lógico."]
+        "logs": state["logs"] + [f"🐉 [{model_used}] Deliberou o mérito / raciocínio lógico."]
     }
 
 def node_computer(state: MagistrateState):
