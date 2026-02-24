@@ -6,7 +6,7 @@ import ChatArea from './components/ChatArea';
 import ChatInput from './components/ChatInput';
 import XRayDashboard from './components/XRayDashboard';
 import BatchPanel from './components/BatchPanel';
-import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster } from './services/api';
+import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, uploadTemplates } from './services/api';
 import agentDefinitions from './config/agents';
 import './App.css';
 
@@ -27,7 +27,7 @@ function App() {
   const [ragStatus, setRagStatus] = useState(null);
   const [batchResults, setBatchResults] = useState([]);
   const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
-  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'v0', name: 'Gabinete V0 (Prompt 4.5)', color: '#10B981' }); // Provides fallback
+  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'v0', name: 'Gabinete V0', color: '#10B981', llm: 'gpt-5.2-chat' });
 
   // Fetch template/RAG status on mount
   useEffect(() => {
@@ -50,6 +50,16 @@ function App() {
     setIsLoading(true);
 
     try {
+      // ── Auto-index templates in ChromaDB if not yet indexed ──
+      if (templateFiles && templateFiles.length > 0 && (!ragStatus || ragStatus.indexed_chunks === 0)) {
+        try {
+          const indexResult = await uploadTemplates(templateFiles);
+          setRagStatus({ indexed_chunks: indexResult.indexed_chunks, has_dossier: indexResult.has_dossier });
+        } catch (err) {
+          console.warn('Auto-indexing templates failed:', err.message);
+        }
+      }
+
       // ── Auto-generate style dossier if templates loaded but not yet analyzed ──
       let currentStyleDossier = styleDossier;
       if (templateFiles && templateFiles.length > 0 && !currentStyleDossier) {
@@ -103,6 +113,7 @@ function App() {
       const result = await sendMessage({
         message: effectiveMessage,
         model: selectedModel.id,
+        llm: selectedModel.llm || null,
         agentPrompt,
         conversationId,
         uploadedText,
@@ -134,7 +145,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeAgent, conversationId, uploadedText, styleDossier]);
+  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus]);
 
   // ── X-Ray handler (batch clustering) ────────────────────────────────
   const handleXray = useCallback(async (files) => {
@@ -187,8 +198,8 @@ function App() {
     ]);
 
     try {
-      // Usa o globalSelectedModel que veio do ChatInput
-      const result = await analyzeCluster(processes, activeAgent?.prompt || '', globalSelectedModel.id);
+      // Usa o globalSelectedModel que veio do ChatInput (incluindo engine e llm)
+      const result = await analyzeCluster(processes, activeAgent?.prompt || '', globalSelectedModel.id, globalSelectedModel.llm);
 
       // Add each individual result as a separate message
       const resultMessages = result.results.map((r) => {
@@ -302,9 +313,59 @@ function App() {
       agentDesc: agent.desc,
       agentColor: agent.color,
       agentIcon: agent.icon,
+      autoAction: agent.autoAction || null,
     };
     setMessages((prev) => [...prev, activationMsg]);
   }, []);
+
+  // ── Auto-review handler (Revisor QA) ────────────────────────────────
+  const handleAutoReview = useCallback(async (activationMsg) => {
+    // 1. Find the last substantial assistant message (the minuta)
+    const assistantMsgs = messages.filter(
+      (m) => m.role === 'assistant' && m.content && m.content.length > 100
+    );
+    const lastMinuta = assistantMsgs.length > 0 ? assistantMsgs[assistantMsgs.length - 1] : null;
+
+    if (!lastMinuta) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '🛑 **Nenhuma minuta encontrada no chat.** Primeiro, use o agente Gabinete para gerar uma minuta. Depois, ative o Revisor (QA) para auditá-la.',
+          model: 'sistema',
+        },
+      ]);
+      return;
+    }
+
+    if (!uploadedText) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '🛑 **Nenhum processo carregado.** Faça o upload do processo (PDF/DOCX) para que o Revisor possa cruzar os fatos com a minuta.',
+          model: 'sistema',
+        },
+      ]);
+      return;
+    }
+
+    // 2. Build the "sandwich" audit message
+    const auditMessage = [
+      'Execute a auditoria de conformidade cruzando os textos abaixo.',
+      '',
+      '[DADOS DO PROCESSO]:',
+      uploadedText,
+      '',
+      '[MINUTA PROPOSTA]:',
+      lastMinuta.content,
+      '',
+      'Execute a auditoria de conformidade cruzando os textos acima. Gere o Dashboard de Conformidade completo.',
+    ].join('\n');
+
+    // 3. Send using the current active agent (QA) and selected model
+    await handleSend(auditMessage, globalSelectedModel, [], 'paddle', [], false);
+  }, [messages, uploadedText, handleSend, globalSelectedModel]);
 
   // ── New chat handler — saves current conversation to history ────────
   const handleNewChat = useCallback(() => {
@@ -411,6 +472,7 @@ function App() {
           activeAgent={activeAgent}
           ocrProcessing={ocrProcessing}
           styleAnalyzing={styleAnalyzing}
+          onAutoAction={handleAutoReview}
         />
       );
     }

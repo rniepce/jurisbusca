@@ -11,11 +11,16 @@ const agents = [
     },
     {
         id: 'auditor-qa',
-        icon: 'FaSearchCheck',
+        icon: 'FaClipboardCheck',
         name: 'Revisor (QA)',
         desc: 'Auditor de conformidade fática e eficiência em minutas',
         color: '#10B981',
         promptModule: () => import('../prompts/auditorQA.js'),
+        autoAction: {
+            label: '🔍 Revisar Minuta',
+            requiresMinuta: true,
+            requiresUploadedText: true,
+        },
     }
 ];
 

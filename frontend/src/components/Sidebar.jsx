@@ -3,7 +3,7 @@ import {
     FaPlus, FaGear, FaCircleUser,
     FaChevronDown, FaChevronRight,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
-    FaBookOpen, FaPenNib, FaComments
+    FaBookOpen, FaPenNib, FaComments, FaClipboardCheck
 } from 'react-icons/fa6';
 import './Sidebar.css';
 import agentDefinitions from '../config/agents';
@@ -15,6 +15,7 @@ const iconMap = {
     FaMagnifyingGlass: <FaMagnifyingGlass />,
     FaBookOpen: <FaBookOpen />,
     FaPenNib: <FaPenNib />,
+    FaClipboardCheck: <FaClipboardCheck />,
 };
 
 const Sidebar = ({ isOpen, history = [], activeAgent, onAgentSelect, onNewChat, onLoadChat }) => {

@@ -5,99 +5,114 @@ from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 # Import internal tools
-# Adjust import path based on execution context if needed
 try:
     from .tools.legal_repl import LegalREPL
 except ImportError:
     from tools.legal_repl import LegalREPL
 
-# Import Prompts
-# Both variables now correctly exported from prompts_magistrate_v3.py (typo ROMPT_ -> PROMPT_ fixed)
+# Import Prompts 
 from prompts_magistrate_v3 import PROMPT_V3_MAGISTRATE_CORE, PROMPT_V3_HYBRID_FALLBACK
 from knowledge_base_loader import KNOWLEDGE_BASE
 
 # Internal Imports for LLM
-from langchain_openai import ChatOpenAI, AzureChatOpenAI
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
+import backend as be
 
-# Define State
+# ─── STATE DEFINITION ────────────────────────────────────────────────────────
+
 class MagistrateState(TypedDict):
     raw_text: str
     keys: Dict[str, str]
-    repl_tool: LegalREPL # Object, not serializable usually, but fine for in-mem graph
+    repl_tool: LegalREPL
     
-    # Conversation
-    messages: List[any] # Chat history
-    iterations: int
+    # State evolution through MoE
+    condensed_facts: str
+    draft_decision: str
     final_json: dict
+    
+    # Tool looping for DeepSeek
+    messages: List[any] 
+    iterations: int
     logs: List[str]
 
-# --- NODES ---
+# ─── NODES (MIXTURE OF EXPERTS) ────────────────────────────────────────────────
 
-def node_magistrate(state: MagistrateState):
+def node_kimi_reader(state: MagistrateState):
     """
-    The Brain. Decides whether to use Code Tool or Finalize.
+    EXPERT 1: O Investigador (Kimi K2.5)
+    Lê os autos massivos e extrai o suprassumo fático.
     """
-    # Use Azure OpenAI GPT-5.2-chat
-    azure_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.2-chat")
+    llm = be.get_llm(model_name="Kimi-K2.5", temperature=0.0)
     
-    if not azure_key or not azure_endpoint:
-        return {"logs": state["logs"] + ["❌ Azure OpenAI not configured (AZURE_OPENAI_API_KEY / AZURE_OPENAI_ENDPOINT)."]}
+    sys_prompt = """Você é um Investigador Jurídico Senior com memória massiva (Kimi).
+Sua missão é ler centenas de páginas de um processo judicial e extrair APENAS os fatos relevantes, os pedidos do autor e as defesas/contestações do réu.
+NÃO julgue o mérito. NÃO elabore fundamentação legal. 
+Crie um resumo hiper-denso, cronológico e preciso (com datas e valores) para que o Juiz Relator possa decidir depois.
+Formate com markdown claro, usando tópicos: "1. Fatos Principais", "2. Pedidos Iniciais", "3. Teses da Defesa"."""
 
-    llm = AzureChatOpenAI(
-        azure_deployment=deployment,
-        azure_endpoint=azure_endpoint,
-        api_key=azure_key,
-        api_version="2024-12-01-preview",
-    )
+    messages = [
+        SystemMessage(content=sys_prompt),
+        HumanMessage(content=f"AUTOS TOTAIS DO PROCESSO:\n{state['raw_text']}")
+    ]
+    
+    response = llm.invoke(messages)
+    condensed = be.safe_content(response)
+    
+    return {
+        "condensed_facts": condensed,
+        "logs": state["logs"] + ["🦊 [Kimi K2.5] Investigação concluída. Fatos extraídos da massa de dados."]
+    }
 
+
+def node_deepseek_reasoner(state: MagistrateState):
+    """
+    EXPERT 2: O Juiz Relator (DeepSeek V3.2)
+    Recebe os fatos resumidos e pensa a decisão. Pode usar o REPL para cálculos.
+    """
+    llm = be.get_llm(model_name="DeepSeek-V3.2-Speciale", temperature=0.1)
+    
     @tool
     def run_python_code(code: str) -> str:
-        """
-        Executes Python code in a secure REPL environment.
-        The full process text is available as a string variable named `text` and `PROCESS_TEXT`.
-        Helper functions available: search_dates(keyword_context, window), search_money(keyword_context), search_parties(), grep(pattern).
-        Always use `print()` or output the result of your code so that you can see it.
-        """
+        """Executa scripts Python. Acesse o texto cru do processo via variavel 'text'."""
         pass
         
     llm_with_tools = llm.bind_tools([run_python_code])
 
-    # 2. System Prompt Injection
     if not state["messages"]:
-        # Format the prompt with tribunal_local (default: TJMG)
-        tribunal = state.get("tribunal_local", "TJMG")
-        core_prompt = PROMPT_V3_MAGISTRATE_CORE.replace("{tribunal_local}", tribunal)
+        sys_prompt = f"""Você é um Juiz Relator brilhante (DeepSeek V3.2), mestre em raciocínio lógico forense.
+Sua missão é ler o resumo fático abaixo, proferir o julgamento e escrever a fundamentação/decisão.
+
+**Fatos Condensados (Previamente extraídos por seu assistente):**
+{state.get("condensed_facts", "")}
+
+Se você precisar validar alguma data específica, cruzar valores monetários, liquidar sentenças, ou fazer buscas exatas (regex) no amontoado caótico original, use a ferramenta 'run_python_code'.
+Não gere a minuta em JSON final, apenas redija o VOTO / DECISÃO DE FORMA CLARA E LÓGICA."""
         
-        # Adding a specific guidance for tool utilization with Claude
-        gpt_tool_instruction = "\n\nCRÍTICO: Use a ferramenta 'run_python_code' para ler o processo usando Python. Após ler os dados, elabore o JSON com a 'minuta_final'."
+        knowledge_section = "\n\n# JURISPRUDÊNCIA LOCAL\n" + KNOWLEDGE_BASE if KNOWLEDGE_BASE else ""
+        sys_msg = SystemMessage(content=sys_prompt + knowledge_section)
         
-        knowledge_section = "\n\n# BASE DE CONHECIMENTO (ARQUIVOS A, B e C)\n" + KNOWLEDGE_BASE if KNOWLEDGE_BASE else ""
-        sys_msg = SystemMessage(content=core_prompt + "\n" + PROMPT_V3_HYBRID_FALLBACK + knowledge_section + gpt_tool_instruction)
-        # Claude handles large contexts — pass the full text directly.
-        user_msg = HumanMessage(content=f"AUTOS DO PROCESSO:\n{state['raw_text']}")
-        messages = [sys_msg, user_msg]
+        messages = [sys_msg, HumanMessage(content="Use sua perícia lógica para julgar estes fatos. Se precisar do texto cru das folhas, use o Python.")]
     else:
         messages = state["messages"]
 
-    # 3. Invoke
     response = llm_with_tools.invoke(messages)
     
+    # Se a resposta nao for tool call (decisão finalizada pelo DeepSeek)
+    draft = be.safe_content(response) if not hasattr(response, "tool_calls") or not response.tool_calls else state.get("draft_decision", "")
+
     return {
         "messages": messages + [response],
         "iterations": state["iterations"] + 1,
-        "logs": state["logs"] + ["🧠 Juiz deliberou."]
+        "draft_decision": draft,
+        "logs": state["logs"] + ["🐉 [DeepSeek V3.2] Deliberou o mérito / raciocínio lógico."]
     }
 
 def node_computer(state: MagistrateState):
     """
-    The Tool Executor. Runs Python code.
+    The Tool Executor. Runs Python code for DeepSeek.
     """
     last_msg = state["messages"][-1]
-    
     tool_outputs = []
     
     if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
@@ -110,29 +125,30 @@ def node_computer(state: MagistrateState):
                 code = tool_call["args"].get("code", "")
                 result = repl.run_code(code)
                 tool_output = f"OBSERVATION (PYTHON):\n{result}"
-                
                 tool_outputs.append(ToolMessage(content=tool_output, tool_call_id=tool_call["id"]))
                 
         return {
             "messages": state["messages"] + tool_outputs,
-            "logs": state["logs"] + ["💻 Código executado via Native Tool Calling."]
+            "logs": state["logs"] + ["💻 Código executado nativamente (Tool Calling)."]
         }
     
-    # Fallback to old regex parsing just in case LLM hallucinated
+    # Regex Fallback
     content = last_msg.content
     tool_output = "NO_CODE_FOUND"
     
-    if isinstance(content, str) and "```python" in content:
+    if isinstance(content, str) and ("```python" in content.lower() or "```" in content):
         import re
-        code_match = re.search(r"```python(.*?)```", content, re.DOTALL)
+        code_match = re.search(r"```(?:python)?(.*?)```", content, re.DOTALL | re.IGNORECASE)
         if code_match:
-            code = code_match.group(1).strip()
-            repl = state.get("repl_tool")
-            if not repl:
-                repl = LegalREPL(state["raw_text"])
-                
-            result = repl.run_code(code)
-            tool_output = f"OBSERVATION (PYTHON):\n{result}"
+            code = code_match.group(1).strip().replace("=>", "=")           
+            if code:
+                repl = state.get("repl_tool")
+                if not repl:
+                    repl = LegalREPL(state["raw_text"])
+                result = repl.run_code(code)
+                tool_output = f"OBSERVATION (PYTHON):\n{result}"
+            else:
+                tool_output = "ERROR: Code block was empty."
         else:
             tool_output = "ERROR: Failed to parse Python block."
             
@@ -141,12 +157,44 @@ def node_computer(state: MagistrateState):
         "logs": state["logs"] + ["💻 Código executado via Regex Fallback."]
     }
 
-def should_continue(state: MagistrateState):
+def node_gpt_formatter(state: MagistrateState):
     """
-    Edge Condition: 
-    - If LAST message requested tool call -> COMPUTER
-    - If LAST message contains '```json' -> FINISH
-    - If Iterations > 5 -> FORCE FINISH
+    EXPERT 3: O Assessor Sênior (GPT-5.2)
+    Formata o rascunho de decisão no JSON estrito.
+    """
+    llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.0)
+    
+    sys_prompt = f"""Você é um Assessor Sênior rigoroso e formal (GPT-5.2).
+Sua ÚNICA missão é envelopar a Decisão do Juiz Relator num formato JSON estritamente tipado.
+NÃO invente novos fatos nem mude o mérito. 
+
+Seu JSON deve seguir exatamente a seguinte estrutura:
+```json
+{{
+  "minuta_final": "TEXTO DA DECISÃO AQUI, FORMATADO EM MARKDOWN E PRONTO PARA USO",
+  "pontos_chave": ["ponto 1", "ponto 2"]
+}}
+```"""
+
+    messages = [
+        SystemMessage(content=sys_prompt),
+        HumanMessage(content=f"DECISÃO DO JUIZ RELATOR:\n\n{state['draft_decision']}\n\nEnvolva isso no JSON estrito.")
+    ]
+    
+    response = llm.invoke(messages)
+    content = be.safe_content(response)
+    
+    return {
+        "draft_decision": content,  # Reuse just to carry over final text to extract
+        "logs": state["logs"] + ["🤖 [GPT-5.2] Formatação JSON e conformidade de estilo concluída."]
+    }
+
+
+# ─── EDGES ─────────────────────────────────────────────────────────────────────
+
+def should_continue_reasoning(state: MagistrateState):
+    """
+    Decide se o DeepSeek quer rodar código ou se já fechou o raciocínio.
     """
     last_msg = state["messages"][-1]
     
@@ -155,65 +203,70 @@ def should_continue(state: MagistrateState):
         
     content = last_msg.content
     if isinstance(content, str):
-        if "```json" in content and "minuta_final" in content:
-            return "end"
         if "```python" in content:
             return "computer"
             
     if state["iterations"] > 5:
-        # Force finish or return final
-        return "end" # Fail safe
+        return "formatter" # Fail safe: move to format
         
-    # If standard text, it might mean it's "Thinking" out loud. We loop back to Magistrate.
-    return "magistrate" # Self-correction or continued thought
+    return "formatter"
 
-# --- GRAPH ---
+# ─── GRAPH CONSTRUCTION ────────────────────────────────────────────────────────
 
 def build_v3_graph():
     workflow = StateGraph(MagistrateState)
     
-    workflow.add_node("magistrate", node_magistrate)
+    workflow.add_node("reader", node_kimi_reader)
+    workflow.add_node("reasoner", node_deepseek_reasoner)
     workflow.add_node("computer", node_computer)
+    workflow.add_node("formatter", node_gpt_formatter)
     
-    workflow.set_entry_point("magistrate")
+    workflow.set_entry_point("reader")
     
+    # Kimi (Reader) -> DeepSeek (Reasoner)
+    workflow.add_edge("reader", "reasoner")
+    
+    # DeepSeek (Reasoner) loops with Computer, or goes to Formatter
     workflow.add_conditional_edges(
-        "magistrate",
-        should_continue,
+        "reasoner",
+        should_continue_reasoning,
         {
             "computer": "computer",
-            "end": END,
-            "magistrate": "magistrate"
+            "formatter": "formatter"
         }
     )
+    workflow.add_edge("computer", "reasoner")
     
-    workflow.add_edge("computer", "magistrate")
+    # Formatter -> End
+    workflow.add_edge("formatter", END)
     
     return workflow.compile()
 
-def run_autonomous_magistrate(text: str, keys: dict):
+def run_autonomous_magistrate(text: str, keys: dict, model_name: str = "v3-moe"):
     """
-    Entry point for V3.
+    Entry point for V3 - Mixture of Experts.
+    (model_name is ignored as MoE uses specific models natively)
     """
     app = build_v3_graph()
     
-    # Initialize REPL just once
     repl = LegalREPL(text)
     
     initial_state = {
         "raw_text": text,
         "keys": keys,
         "repl_tool": repl,
+        "condensed_facts": "",
+        "draft_decision": "",
         "messages": [],
         "iterations": 0,
         "final_json": {},
-        "logs": []
+        "logs": ["🚀 Iniciando V3 Mixture of Experts (Kimi -> DeepSeek -> GPT)"]
     }
     
     final_state = app.invoke(initial_state)
     
-    # Extract Final JSON
-    last_content = final_state["messages"][-1].content
+    # Extract Final JSON from GPT formatter output
+    last_content = final_state["draft_decision"]
     try:
         import re
         json_match = re.search(r"```json(.*?)```", last_content, re.DOTALL)
@@ -221,6 +274,6 @@ def run_autonomous_magistrate(text: str, keys: dict):
             final_json = json.loads(json_match.group(1).strip())
             return final_json, final_state["logs"]
         else:
-             return {"error": "No JSON found in final output", "raw": last_content}, final_state["logs"]
+            return {"error": "No JSON found in final output", "raw": last_content}, final_state["logs"]
     except Exception as e:
         return {"error": f"JSON Parse Error: {str(e)}", "raw": last_content}, final_state["logs"]

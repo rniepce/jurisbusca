@@ -1,6 +1,5 @@
 
-from langchain_chroma import Chroma
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_community.vectorstores import Chroma
 from langchain_core.example_selectors import SemanticSimilarityExampleSelector
 from langchain_core.prompts import FewShotChatMessagePromptTemplate, ChatPromptTemplate
 from langchain_core.documents import Document
@@ -26,14 +25,12 @@ class StyleEngine:
         # Init Embeddings — use Azure OpenAI centralized
         if get_embedding_function:
             self.embeddings = get_embedding_function(api_key=api_key)
-        elif provider == "google":
-            self.embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
         else:
             from langchain_openai import AzureOpenAIEmbeddings
             self.embeddings = AzureOpenAIEmbeddings(
-                azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"),
+                azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
                 azure_endpoint=os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT", ""),
-                api_key=api_key,
+                api_key=api_key or os.getenv("AZURE_OPENAI_API_KEY", ""),
                 api_version="2024-12-01-preview",
             )
             

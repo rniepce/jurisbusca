@@ -280,7 +280,7 @@ def get_embedding_function(api_key=None):
     
     azure_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
     azure_endpoint = os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT", os.getenv("AZURE_OPENAI_ENDPOINT", ""))
-    deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
+    deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
     
     if not azure_key or not azure_endpoint:
         raise ValueError(
@@ -425,16 +425,47 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
 def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key: str = None, **kwargs):
     """
     Factory centralizada — todos os modelos passam pelo Azure OpenAI.
-    model_name: nome do deployment no Azure (ex: 'gpt-5.2-chat', 'gpt-4.1-mini').
+    model_name: nome do deployment no Azure (ex: 'gpt-5.2-chat', 'gpt-4.1-mini', 'DeepSeek-V3.2-Speciale').
     api_key: se fornecida, tem prioridade sobre a variável de ambiente.
     """
+    deployment = model_name or os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.2-chat")
+
+    # ── Serverless models (Azure AI / Models-as-a-Service) ──
+    # These use the standard OpenAI SDK with a different base URL
+    SERVERLESS_MODELS = {"DeepSeek-V3.2-Speciale", "Kimi-K2.5"}
+
+    if deployment in SERVERLESS_MODELS:
+        if not HAS_OPENAI:
+            raise ImportError("langchain-openai não instalado. Execute: pip install langchain-openai")
+
+        azure_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
+        serverless_endpoint = os.getenv(
+            "AZURE_AI_SERVERLESS_ENDPOINT",
+            "https://assistente-web-resource.services.ai.azure.com/openai/v1/"
+        )
+
+        if not azure_key:
+            raise ValueError("AZURE_OPENAI_API_KEY deve estar configurada para usar modelos serverless.")
+
+        # Azure OpenAI uses max_completion_tokens instead of max_tokens
+        if 'max_tokens' in kwargs:
+            kwargs['max_completion_tokens'] = kwargs.pop('max_tokens')
+
+        llm_kwargs = dict(
+            model=deployment,
+            base_url=serverless_endpoint,
+            api_key=azure_key,
+            temperature=temperature,
+            **kwargs,
+        )
+        return ChatOpenAI(**llm_kwargs)
+
+    # ── Standard Azure OpenAI models ──
     if not HAS_AZURE_OPENAI:
         raise ImportError("langchain-openai não instalado. Execute: pip install langchain-openai")
 
     azure_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
     azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-    # Use model_name as deployment; fallback to env var only when using the default
-    deployment = model_name or os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.2-chat")
 
     if not azure_key or not azure_endpoint:
         raise ValueError(
@@ -1175,12 +1206,11 @@ def load_persistent_rag(api_key=None, collection_name="rag_templates_persistent"
 
 def generate_style_report(documents, api_key):
     """
-    Usa um modelo rápido (Flash) para ler os templates e criar um perfil de estilo.
+    Usa um modelo rápido para ler os templates e criar um perfil de estilo.
+    Migrado para Azure OpenAI (gpt-4.1-mini).
     """
     try:
-        if not HAS_GEMINI: return "Estilo não disponível (Bibliotecas Google ausentes)"
-        # Gemini 3 Flash Preview (ID Correto: gemini-3-flash-preview)
-        llm_flash = ChatGoogleGenerativeAI(model="gemini-3-flash-preview", google_api_key=api_key, temperature=0.3)
+        llm_flash = get_llm("gpt-4.1-mini", temperature=0.3)
         
         
         # Concatena amostras dos documentos (Random Sampling)

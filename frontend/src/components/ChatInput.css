@@ -342,6 +342,118 @@
     justify-content: center;
 }
 
+/* ── LLM Selector (compact chip in OCR bar) ── */
+.llm-selector-wrapper {
+    position: relative;
+}
+
+.llm-selector-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px 3px 8px;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    background: none;
+    cursor: pointer;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 10px;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.llm-selector-btn:hover {
+    border-color: #bbb;
+    background: #f9f9f9;
+    color: #444;
+}
+
+.llm-selector-btn.open {
+    border-color: #999;
+    background: #f5f5f5;
+}
+
+.llm-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.llm-name {
+    font-size: 10px;
+    font-weight: 600;
+    color: #555;
+}
+
+.llm-chevron {
+    transition: transform 0.2s ease;
+    color: #aaa;
+}
+
+.llm-chevron.rotated {
+    transform: rotate(180deg);
+}
+
+.llm-dropdown {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    min-width: 180px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    box-shadow:
+        0 4px 20px rgba(0, 0, 0, 0.08),
+        0 1px 4px rgba(0, 0, 0, 0.04);
+    padding: 4px;
+    z-index: 100;
+    animation: dropdownSlide 0.15s ease-out;
+}
+
+.llm-dropdown-header {
+    font-size: 9px;
+    font-weight: 600;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 5px 8px 6px;
+}
+
+.llm-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: none;
+    background: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.12s;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 500;
+    color: #333;
+    font-family: 'Inter', system-ui, sans-serif;
+}
+
+.llm-dropdown-item:hover {
+    background: #f5f5f7;
+}
+
+.llm-dropdown-item.selected {
+    background: #f0f4ff;
+}
+
+.llm-check {
+    color: #4F46E5;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
 .ocr-label {
     font-size: 10px;
     font-weight: 600;

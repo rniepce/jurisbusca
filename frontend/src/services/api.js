@@ -98,13 +98,14 @@ export async function uploadFile(file, ocrEngine = 'paddle', compress = true) {
  * @param {string|null} params.uploadedText
  * @returns {Promise<{conversation_id: string, response: string, model: string}>}
  */
-export async function sendMessage({ message, model, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false }) {
+export async function sendMessage({ message, model, llm, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false }) {
     const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
             message,
             model,
+            llm: llm || null,
             conversation_id: conversationId,
             agent_prompt: agentPrompt || null,
             ocr_engine: 'paddle',
@@ -160,14 +161,15 @@ export async function uploadBatchXray(files) {
  * Analyze a cluster of processes individually, in parallel.
  * @param {Array<{filename: string, text: string}>} processes
  * @param {string} [agentPrompt] - Optional agent system prompt
- * @param {string} [model] - LLM model ID
+ * @param {string} [model] - Engine model ID
+ * @param {string} [llm] - LLM ID
  * @returns {Promise<{results: Array, total: number, ok_count: number}>}
  */
-export async function analyzeCluster(processes, agentPrompt = '', model = 'claude') {
+export async function analyzeCluster(processes, agentPrompt = '', model = 'claude', llm = null) {
     const res = await fetch(`${API_BASE}/cluster-analyze`, {
         method: 'POST',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ processes, agent_prompt: agentPrompt, model }),
+        body: JSON.stringify({ processes, agent_prompt: agentPrompt, model, llm }),
         redirect: 'error',
     });
 
@@ -178,6 +180,7 @@ export async function analyzeCluster(processes, agentPrompt = '', model = 'claud
 
     return safeJson(res, 'Cluster Analyze');
 }
+
 
 /**
  * Generate a Style Dossier from template decision files.

@@ -48,7 +48,7 @@ class HybridSemanticChunker:
             # Fallback: try direct Azure OpenAI
             from langchain_openai import AzureOpenAIEmbeddings
             return AzureOpenAIEmbeddings(
-                azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"),
+                azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
                 azure_endpoint=os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT", os.getenv("AZURE_OPENAI_ENDPOINT", "")),
                 api_key=api_key or os.getenv("AZURE_OPENAI_API_KEY", ""),
                 api_version="2024-12-01-preview",

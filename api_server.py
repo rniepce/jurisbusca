@@ -61,7 +61,8 @@ _process_rag_cache: dict[str, tuple] = {}
 
 class ChatRequest(BaseModel):
     message: str
-    model: str = "gemini"
+    model: str = "v1"
+    llm: Optional[str] = None  # LLM deployment name (e.g. 'gpt-5.2-chat', 'DeepSeek-V3.2-Speciale')
     conversation_id: Optional[str] = None
     agent_prompt: Optional[str] = None
     ocr_engine: str = "paddle"
@@ -80,6 +81,8 @@ MODEL_MAP = {
     "v2":     "gpt-5.2-chat",
     "v3":     "gpt-5.2-chat",
     "mini":   "gpt-4.1-mini",       # acesso direto ao mini
+    "deepseek": "DeepSeek-V3.2-Speciale",  # Azure AI serverless
+    "kimi": "Kimi-K2.5",                    # Azure AI serverless
 }
 
 
@@ -133,7 +136,8 @@ async def debug_routes():
 async def chat(req: ChatRequest, request: Request):
     """Process a chat message and return LLM response."""
     try:
-        model_name = MODEL_MAP.get(req.model, "gpt-5.2-chat")
+        # Resolve LLM deployment: prefer explicit llm field, fallback to MODEL_MAP
+        model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.2-chat")
 
         # Read Azure key from header (frontend sends it), fallback to env var
         azure_key = request.headers.get("X-Azure-Key", "").strip() or None
@@ -305,7 +309,7 @@ async def chat(req: ChatRequest, request: Request):
                 keys = {}  # Azure env vars are read internally
 
                 try:
-                    v3_json, v3_logs = be.run_autonomous_magistrate(full_text, keys)
+                    v3_json, v3_logs = be.run_autonomous_magistrate(full_text, keys, model_name=model_name)
 
                     # Format the response
                     logs_text = "\n".join(v3_logs) if v3_logs else ""
@@ -482,6 +486,7 @@ class ClusterAnalyzeRequest(BaseModel):
     processes: list[dict]  # [{"filename": str, "text": str}]
     agent_prompt: Optional[str] = None
     model: str = "gemini"
+    llm: Optional[str] = None
 
 
 def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_name: str, collection_name: str = "rag_templates_persistent"):
@@ -558,7 +563,8 @@ async def cluster_analyze(req: ClusterAnalyzeRequest):
     import concurrent.futures
 
     try:
-        model_name = MODEL_MAP.get(req.model, "gpt-5.2-chat")
+        # Resolve LLM deployment: prefer explicit llm field, fallback to MODEL_MAP
+        model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.2-chat")
 
         if not req.processes:
             raise HTTPException(status_code=400, detail="Nenhum processo para analisar.")

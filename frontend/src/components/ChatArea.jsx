@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
     FaUser,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
-    FaBookOpen, FaPenNib
+    FaBookOpen, FaPenNib, FaClipboardCheck
 } from 'react-icons/fa6';
 import OcrPreview from './OcrPreview';
 import logoSvg from '../assets/logo.svg';
@@ -64,9 +64,10 @@ const iconMap = {
     FaMagnifyingGlass: FaMagnifyingGlass,
     FaBookOpen: FaBookOpen,
     FaPenNib: FaPenNib,
+    FaClipboardCheck: FaClipboardCheck,
 };
 
-const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, styleAnalyzing = false }) => {
+const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, styleAnalyzing = false, onAutoAction }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
@@ -106,6 +107,34 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, sty
                                     <span className="activation-hint">
                                         Todas as mensagens usarão o prompt especializado deste agente.
                                     </span>
+                                    {msg.autoAction && (
+                                        <button
+                                            className="auto-action-btn"
+                                            style={{
+                                                '--agent-color': msg.agentColor,
+                                                marginTop: '10px',
+                                                padding: '8px 18px',
+                                                background: `linear-gradient(135deg, ${msg.agentColor}, ${msg.agentColor}dd)`,
+                                                color: '#fff',
+                                                border: 'none',
+                                                borderRadius: '8px',
+                                                cursor: isLoading ? 'not-allowed' : 'pointer',
+                                                fontSize: '13px',
+                                                fontWeight: 600,
+                                                letterSpacing: '0.3px',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                opacity: isLoading ? 0.6 : 1,
+                                                transition: 'all 0.2s ease',
+                                                boxShadow: `0 2px 8px ${msg.agentColor}44`,
+                                            }}
+                                            onClick={() => onAutoAction && onAutoAction(msg)}
+                                            disabled={isLoading}
+                                        >
+                                            {msg.autoAction.label}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         );
