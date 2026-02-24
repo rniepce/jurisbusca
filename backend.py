@@ -1091,15 +1091,12 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
 def process_templates(files, api_key, collection_name="rag_templates_persistent"):
     """
     Processa arquivos de template (PDF/DOCX/TXT) e cria um retriever.
-    Otimizado para velocidade: chunks grandes, embeddings com dimensão reduzida.
+    Usa embeddings LOCAIS (ChromaDB default / ONNX) para indexação instantânea.
     """
     import time as _time
     t0 = _time.time()
     
     documents = []
-    
-    # Large chunks = fewer API calls = much faster indexing
-    # Templates are reference docs, not search corpuses — big chunks preserve context better
     splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=200)
 
     for file in files:
@@ -1134,12 +1131,9 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
 
     print(f"📄 {len(documents)} chunks criados em {_time.time()-t0:.1f}s")
 
-    # Embeddings (Azure OpenAI) — use reduced dimensions for speed
-    embeddings = get_embedding_function()
-    
     persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
     
-    # Delete existing collection to avoid dimension mismatch
+    # Delete existing collection (avoid dimension mismatch from previous embedding models)
     try:
         import chromadb
         client = chromadb.PersistentClient(path=persist_dir)
@@ -1150,43 +1144,35 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
     except Exception:
         pass
     
+    # Use ChromaDB's DEFAULT local embeddings (ONNX all-MiniLM-L6-v2).
+    # Runs 100% on CPU — zero API calls = instant indexing, no rate limits.
     vectorstore = Chroma(
         persist_directory=persist_dir, 
-        embedding_function=embeddings,
         collection_name=collection_name
+        # NO embedding_function = uses ChromaDB built-in default (local ONNX)
     )
     
-    # Add all documents with retry on 429
-    for attempt in range(5):
-        try:
-            vectorstore.add_documents(documents)
-            break
-        except Exception as e:
-            if "429" in str(e) and attempt < 4:
-                wait = min(2 ** (attempt + 1), 60)  # 2s, 4s, 8s, 16s
-                print(f"⏳ Rate limit (429). Aguardando {wait}s... (tentativa {attempt+1}/5)")
-                _time.sleep(wait)
-            else:
-                raise
+    # Convert LangChain Documents to raw texts + metadatas for direct Chroma insertion
+    texts = [doc.page_content for doc in documents]
+    metadatas = [doc.metadata for doc in documents]
+    vectorstore.add_texts(texts=texts, metadatas=metadatas)
     
-    print(f"✅ RAG indexado: {len(documents)} chunks em {_time.time()-t0:.1f}s")
+    print(f"✅ RAG indexado: {len(documents)} chunks em {_time.time()-t0:.1f}s (embeddings locais)")
     return vectorstore.as_retriever(search_kwargs={"k": 5}), documents
 
 def load_persistent_rag(api_key=None, collection_name="rag_templates_persistent"):
     """
     Tenta carregar o banco de dados persistente (se existir).
-    Usa Azure OpenAI Embeddings.
+    Usa embeddings locais (ChromaDB default ONNX).
     """
     try:
         persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
         if os.path.exists(persist_dir):
-            embeddings = get_embedding_function()
             vectorstore = Chroma(
                 persist_directory=persist_dir, 
-                embedding_function=embeddings,
                 collection_name=collection_name
+                # NO embedding_function = uses ChromaDB built-in default (local ONNX)
             )
-            # Verifica se tem dados (hack simples)
             if vectorstore._collection.count() > 0:
                 print(f"RAG Persistente carregado: {vectorstore._collection.count()} docs.")
                 return vectorstore.as_retriever(search_kwargs={"k": 5})
