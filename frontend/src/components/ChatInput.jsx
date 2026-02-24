@@ -36,6 +36,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     const [ragEnabled, setRagEnabled] = useState(false);
     const [ragAvailable, setRagAvailable] = useState(false);
     const [indexing, setIndexing] = useState(false);
+    const [indexSuccess, setIndexSuccess] = useState(false);
     const dropdownRef = useRef(null);
     const fileInputRef = useRef(null);
     const templateInputRef = useRef(null);
@@ -260,9 +261,9 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                                 </button>
                             </div>
                             <button
-                                className="style-report-btn"
+                                className={`style-report-btn ${indexSuccess ? 'index-success' : ''} ${indexing ? 'indexing-active' : ''}`}
                                 onClick={async () => {
-                                    if (indexing) return;
+                                    if (indexing || indexSuccess) return;
                                     setIndexing(true);
                                     try {
                                         const result = await uploadTemplates(templateFiles);
@@ -272,17 +273,25 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                                                 has_dossier: result.has_dossier,
                                             });
                                         }
-                                        setTemplateFiles([]); // Clear local files after indexing
+                                        // Show success state
+                                        setIndexing(false);
+                                        setIndexSuccess(true);
+                                        setTimeout(() => {
+                                            setIndexSuccess(false);
+                                            setTemplateFiles([]);
+                                        }, 2500);
                                     } catch (err) {
                                         console.error('Indexing failed:', err);
-                                    } finally {
                                         setIndexing(false);
                                     }
                                 }}
-                                disabled={isLoading || indexing}
+                                disabled={isLoading || indexing || indexSuccess}
                             >
-                                <FaDatabase size={12} />
-                                <span>{indexing ? 'Indexando...' : 'Indexar no RAG'}</span>
+                                {indexSuccess ? (
+                                    <><FaCheck size={12} /><span>Modelos indexados!</span></>
+                                ) : (
+                                    <><FaDatabase size={12} /><span>{indexing ? 'Indexando...' : 'Indexar no RAG'}</span></>
+                                )}
                             </button>
                             <button
                                 className="style-report-btn"
