@@ -314,14 +314,23 @@ async def chat(req: ChatRequest, request: Request):
                 
         elif req.model == "v3":
             # Call Orchestrator V3 (Autonomous Magistrate with LangGraph)
-            if getattr(be, "run_autonomous_magistrate", None):
-                context_str = req.uploaded_text or ""
-                user_msg = req.message or ""
-                full_text = f"{context_str}\n\nPEDIDO DO USUÁRIO:\n{user_msg}" if user_msg.strip() else context_str
-                keys = {}  # Azure env vars are read internally
+            # V3 uses 3 models sequentially (Kimi→DeepSeek→GPT), which can be slow.
+            # We add a timeout + single-model fallback to prevent Railway proxy timeouts.
+            import concurrent.futures
+            
+            context_str = req.uploaded_text or ""
+            user_msg = req.message or ""
+            full_text = f"{context_str}\n\nPEDIDO DO USUÁRIO:\n{user_msg}" if user_msg.strip() else context_str
+            keys = {}  # Azure env vars are read internally
 
+            V3_TIMEOUT = 240  # 4 minutes max (Railway has ~5 min proxy timeout)
+
+            if getattr(be, "run_autonomous_magistrate", None):
                 try:
-                    v3_json, v3_logs = be.run_autonomous_magistrate(full_text, keys, model_name=model_name)
+                    # Run V3 MoE pipeline with timeout
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(be.run_autonomous_magistrate, full_text, keys, model_name)
+                        v3_json, v3_logs = future.result(timeout=V3_TIMEOUT)
 
                     # Format the response
                     logs_text = "\n".join(v3_logs) if v3_logs else ""
@@ -332,8 +341,49 @@ async def chat(req: ChatRequest, request: Request):
                         if isinstance(minuta, dict):
                             minuta = minuta.get("texto", json.dumps(minuta, ensure_ascii=False, indent=2))
                         response_text = f"{minuta}\n\n---\n**🔍 Logs V3:**\n{logs_text}"
+
+                except concurrent.futures.TimeoutError:
+                    print(f"⚠️ V3 MoE pipeline timed out after {V3_TIMEOUT}s. Falling back to single-model GPT-5.2.")
+                    # Fallback: single GPT-5.2 call with the full document
+                    try:
+                        fallback_llm = be.get_llm(model_name="gpt-5.2-chat")
+                        fb_messages = [
+                            SystemMessage(content=(
+                                "Você é um Magistrado Autônomo de alto nível. "
+                                "Leia os autos integrais do processo abaixo e produza:\n"
+                                "1. Um resumo dos fatos e pedidos\n"
+                                "2. A fundamentação jurídica\n"
+                                "3. O dispositivo (decisão final)\n\n"
+                                "Formate a resposta como uma minuta de decisão/sentença completa, "
+                                "pronta para assinatura."
+                            )),
+                            HumanMessage(content=f"AUTOS DO PROCESSO:\n{full_text}")
+                        ]
+                        fb_response = fallback_llm.invoke(fb_messages)
+                        response_text = f"{be.safe_content(fb_response)}\n\n---\n⚠️ *V3 MoE excedeu o tempo limite. Resultado gerado por GPT-5.2 (modelo único).*"
+                    except Exception as fb_err:
+                        response_text = f"⚠️ **V3 timeout ({V3_TIMEOUT}s) e fallback GPT-5.2 também falhou:** {str(fb_err)}"
+
                 except Exception as e:
-                    response_text = f"⚠️ **Erro no V3 Engine:** {str(e)}"
+                    traceback.print_exc()
+                    # Fallback: single GPT-5.2 call
+                    try:
+                        fallback_llm = be.get_llm(model_name="gpt-5.2-chat")
+                        fb_messages = [
+                            SystemMessage(content=(
+                                "Você é um Magistrado Autônomo de alto nível. "
+                                "Leia os autos integrais do processo abaixo e produza:\n"
+                                "1. Um resumo dos fatos e pedidos\n"
+                                "2. A fundamentação jurídica\n"
+                                "3. O dispositivo (decisão final)\n\n"
+                                "Formate a resposta como uma minuta de decisão/sentença completa."
+                            )),
+                            HumanMessage(content=f"AUTOS DO PROCESSO:\n{full_text}")
+                        ]
+                        fb_response = fallback_llm.invoke(fb_messages)
+                        response_text = f"{be.safe_content(fb_response)}\n\n---\n⚠️ *V3 MoE falhou ({str(e)[:100]}). Resultado gerado por GPT-5.2 (modelo único).*"
+                    except Exception as fb_err:
+                        response_text = f"⚠️ **Erro no V3 Engine:** {str(e)}\n\n**Fallback GPT-5.2 também falhou:** {str(fb_err)}"
             else:
                 response_text = "Erro: V3 Engine (run_autonomous_magistrate) não foi importada. Verifique se langgraph está instalado."
         else:
