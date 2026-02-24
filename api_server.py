@@ -213,8 +213,7 @@ async def chat(req: ChatRequest, request: Request):
         # ── Auto RAG: retrieve mirror context from persisted templates ──
         if req.uploaded_text:
             try:
-                azure_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-                if azure_key:
+                if True:  # Templates use local storage, no API key needed
                     collection_name = "rag_templates_persistent"
                     rag_retriever = be.load_persistent_rag(collection_name=collection_name)
                     if rag_retriever:
@@ -629,12 +628,12 @@ async def upload_templates(
             buf.seek(0)
             file_objects.append(buf)
 
-        # 1. Index in ChromaDB (persistent) -> Uses Azure OpenAI Embeddings
+        # 1. Index templates (100% local — no ChromaDB, no embeddings)
         t0 = _time.time()
         collection_name = "rag_templates_persistent"
         retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name)
         indexed_count = len(docs) if docs else 0
-        print(f"⏱️ Indexação ChromaDB: {_time.time()-t0:.1f}s ({indexed_count} chunks)")
+        print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks)")
 
         # 2. Auto-generate style dossier in BACKGROUND (don't block response)
         # The dossier calls GPT-5.2 which adds 10-30s; run it async instead.
@@ -673,50 +672,28 @@ async def upload_templates(
 
 @app.get("/api/templates/status")
 async def templates_status():
-    """Check how many templates are indexed in the persistent RAG."""
+    """Check how many templates are indexed."""
     try:
-        count = 0
-        azure_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-        if azure_key:
-            persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
-            if os.path.exists(persist_dir):
-                try:
-                    import chromadb
-                    client = chromadb.PersistentClient(path=persist_dir)
-                    collection = client.get_collection("rag_templates_persistent")
-                    count = collection.count()
-                except Exception:
-                    pass
-
-        has_dossier = len(be._style_dossier_cache) > 0 # Note: globally cached right now
-
-        return {
-            "indexed_chunks": count,
-            "has_dossier": has_dossier,
-        }
-
-    except Exception as e:
+        if not be._template_store:
+            be._load_template_store()
+        count = len(be._template_store)
+        has_dossier = len(be._style_dossier_cache) > 0
+        return {"indexed_chunks": count, "has_dossier": has_dossier}
+    except Exception:
         return {"indexed_chunks": 0, "has_dossier": False}
 
 
 @app.delete("/api/templates")
 async def clear_templates():
-    """Clear all indexed templates from ChromaDB."""
+    """Clear all indexed templates."""
     try:
-        persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
-        if os.path.exists(persist_dir):
-            import chromadb
-            client = chromadb.PersistentClient(path=persist_dir)
-            try:
-                client.delete_collection("rag_templates_persistent")
-            except Exception:
-                pass
-
+        be._template_store.clear()
+        # Remove persisted JSON
+        if os.path.exists(be._TEMPLATE_STORE_PATH):
+            os.remove(be._TEMPLATE_STORE_PATH)
         # Clear style dossier cache
         be._style_dossier_cache.clear()
-
         return {"status": "ok", "message": "Modelos e cache limpos."}
-
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao limpar modelos: {str(e)}")

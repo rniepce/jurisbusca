@@ -1088,13 +1088,75 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
         "steps": logs
     }
 
+# ── Simple in-memory template store (NO ChromaDB, NO embeddings, NO API calls) ──
+_template_store: list[dict] = []  # [{"text": str, "metadata": dict}, ...]
+_TEMPLATE_STORE_PATH = os.path.join(os.getenv("CHROMA_DB_PATH", "./chroma_db_rag"), "templates.json")
+
+
+class SimpleRetriever:
+    """Lightweight retriever using keyword overlap (BM25-style). No embeddings needed."""
+    
+    def __init__(self, docs: list[dict], k: int = 5):
+        self.docs = docs
+        self.k = k
+    
+    def invoke(self, query: str) -> list:
+        """Return top-k documents ranked by keyword overlap with query."""
+        if not self.docs:
+            return []
+        
+        # Simple keyword scoring: count shared words between query and doc
+        query_words = set(query.lower().split())
+        scored = []
+        for doc_dict in self.docs:
+            doc_words = set(doc_dict["text"].lower().split())
+            overlap = len(query_words & doc_words)
+            scored.append((overlap, doc_dict))
+        
+        scored.sort(key=lambda x: x[0], reverse=True)
+        
+        # Convert to LangChain Document format for compatibility
+        from langchain_core.documents import Document
+        results = []
+        for _, doc_dict in scored[:self.k]:
+            results.append(Document(
+                page_content=doc_dict["text"],
+                metadata=doc_dict.get("metadata", {})
+            ))
+        return results
+
+
+def _save_template_store():
+    """Persist template store to JSON file."""
+    try:
+        os.makedirs(os.path.dirname(_TEMPLATE_STORE_PATH), exist_ok=True)
+        with open(_TEMPLATE_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(_template_store, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"⚠️ Erro ao salvar template store: {e}")
+
+
+def _load_template_store():
+    """Load template store from JSON file."""
+    global _template_store
+    try:
+        if os.path.exists(_TEMPLATE_STORE_PATH):
+            with open(_TEMPLATE_STORE_PATH, "r", encoding="utf-8") as f:
+                _template_store = json.load(f)
+    except Exception as e:
+        print(f"⚠️ Erro ao carregar template store: {e}")
+        _template_store = []
+
+
 def process_templates(files, api_key, collection_name="rag_templates_persistent"):
     """
     Processa arquivos de template (PDF/DOCX/TXT) e cria um retriever.
-    Usa embeddings LOCAIS (ChromaDB default / ONNX) para indexação instantânea.
+    100% local — sem ChromaDB, sem embeddings, sem chamadas de API.
+    Indexação instantânea (~0.1s).
     """
     import time as _time
     t0 = _time.time()
+    global _template_store
     
     documents = []
     splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=200)
@@ -1129,53 +1191,28 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
     if not documents:
         return None, []
 
-    print(f"📄 {len(documents)} chunks criados em {_time.time()-t0:.1f}s")
+    # Store in memory + persist to JSON (instant, no API calls)
+    _template_store = [
+        {"text": doc.page_content, "metadata": doc.metadata}
+        for doc in documents
+    ]
+    _save_template_store()
+    
+    print(f"✅ RAG indexado: {len(documents)} chunks em {_time.time()-t0:.1f}s (100% local, sem API)")
+    return SimpleRetriever(_template_store), documents
 
-    persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
-    
-    # Delete existing collection (avoid dimension mismatch from previous embedding models)
-    try:
-        import chromadb
-        client = chromadb.PersistentClient(path=persist_dir)
-        try:
-            client.delete_collection(collection_name)
-        except Exception:
-            pass
-    except Exception:
-        pass
-    
-    # Use ChromaDB's DEFAULT local embeddings (ONNX all-MiniLM-L6-v2).
-    # Runs 100% on CPU — zero API calls = instant indexing, no rate limits.
-    vectorstore = Chroma(
-        persist_directory=persist_dir, 
-        collection_name=collection_name
-        # NO embedding_function = uses ChromaDB built-in default (local ONNX)
-    )
-    
-    # Convert LangChain Documents to raw texts + metadatas for direct Chroma insertion
-    texts = [doc.page_content for doc in documents]
-    metadatas = [doc.metadata for doc in documents]
-    vectorstore.add_texts(texts=texts, metadatas=metadatas)
-    
-    print(f"✅ RAG indexado: {len(documents)} chunks em {_time.time()-t0:.1f}s (embeddings locais)")
-    return vectorstore.as_retriever(search_kwargs={"k": 5}), documents
 
 def load_persistent_rag(api_key=None, collection_name="rag_templates_persistent"):
     """
-    Tenta carregar o banco de dados persistente (se existir).
-    Usa embeddings locais (ChromaDB default ONNX).
+    Carrega templates persistidos (JSON). Sem ChromaDB, sem embeddings.
     """
+    global _template_store
     try:
-        persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
-        if os.path.exists(persist_dir):
-            vectorstore = Chroma(
-                persist_directory=persist_dir, 
-                collection_name=collection_name
-                # NO embedding_function = uses ChromaDB built-in default (local ONNX)
-            )
-            if vectorstore._collection.count() > 0:
-                print(f"RAG Persistente carregado: {vectorstore._collection.count()} docs.")
-                return vectorstore.as_retriever(search_kwargs={"k": 5})
+        if not _template_store:
+            _load_template_store()
+        if _template_store:
+            print(f"RAG Persistente carregado: {len(_template_store)} chunks.")
+            return SimpleRetriever(_template_store)
     except Exception as e:
         print(f"Erro ao carregar RAG persistente: {e}")
     return None
