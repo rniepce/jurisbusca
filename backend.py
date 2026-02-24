@@ -293,6 +293,7 @@ def get_embedding_function(api_key=None):
         azure_endpoint=azure_endpoint,
         api_key=azure_key,
         api_version="2024-12-01-preview",
+        dimensions=256,  # Matryoshka reduction: 3072 -> 256 = ~12x faster, still good for RAG
     )
 
 def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="gpt4o_mini", compress=True):
@@ -1091,21 +1092,20 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
 def process_templates(files, api_key, collection_name="rag_templates_persistent"):
     """
     Processa arquivos de template (PDF/DOCX/TXT) e cria um retriever.
+    Otimizado para velocidade: chunks grandes, embeddings com dimensão reduzida.
     """
+    import time as _time
+    t0 = _time.time()
+    
     documents = []
     
-    # Fast local splitter only — HybridSemanticChunker was calling Azure embeddings
-    # during chunking, then ChromaDB called embeddings AGAIN when indexing, doubling
-    # API calls and making indexing very slow (~30-60s). RecursiveCharacterTextSplitter
-    # is instant (local CPU).
-    chunker = None
-    fallback_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    # Large chunks = fewer API calls = much faster indexing
+    # Templates are reference docs, not search corpuses — big chunks preserve context better
+    splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=200)
 
     for file in files:
-        # Reset seek position (safety for BytesIO objects)
         if hasattr(file, 'seek'):
             file.seek(0)
-        # Salva temporariamente para processar
         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file.name.split('.')[-1]}") as tmp:
             tmp.write(file.read())
             tmp_path = tmp.name
@@ -1119,79 +1119,58 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
             elif file.name.endswith(".docx"):
                 doc = docx.Document(tmp_path)
                 text = "\n".join([p.text for p in doc.paragraphs])
-            else: # txt
+            else:
                 try:
                     with open(tmp_path, "r", encoding="utf-8") as f: text = f.read()
                 except UnicodeDecodeError:
                      with open(tmp_path, "r", encoding="latin-1") as f: text = f.read()
             
-            # Adiciona metadados
-            if chunker:
-                try:
-                    doc_chunks = chunker.split_text(text, source_metadata={"source": file.name})
-                except Exception as e:
-                    print(f"Erro no Semantic Chunking do arquivo {file.name}: {e}. Usando fallback.")
-                    doc_chunks = fallback_splitter.create_documents([text], metadatas=[{"source": file.name}])
-            else:
-                 doc_chunks = fallback_splitter.create_documents([text], metadatas=[{"source": file.name}])
-                 
+            doc_chunks = splitter.create_documents([text], metadatas=[{"source": file.name}])
             documents.extend(doc_chunks)
         finally:
             os.remove(tmp_path)
     
-    
     if not documents:
         return None, []
 
-    # Embeddings e Vector Store (PERSISTENTE) — Azure OpenAI
+    print(f"📄 {len(documents)} chunks criados em {_time.time()-t0:.1f}s")
+
+    # Embeddings (Azure OpenAI) — use reduced dimensions for speed
     embeddings = get_embedding_function()
     
-    # Define caminho persistente (Railway Volume ou Local)
-    # No Railway, defina CHROMA_DB_PATH como variável de ambiente apontando para o volume (ex: /app/data)
     persist_dir = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
     
-    # Delete existing collection to avoid dimension mismatch with stale embeddings
-    # (e.g. collection was created with 768-dim model but current model is 3072-dim)
+    # Delete existing collection to avoid dimension mismatch
     try:
         import chromadb
         client = chromadb.PersistentClient(path=persist_dir)
         try:
             client.delete_collection(collection_name)
-            print("🗑️ Collection anterior removida (evita conflito de dimensões).")
         except Exception:
             pass
     except Exception:
         pass
     
-    # Instancia o banco persistente
     vectorstore = Chroma(
         persist_directory=persist_dir, 
         embedding_function=embeddings,
         collection_name=collection_name
     )
     
-    # Adiciona os novos documentos
-    # Adiciona os novos documentos EM LOTES (evita 429 rate limit do Azure)
-    import time as _time
-    BATCH_SIZE = 5
-    for i in range(0, len(documents), BATCH_SIZE):
-        batch = documents[i:i + BATCH_SIZE]
-        for attempt in range(4):
-            try:
-                vectorstore.add_documents(batch)
-                break
-            except Exception as e:
-                if "429" in str(e) and attempt < 3:
-                    wait = 2 ** (attempt + 1)  # 2s, 4s, 8s
-                    print(f"⏳ Rate limit (429). Aguardando {wait}s antes de tentar novamente...")
-                    _time.sleep(wait)
-                else:
-                    raise
-        # Small delay between batches to stay under rate limit
-        if i + BATCH_SIZE < len(documents):
-            _time.sleep(1.5)
+    # Add all documents with retry on 429
+    for attempt in range(5):
+        try:
+            vectorstore.add_documents(documents)
+            break
+        except Exception as e:
+            if "429" in str(e) and attempt < 4:
+                wait = min(2 ** (attempt + 1), 60)  # 2s, 4s, 8s, 16s
+                print(f"⏳ Rate limit (429). Aguardando {wait}s... (tentativa {attempt+1}/5)")
+                _time.sleep(wait)
+            else:
+                raise
     
-    # Retorna o retriever e os docs para análise de estilo imediata
+    print(f"✅ RAG indexado: {len(documents)} chunks em {_time.time()-t0:.1f}s")
     return vectorstore.as_retriever(search_kwargs={"k": 5}), documents
 
 def load_persistent_rag(api_key=None, collection_name="rag_templates_persistent"):
