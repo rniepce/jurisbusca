@@ -280,7 +280,7 @@ def get_embedding_function(api_key=None):
     
     azure_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
     azure_endpoint = os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT", os.getenv("AZURE_OPENAI_ENDPOINT", ""))
-    deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
+    deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
     
     if not azure_key or not azure_endpoint:
         raise ValueError(
@@ -293,7 +293,6 @@ def get_embedding_function(api_key=None):
         azure_endpoint=azure_endpoint,
         api_key=azure_key,
         api_version="2024-12-01-preview",
-        dimensions=256,  # Matryoshka reduction: 3072 -> 256 = ~12x faster, still good for RAG
     )
 
 def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="gpt4o_mini", compress=True):
