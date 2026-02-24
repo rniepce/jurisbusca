@@ -141,6 +141,8 @@ def _ocr_page(page, page_num: int, engine_choice: str, engine_instance=None) -> 
     try:
         if engine_choice == "deepseek":
             return _ocr_page_deepseek(page, page_num)
+        elif engine_choice == "mistral_doc_ai":
+            return _ocr_page_mistral(page, page_num)
         else:
             return _ocr_page_paddle(page, page_num)
     except Exception as e:
@@ -224,3 +226,31 @@ def _ocr_page_deepseek(page, page_num: int) -> str:
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+def _ocr_page_mistral(page, page_num: int) -> str:
+    """OCR a single page with Mistral Document AI 2512 (Azure API)."""
+    try:
+        from ocr_engine import get_mistral_doc_ai_engine
+    except ImportError as e:
+        print(f"  ⚠️ Mistral Document AI não disponível: {e}")
+        return ""
+
+    engine = get_mistral_doc_ai_engine()
+    if not engine:
+        return ""
+
+    # Render at 2x zoom for quality
+    zoom = 2.0
+    mat = fitz.Matrix(zoom, zoom)
+    pix = page.get_pixmap(matrix=mat)
+
+    # Get PNG bytes directly
+    png_bytes = pix.tobytes("png")
+    
+    try:
+        page_text = engine.process_image_bytes(png_bytes, page_num=page_num)
+        return page_text
+    except Exception as e:
+        print(f"  ❌ Mistral DocAI erro pág {page_num}: {e}")
+        return ""

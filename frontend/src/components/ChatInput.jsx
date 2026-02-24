@@ -29,6 +29,7 @@ const OCR_ENGINES = [
     { id: 'gpt4o_mini', label: 'GPT-4o mini' },
     { id: 'paddle', label: 'PaddleOCR' },
     { id: 'deepseek', label: 'DeepSeek-OCR' },
+    { id: 'mistral_doc_ai', label: 'Mistral DocAI' },
 ];
 
 const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange }) => {

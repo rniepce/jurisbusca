@@ -253,3 +253,111 @@ def extract_text_from_pdf(pdf_path, engine="paddle"):
         return f"Erro Fatal no OCR Engine: {str(e)}"
         
     return full_text
+
+
+class MistralDocumentAIEngine:
+    """
+    OCR engine using Mistral Document AI 2512 via Azure AI Foundry.
+    Sends pages as base64 images to the API for structured document extraction.
+    """
+    
+    ENDPOINT = os.getenv(
+        "MISTRAL_DOC_AI_ENDPOINT",
+        "https://assistente-web-resource.services.ai.azure.com/providers/mistral/azure/ocr"
+    )
+    
+    def __init__(self):
+        self.api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+        if not self.api_key:
+            raise ValueError("AZURE_OPENAI_API_KEY is required for Mistral Document AI")
+    
+    def process_pdf_bytes(self, pdf_bytes: bytes) -> str:
+        """Process an entire PDF (as bytes) through Mistral Document AI."""
+        import base64
+        
+        b64_data = base64.b64encode(pdf_bytes).decode("utf-8")
+        document_url = f"data:application/pdf;base64,{b64_data}"
+        
+        payload = {
+            "model": "mistral-document-ai-2512",
+            "document": {
+                "type": "document_url",
+                "document_url": document_url
+            },
+            "include_image_base64": False
+        }
+        
+        response = requests.post(
+            self.ENDPOINT,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}"
+            },
+            json=payload,
+            timeout=120
+        )
+        
+        if response.status_code != 200:
+            raise RuntimeError(f"Mistral Document AI error {response.status_code}: {response.text[:300]}")
+        
+        result = response.json()
+        
+        # Extract text from response pages
+        pages = result.get("pages", [])
+        all_text = []
+        for i, page in enumerate(pages):
+            page_md = page.get("markdown", "")
+            if page_md:
+                all_text.append(f"\n--- Pag {i+1} (Mistral DocAI) ---\n{page_md}")
+        
+        return "\n".join(all_text) if all_text else ""
+    
+    def process_image_bytes(self, image_bytes: bytes, page_num: int = 1) -> str:
+        """Process a single page image (PNG/JPEG bytes) through Mistral Document AI."""
+        import base64
+        
+        b64_data = base64.b64encode(image_bytes).decode("utf-8")
+        image_url = f"data:image/png;base64,{b64_data}"
+        
+        payload = {
+            "model": "mistral-document-ai-2512",
+            "document": {
+                "type": "image_url",
+                "image_url": image_url
+            },
+            "include_image_base64": False
+        }
+        
+        response = requests.post(
+            self.ENDPOINT,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}"
+            },
+            json=payload,
+            timeout=60
+        )
+        
+        if response.status_code != 200:
+            raise RuntimeError(f"Mistral Document AI error {response.status_code}: {response.text[:300]}")
+        
+        result = response.json()
+        pages = result.get("pages", [])
+        if pages:
+            return pages[0].get("markdown", "")
+        return ""
+
+
+# Global singleton
+MISTRAL_DOC_AI_ENGINE = None
+
+def get_mistral_doc_ai_engine():
+    global MISTRAL_DOC_AI_ENGINE
+    if MISTRAL_DOC_AI_ENGINE is None:
+        try:
+            MISTRAL_DOC_AI_ENGINE = MistralDocumentAIEngine()
+            print("✅ Mistral Document AI engine initialized")
+        except Exception as e:
+            print(f"⚠️ Erro ao iniciar Mistral Document AI: {e}")
+            MISTRAL_DOC_AI_ENGINE = None
+    return MISTRAL_DOC_AI_ENGINE
