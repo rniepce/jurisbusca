@@ -297,12 +297,29 @@ async def chat(req: ChatRequest, request: Request):
                 response_text = "Erro: V2 Engine (run_hybrid_orchestration) não importada ou indisponível"
                 
         elif req.model == "v3":
-            # Call Orchestrator V3 (Autonomous Magistrate)
+            # Call Orchestrator V3 (Autonomous Magistrate with LangGraph)
             if getattr(be, "run_autonomous_magistrate", None):
-                # Currently a placeholder - requires implementation logic for V3
-                response_text = "⚠️ Modo V3 (Autônomo) acionado, mas o backend requer integração completa com o LangGraph."
+                context_str = req.uploaded_text or ""
+                user_msg = req.message or ""
+                full_text = f"{context_str}\n\nPEDIDO DO USUÁRIO:\n{user_msg}" if user_msg.strip() else context_str
+                keys = {}  # Azure env vars are read internally
+
+                try:
+                    v3_json, v3_logs = be.run_autonomous_magistrate(full_text, keys)
+
+                    # Format the response
+                    logs_text = "\n".join(v3_logs) if v3_logs else ""
+                    if v3_json.get("error"):
+                        response_text = f"⚠️ **V3 finalizou com erro:** {v3_json['error']}\n\n**Logs:**\n{logs_text}\n\n**Raw:**\n{v3_json.get('raw', '')}"
+                    else:
+                        minuta = v3_json.get("minuta_final", v3_json.get("raw", ""))
+                        if isinstance(minuta, dict):
+                            minuta = minuta.get("texto", json.dumps(minuta, ensure_ascii=False, indent=2))
+                        response_text = f"{minuta}\n\n---\n**🔍 Logs V3:**\n{logs_text}"
+                except Exception as e:
+                    response_text = f"⚠️ **Erro no V3 Engine:** {str(e)}"
             else:
-                response_text = "Erro: V3 Engine não implementada."
+                response_text = "Erro: V3 Engine (run_autonomous_magistrate) não foi importada. Verifique se langgraph está instalado."
         else:
             # Default V1 - just invoke LLM (Chat-based logic)
             response = llm.invoke(messages)
