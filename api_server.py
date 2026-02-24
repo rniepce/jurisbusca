@@ -295,7 +295,20 @@ async def chat(req: ChatRequest, request: Request):
                 
                 v2_result = be.run_hybrid_orchestration(full_text, keys, style_guide)
                 
-                response_text = f"**Relatório V2 (Triagem):**\n{v2_result.get('final_report', '')}\n\n**Minuta (Drafting):**\n{v2_result.get('final_output', '')}\n\n**Auditoria (QA):**\n{v2_result.get('audit_report', '')}"
+                # Return structured sections so frontend can render collapsible cards
+                triage_text = v2_result.get('final_report', '')
+                draft_text = v2_result.get('final_output', '')
+                audit_text = v2_result.get('audit_report', '')
+                
+                # Build the main response (the minuta) as primary content
+                response_text = draft_text if draft_text.strip() else "(Nenhuma minuta gerada)"
+                
+                # Store V2 sections for structured frontend rendering
+                v2_sections = {
+                    "triage": triage_text,
+                    "draft": draft_text,
+                    "audit": audit_text,
+                }
             else:
                 response_text = "Erro: V2 Engine (run_hybrid_orchestration) não importada ou indisponível"
                 
@@ -331,11 +344,18 @@ async def chat(req: ChatRequest, request: Request):
         # Persist assistant turn in history (in-memory)
         conversations_fallback[conv_id].append({"role": "assistant", "content": response_text})
 
-        return {
+        # Build response payload
+        result_payload = {
             "conversation_id": conv_id,
             "response": response_text,
             "model": model_name,
         }
+        
+        # Include V2 structured sections if available
+        if req.model == "v2" and 'v2_sections' in locals():
+            result_payload["v2_sections"] = v2_sections
+        
+        return result_payload
 
     except HTTPException:
         raise

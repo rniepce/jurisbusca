@@ -120,6 +120,7 @@ function App() {
         role: 'assistant',
         content: typeof rawResponse === 'string' ? rawResponse : String(rawResponse),
         model: result.model,
+        v2Sections: result.v2_sections || null,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {

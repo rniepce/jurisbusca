@@ -67,6 +67,28 @@ const iconMap = {
     FaClipboardCheck: FaClipboardCheck,
 };
 
+/** Collapsible card for V2 engine sections (triage/audit) */
+function V2CollapsibleCard({ icon, title, content }) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <div className={`v2-card ${open ? 'v2-card-open' : ''}`} onClick={() => setOpen(!open)}>
+            <div className="v2-card-header">
+                <span className="v2-card-icon">{icon}</span>
+                <span className="v2-card-title">{title}</span>
+                <span className={`v2-card-chevron ${open ? 'rotated' : ''}`}>▸</span>
+            </div>
+            {open && (
+                <div
+                    className="v2-card-body markdown"
+                    dangerouslySetInnerHTML={{ __html: formatMarkdown(content) }}
+                    onClick={(e) => e.stopPropagation()}
+                />
+            )}
+        </div>
+    );
+}
+
 const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, styleAnalyzing = false, onAutoAction }) => {
     const endRef = useRef(null);
 
@@ -154,6 +176,46 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, sty
                     }
 
                     // ── Normal messages ──
+                    // ── V2 Structured Response with collapsible cards ──
+                    if (msg.role === 'assistant' && msg.v2Sections) {
+                        return (
+                            <div key={i} className={`message-row assistant`}>
+                                <div className="message-avatar">
+                                    <img src={logoSvg} alt="Assistente" style={{ width: 14, height: 14, borderRadius: '2px' }} />
+                                </div>
+                                <div className={`message-bubble assistant`}>
+                                    {/* Main content: the minuta/draft */}
+                                    <div
+                                        className="message-content markdown"
+                                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.v2Sections.draft || msg.content) }}
+                                    />
+
+                                    {/* Collapsible cards */}
+                                    <div className="v2-cards-row">
+                                        {msg.v2Sections.triage && (
+                                            <V2CollapsibleCard
+                                                icon="🔍"
+                                                title="Relatório de Triagem"
+                                                content={msg.v2Sections.triage}
+                                            />
+                                        )}
+                                        {msg.v2Sections.audit && (
+                                            <V2CollapsibleCard
+                                                icon="🛡️"
+                                                title="Auditoria (QA)"
+                                                content={msg.v2Sections.audit}
+                                            />
+                                        )}
+                                    </div>
+
+                                    {msg.model && (
+                                        <span className="message-model">{msg.model}</span>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    }
+
                     return (
                         <div key={i} className={`message-row ${msg.role}`}>
                             <div className="message-avatar">
