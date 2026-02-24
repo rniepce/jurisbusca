@@ -26,6 +26,7 @@ const LLM_OPTIONS = [
 const ACCEPTED_TYPES = '.pdf,.docx,.txt';
 
 const OCR_ENGINES = [
+    { id: 'none', label: 'Sem OCR' },
     { id: 'gpt4o_mini', label: 'GPT-4o mini' },
     { id: 'paddle', label: 'PaddleOCR' },
     { id: 'deepseek', label: 'DeepSeek-OCR' },
@@ -40,7 +41,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     const [llmDropdownOpen, setLlmDropdownOpen] = useState(false);
     const [files, setFiles] = useState([]);
     const [templateFiles, setTemplateFiles] = useState([]);
-    const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[1].id);
+    const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[0].id);
     const [compressEnabled, setCompressEnabled] = useState(true);
     const [ragEnabled, setRagEnabled] = useState(false);
     const [ragAvailable, setRagAvailable] = useState(false);

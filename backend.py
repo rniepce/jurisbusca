@@ -323,30 +323,38 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
 
     try:
         if suffix == ".pdf":
-            # ── Hybrid Extract: page-level triage (text vs OCR) ──
-            try:
-                from core.hybrid_extract import hybrid_extract
-                ocr_choice = ocr_engine_choice
-                # Normalize OCR engine choice
-                if ocr_choice in ["claude_vision", "gpt4o_mini"]:
-                    ocr_choice = "paddle"
-                # Valid OCR engines for hybrid_extract: paddle, deepseek, mistral_doc_ai
-                docs, stats = hybrid_extract(tmp_path, ocr_choice, compress)
-                print(f"📊 {stats['text_pages']} págs texto | {stats['ocr_pages']} págs OCR | {stats['total_chars']} chars | {stats['elapsed_seconds']}s")
-            except ImportError:
-                print("⚠️ core.hybrid_extract não disponível. Usando extração legada.")
-                # ── Fallback: extração legada (PyPDFLoader) ──
+            if ocr_engine_choice == "none":
+                # ── No OCR: direct text extraction only (PyPDFLoader) ──
                 from langchain_community.document_loaders import PyPDFLoader
                 loader = PyPDFLoader(tmp_path)
                 docs = loader.load()
                 total_chars = sum(len(d.page_content) for d in docs)
-                if total_chars < 500:
-                    print(f"📉 Texto insuficiente ({total_chars} chars). Acionando OCR ({ocr_engine_choice})...")
-                    if HAS_OCR:
-                        ocr_text = ocr_engine.extract_text_from_pdf(tmp_path, engine="paddle")
-                        if ocr_text and "[ERRO]" not in ocr_text:
-                            from langchain_core.documents import Document
-                            docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "paddle"})]
+                print(f"📄 Extração direta (sem OCR): {len(docs)} págs | {total_chars} chars")
+            else:
+                # ── Hybrid Extract: page-level triage (text vs OCR) ──
+                try:
+                    from core.hybrid_extract import hybrid_extract
+                    ocr_choice = ocr_engine_choice
+                    # Normalize OCR engine choice
+                    if ocr_choice in ["claude_vision", "gpt4o_mini"]:
+                        ocr_choice = "paddle"
+                    # Valid OCR engines for hybrid_extract: paddle, deepseek, mistral_doc_ai
+                    docs, stats = hybrid_extract(tmp_path, ocr_choice, compress)
+                    print(f"📊 {stats['text_pages']} págs texto | {stats['ocr_pages']} págs OCR | {stats['total_chars']} chars | {stats['elapsed_seconds']}s")
+                except ImportError:
+                    print("⚠️ core.hybrid_extract não disponível. Usando extração legada.")
+                    # ── Fallback: extração legada (PyPDFLoader) ──
+                    from langchain_community.document_loaders import PyPDFLoader
+                    loader = PyPDFLoader(tmp_path)
+                    docs = loader.load()
+                    total_chars = sum(len(d.page_content) for d in docs)
+                    if total_chars < 500:
+                        print(f"📉 Texto insuficiente ({total_chars} chars). Acionando OCR ({ocr_engine_choice})...")
+                        if HAS_OCR:
+                            ocr_text = ocr_engine.extract_text_from_pdf(tmp_path, engine="paddle")
+                            if ocr_text and "[ERRO]" not in ocr_text:
+                                from langchain_core.documents import Document
+                                docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "paddle"})]
         
         elif suffix == ".docx":
             from langchain_community.document_loaders import Docx2txtLoader
