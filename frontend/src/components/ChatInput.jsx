@@ -13,14 +13,12 @@ const ENGINE_VERSIONS = [
     { id: 'v0', name: 'Gabinete V0', color: '#10B981' },
     { id: 'v1', name: 'Gabinete V1', color: '#4285F4' },
     { id: 'v2', name: 'Gabinete V2 (Agêntico)', color: '#D97706' },
-    { id: 'v3', name: 'Gabinete V3 (Autônomo)', color: '#6366F1' },
 ];
 
 const LLM_OPTIONS = [
     { id: 'gpt52', name: 'GPT-5.2', color: '#4285F4', deployment: 'gpt-5.2-chat' },
-    { id: 'gpt41mini', name: 'GPT-4.1 Mini', color: '#8B5CF6', deployment: 'gpt-4.1-mini' },
-    { id: 'deepseek', name: 'DeepSeek V3.2', color: '#06B6D4', deployment: 'DeepSeek-V3.2-Speciale' },
-    { id: 'kimi', name: 'Kimi K2.5', color: '#F59E0B', deployment: 'Kimi-K2.5' },
+    { id: 'gemini', name: 'Gemini 3.1 Pro', color: '#34A853', deployment: 'gemini-3.1-pro' },
+    { id: 'claude', name: 'Claude Sonnet 4.6', color: '#D97706', deployment: 'claude-sonnet-4-6' },
 ];
 
 const ACCEPTED_TYPES = '.pdf,.docx,.txt';

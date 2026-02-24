@@ -76,13 +76,9 @@ MODEL_MAP = {
     "gemini": "gpt-5.2-chat",
     "claude": "gpt-5.2-chat",
     "gpt":    "gpt-5.2-chat",
-    "v0":     "gpt-4.1-mini",       # tarefas leves, rápido e econômico
+    "v0":     "gpt-5.2-chat",
     "v1":     "gpt-5.2-chat",
     "v2":     "gpt-5.2-chat",
-    "v3":     "gpt-5.2-chat",
-    "mini":   "gpt-4.1-mini",       # acesso direto ao mini
-    "deepseek": "DeepSeek-V3.2-Speciale",  # Azure AI serverless
-    "kimi": "Kimi-K2.5",                    # Azure AI serverless
 }
 
 
@@ -142,15 +138,11 @@ async def chat(req: ChatRequest, request: Request):
         # Read Azure key from header (frontend sends it), fallback to env var
         azure_key = request.headers.get("X-Azure-Key", "").strip() or None
 
-        # Build the LLM instance via Azure OpenAI
-        # Serverless models (Kimi, DeepSeek) can fail — fallback to GPT-5.2
-        SERVERLESS_MODELS = {"DeepSeek-V3.2-Speciale", "Kimi-K2.5"}
+        # Build the LLM instance
         original_model = model_name
         try:
             llm = be.get_llm(model_name=model_name, temperature=0.3, api_key=azure_key)
-            # Quick validation: if it's a serverless model, test connectivity
-            if model_name in SERVERLESS_MODELS:
-                print(f"✅ LLM instanciado: {model_name} (serverless)")
+            print(f"✅ LLM instanciado: {model_name}")
         except Exception as llm_err:
             print(f"⚠️ Falha ao instanciar {model_name}: {llm_err}. Fallback para gpt-5.2-chat.")
             model_name = "gpt-5.2-chat"
@@ -407,8 +399,8 @@ async def chat(req: ChatRequest, request: Request):
                 response = llm.invoke(messages)
                 response_text = be.safe_content(response)
             except Exception as invoke_err:
-                # If a serverless model (Kimi/DeepSeek) fails at invocation, retry with GPT-5.2
-                if original_model in SERVERLESS_MODELS:
+                # If model fails at invocation, retry with GPT-5.2
+                if original_model != "gpt-5.2-chat":
                     print(f"⚠️ {original_model} invoke falhou: {invoke_err}. Retrying com GPT-5.2.")
                     try:
                         fallback_llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)

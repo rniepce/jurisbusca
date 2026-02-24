@@ -446,43 +446,66 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
 
 def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key: str = None, **kwargs):
     """
-    Factory centralizada — todos os modelos passam pelo Azure OpenAI.
-    model_name: nome do deployment no Azure (ex: 'gpt-5.2-chat', 'gpt-4.1-mini', 'DeepSeek-V3.2-Speciale').
-    api_key: se fornecida, tem prioridade sobre a variável de ambiente.
+    Factory centralizada — suporta Azure OpenAI, Google Gemini e Anthropic Claude.
+    model_name: 'gpt-5.2-chat' (Azure), 'gemini-3.1-pro' (Google), 'claude-sonnet-4-6' (Anthropic).
     """
     deployment = model_name or os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.2-chat")
 
-    # ── Serverless models (Azure AI / Models-as-a-Service) ──
-    # These use the standard OpenAI SDK with a different base URL
-    SERVERLESS_MODELS = {"DeepSeek-V3.2-Speciale", "Kimi-K2.5"}
-
-    if deployment in SERVERLESS_MODELS:
-        if not HAS_OPENAI:
-            raise ImportError("langchain-openai não instalado. Execute: pip install langchain-openai")
-
-        azure_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
-        serverless_endpoint = os.getenv(
-            "AZURE_AI_SERVERLESS_ENDPOINT",
-            "https://assistente-web-resource.services.ai.azure.com/openai/v1/"
-        )
-
-        if not azure_key:
-            raise ValueError("AZURE_OPENAI_API_KEY deve estar configurada para usar modelos serverless.")
-
-        # Azure OpenAI uses max_completion_tokens instead of max_tokens
-        if 'max_tokens' in kwargs:
-            kwargs['max_completion_tokens'] = kwargs.pop('max_tokens')
-
-        llm_kwargs = dict(
-            model=deployment,
-            base_url=serverless_endpoint,
-            api_key=azure_key,
+    # ── Google Gemini (native API) ──
+    if deployment.startswith("gemini"):
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+        except ImportError:
+            raise ImportError("langchain-google-genai não instalado. Execute: pip install langchain-google-genai")
+        
+        google_key = os.getenv("GOOGLE_API_KEY", "")
+        if not google_key:
+            raise ValueError("GOOGLE_API_KEY deve estar configurada para usar Gemini.")
+        
+        # Map deployment names to Google model IDs
+        gemini_model_map = {
+            "gemini-3.1-pro": "gemini-3.1-pro",
+            "gemini-2.5-pro": "gemini-2.5-pro-preview-06-05",
+            "gemini-2.5-flash": "gemini-2.5-flash-preview-05-20",
+        }
+        google_model = gemini_model_map.get(deployment, deployment)
+        
+        print(f"🟢 Gemini: {google_model}")
+        return ChatGoogleGenerativeAI(
+            model=google_model,
+            google_api_key=google_key,
             temperature=temperature,
             **kwargs,
         )
-        return ChatOpenAI(**llm_kwargs)
 
-    # ── Standard Azure OpenAI models ──
+    # ── Anthropic Claude (native API) ──
+    if deployment.startswith("claude"):
+        try:
+            from langchain_anthropic import ChatAnthropic
+        except ImportError:
+            raise ImportError("langchain-anthropic não instalado. Execute: pip install langchain-anthropic")
+        
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+        if not anthropic_key:
+            raise ValueError("ANTHROPIC_API_KEY deve estar configurada para usar Claude.")
+        
+        # Map deployment names to Anthropic model IDs
+        claude_model_map = {
+            "claude-sonnet-4-6": "claude-sonnet-4-20250514",
+            "claude-sonnet-4-5": "claude-sonnet-4-5-20250514",
+        }
+        anthropic_model = claude_model_map.get(deployment, deployment)
+        
+        print(f"🟠 Claude: {anthropic_model}")
+        return ChatAnthropic(
+            model=anthropic_model,
+            anthropic_api_key=anthropic_key,
+            temperature=temperature,
+            max_tokens=8192,
+            **kwargs,
+        )
+
+    # ── Standard Azure OpenAI models (GPT-5.2, etc.) ──
     if not HAS_AZURE_OPENAI:
         raise ImportError("langchain-openai não instalado. Execute: pip install langchain-openai")
 
@@ -499,7 +522,6 @@ def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key:
         kwargs['max_completion_tokens'] = kwargs.pop('max_tokens')
 
     # GPT-5.2 doesn't support custom temperature — only default (1)
-    # For models that don't support it, we omit the parameter entirely
     models_no_temp = {"gpt-5.2-chat"}
     use_temperature = temperature if deployment not in models_no_temp else None
 
