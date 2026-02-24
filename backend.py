@@ -1094,17 +1094,11 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
     """
     documents = []
     
-    # Inicializa Hybrid Semantic Chunker (usa Azure OpenAI Embeddings)
+    # Fast local splitter only — HybridSemanticChunker was calling Azure embeddings
+    # during chunking, then ChromaDB called embeddings AGAIN when indexing, doubling
+    # API calls and making indexing very slow (~30-60s). RecursiveCharacterTextSplitter
+    # is instant (local CPU).
     chunker = None
-    if HybridSemanticChunker:
-        try:
-            print("Using Azure OpenAI Embeddings for Chunking")
-            chunker = HybridSemanticChunker(provider="azure")
-        except Exception as e:
-            print(f"⚠️ Erro ao inicializar chunker: {e}")
-            chunker = None
-
-    # Fallback splitter if chunker fails to init
     fallback_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 
     for file in files:

@@ -617,6 +617,9 @@ async def upload_templates(
     import io
 
     try:
+        import time as _time
+        import asyncio
+
         # Convert UploadFiles into file-like objects
         file_objects = []
         for f in files:
@@ -627,23 +630,38 @@ async def upload_templates(
             file_objects.append(buf)
 
         # 1. Index in ChromaDB (persistent) -> Uses Azure OpenAI Embeddings
+        t0 = _time.time()
         collection_name = "rag_templates_persistent"
         retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name)
         indexed_count = len(docs) if docs else 0
+        print(f"⏱️ Indexação ChromaDB: {_time.time()-t0:.1f}s ({indexed_count} chunks)")
 
-        # 2. Auto-generate style dossier (cached) -> Uses Azure OpenAI
-        # Reset file positions for re-read
+        # 2. Auto-generate style dossier in BACKGROUND (don't block response)
+        # The dossier calls GPT-5.2 which adds 10-30s; run it async instead.
+        # Make copies of the byte buffers so background task has its own data.
+        dossier_buffers = []
         for f in file_objects:
             f.seek(0)
-        dossier_result = be.generate_style_dossier(file_objects, None)
-        has_dossier = bool(dossier_result and not dossier_result.get("error"))
+            buf_copy = io.BytesIO(f.read())
+            buf_copy.name = getattr(f, 'name', 'template.pdf')
+            buf_copy.seek(0)
+            dossier_buffers.append(buf_copy)
+
+        async def _gen_dossier_bg(fobjs):
+            try:
+                result = await asyncio.to_thread(be.generate_style_dossier, fobjs, None)
+                print(f"✅ Dossiê de estilo gerado em background: {bool(result and not result.get('error'))}")
+            except Exception as e:
+                print(f"⚠️ Erro ao gerar dossiê em background: {e}")
+
+        asyncio.create_task(_gen_dossier_bg(dossier_buffers))
 
         return {
             "indexed_chunks": indexed_count,
             "file_count": len(file_objects),
-            "has_dossier": has_dossier,
-            "dossier_preview": (dossier_result or {}).get("dossier", "")[:500],
-            "cloning_prompt": (dossier_result or {}).get("cloning_prompt", ""),
+            "has_dossier": False,  # Will be true on next status check after background completes
+            "dossier_preview": "",
+            "cloning_prompt": "",
         }
 
     except HTTPException:

@@ -60,32 +60,19 @@ function App() {
         }
       }
 
-      // ── Auto-generate style dossier if templates loaded but not yet analyzed ──
+      // ── Auto-generate style dossier in background (no chat display) ──
+      // The dossier is used internally for styleDossier state (injected into LLM calls).
+      // Users can view it explicitly via "Relatório de Estilo" button.
       let currentStyleDossier = styleDossier;
       if (templateFiles && templateFiles.length > 0 && !currentStyleDossier) {
-        // Show style analysis status
-        setStyleAnalyzing(true);
         try {
           const styleResult = await generateStyleReport(templateFiles);
           if (styleResult.cloning_prompt) {
             currentStyleDossier = styleResult.cloning_prompt;
             setStyleDossier(styleResult.cloning_prompt);
           }
-          // Show dossier as assistant message
-          const dossierContent = styleResult.full_response || styleResult.dossier || '';
-          if (dossierContent) {
-            const styleMsg = {
-              role: 'assistant',
-              content: `🎨 **Dossiê de Identidade Decisional** (${styleResult.file_count} modelo${styleResult.file_count > 1 ? 's' : ''} analisado${styleResult.file_count > 1 ? 's' : ''})\n\n${dossierContent}`,
-              model: 'gemini-flash',
-            };
-            setMessages((prev) => [...prev, styleMsg]);
-          }
         } catch (styleErr) {
           console.warn('Auto style report failed:', styleErr.message);
-          // Non-blocking: continue without style if it fails
-        } finally {
-          setStyleAnalyzing(false);
         }
       }
 

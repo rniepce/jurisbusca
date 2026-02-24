@@ -307,6 +307,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                                     } catch (err) {
                                         console.error('Indexing failed:', err);
                                         setIndexing(false);
+                                        alert(`Erro ao indexar modelos: ${err.message}`);
                                     }
                                 }}
                                 disabled={isLoading || indexing || indexSuccess}
