@@ -56,9 +56,9 @@ conversations_fallback: dict[str, list[dict]] = {}
 # ── In-memory process RAG cache (retriever per session) ──────────────────
 # Key: hash of uploaded filename+size, Value: (retriever, full_text, char_count)
 
-# ── In-memory Raio-X background task store ────────────────────────────────
+# ── In-memory background task store (shared: upload + xray) ───────────────
 # Key: task_id, Value: {"status": str, "result": dict|None, "error": str|None, "progress": str}
-_xray_tasks: dict[str, dict] = {}
+_bg_tasks: dict[str, dict] = {}
 _process_rag_cache: dict[str, tuple] = {}
 
 # ── Auth (disabled — open access) ─────────────────────────────────────────
@@ -446,27 +446,21 @@ async def get_history():
     return {"conversations": []}
 
 
-@app.post("/api/upload")
-async def upload_file(
-    file: UploadFile = File(...),
-    ocr_engine: str = Form("paddle"),
-    compress: bool = Form(True),
-):
-    """Upload and extract text from a file (PDF/DOCX/TXT)."""
+def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_engine: str, compress: bool):
+    """Background worker: extracts text from uploaded file and stores result."""
     try:
+        _bg_tasks[task_id]["status"] = "running"
+        _bg_tasks[task_id]["progress"] = f"Extraindo texto de {filename}..."
 
-        # Save to temp file
-        suffix = os.path.splitext(file.filename or "doc.pdf")[1]
+        suffix = os.path.splitext(filename)[1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            content = await file.read()
-            tmp.write(content)
+            tmp.write(file_data)
             tmp_path = tmp.name
 
-        # Extract text using backend
         try:
             full_text, retriever = be.process_uploaded_file(
                 open(tmp_path, "rb"),
-                file.filename or "documento",
+                filename,
                 ocr_engine_choice=ocr_engine,
                 compress=compress,
             )
@@ -474,28 +468,86 @@ async def upload_file(
             os.unlink(tmp_path)
 
         if not full_text or not full_text.strip():
-            raise HTTPException(status_code=422, detail="Não foi possível extrair texto do arquivo.")
+            _bg_tasks[task_id]["status"] = "error"
+            _bg_tasks[task_id]["error"] = "Não foi possível extrair texto do arquivo."
+            return
 
         # Cache the retriever for RAG mode
         rag_available = False
         if retriever:
-            cache_key = hashlib.md5(f"{file.filename}:{len(full_text)}".encode()).hexdigest()
+            cache_key = hashlib.md5(f"{filename}:{len(full_text)}".encode()).hexdigest()
             _process_rag_cache[cache_key] = (retriever, full_text, len(full_text))
             rag_available = True
             print(f"🎯 Process RAG cached: key={cache_key[:8]}")
 
-        return {
-            "filename": file.filename,
+        _bg_tasks[task_id]["status"] = "done"
+        _bg_tasks[task_id]["result"] = {
+            "filename": filename,
             "text": full_text,
             "char_count": len(full_text),
             "rag_available": rag_available,
         }
 
-    except HTTPException:
-        raise
+    except Exception as e:
+        traceback.print_exc()
+        _bg_tasks[task_id]["status"] = "error"
+        _bg_tasks[task_id]["error"] = f"Erro no upload: {str(e)}"
+
+
+@app.post("/api/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    ocr_engine: str = Form("paddle"),
+    compress: bool = Form(True),
+):
+    """Upload and extract text from a file. Returns task_id for polling."""
+    try:
+        content = await file.read()
+        filename = file.filename or "documento.pdf"
+
+        task_id = str(uuid.uuid4())
+        _bg_tasks[task_id] = {
+            "status": "pending",
+            "result": None,
+            "error": None,
+            "progress": f"Processando {filename}...",
+        }
+
+        thread = threading.Thread(
+            target=_run_upload_background,
+            args=(task_id, content, filename, ocr_engine, compress),
+            daemon=True,
+        )
+        thread.start()
+
+        return {"task_id": task_id, "status": "pending"}
+
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro no upload: {str(e)}")
+
+
+@app.get("/api/upload/{task_id}")
+async def upload_status(task_id: str):
+    """Poll the status of a background upload task."""
+    task = _bg_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+
+    response = {
+        "task_id": task_id,
+        "status": task["status"],
+        "progress": task.get("progress", ""),
+    }
+
+    if task["status"] == "done":
+        response["result"] = task["result"]
+        del _bg_tasks[task_id]
+    elif task["status"] == "error":
+        response["error"] = task.get("error", "Erro desconhecido")
+        del _bg_tasks[task_id]
+
+    return response
 
 
 def _run_xray_background(task_id: str, file_data: list[tuple[str, bytes]]):
@@ -503,8 +555,8 @@ def _run_xray_background(task_id: str, file_data: list[tuple[str, bytes]]):
     import io
 
     try:
-        _xray_tasks[task_id]["status"] = "running"
-        _xray_tasks[task_id]["progress"] = "Extraindo texto dos arquivos..."
+        _bg_tasks[task_id]["status"] = "running"
+        _bg_tasks[task_id]["progress"] = "Extraindo texto dos arquivos..."
 
         file_objects = []
         for fname, content_bytes in file_data:
@@ -513,17 +565,17 @@ def _run_xray_background(task_id: str, file_data: list[tuple[str, bytes]]):
             buf.seek(0)
             file_objects.append(buf)
 
-        _xray_tasks[task_id]["progress"] = f"Analisando {len(file_objects)} processos (MAP-REDUCE)..."
+        _bg_tasks[task_id]["progress"] = f"Analisando {len(file_objects)} processos (MAP-REDUCE)..."
 
         report, text_cache = be.generate_batch_xray(file_objects, None)
 
         if isinstance(report, dict) and "error" in report:
-            _xray_tasks[task_id]["status"] = "error"
-            _xray_tasks[task_id]["error"] = report.get("error", "Erro desconhecido")
-            _xray_tasks[task_id]["result"] = {"report": report, "text_cache": text_cache}
+            _bg_tasks[task_id]["status"] = "error"
+            _bg_tasks[task_id]["error"] = report.get("error", "Erro desconhecido")
+            _bg_tasks[task_id]["result"] = {"report": report, "text_cache": text_cache}
         else:
-            _xray_tasks[task_id]["status"] = "done"
-            _xray_tasks[task_id]["result"] = {
+            _bg_tasks[task_id]["status"] = "done"
+            _bg_tasks[task_id]["result"] = {
                 "report": report,
                 "file_count": len(file_objects),
                 "text_cache": text_cache,
@@ -531,8 +583,8 @@ def _run_xray_background(task_id: str, file_data: list[tuple[str, bytes]]):
 
     except Exception as e:
         traceback.print_exc()
-        _xray_tasks[task_id]["status"] = "error"
-        _xray_tasks[task_id]["error"] = f"Erro no Raio-X: {str(e)}"
+        _bg_tasks[task_id]["status"] = "error"
+        _bg_tasks[task_id]["error"] = f"Erro no Raio-X: {str(e)}"
 
 
 @app.post("/api/xray")
@@ -549,7 +601,7 @@ async def batch_xray(files: list[UploadFile] = File(...)):
             file_data.append((f.filename or "documento.pdf", content))
 
         task_id = str(uuid.uuid4())
-        _xray_tasks[task_id] = {
+        _bg_tasks[task_id] = {
             "status": "pending",
             "result": None,
             "error": None,
@@ -577,7 +629,7 @@ async def xray_status(task_id: str):
     Poll the status of a background X-Ray task.
     Returns status ('pending', 'running', 'done', 'error') and result when done.
     """
-    task = _xray_tasks.get(task_id)
+    task = _bg_tasks.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
 
@@ -590,10 +642,10 @@ async def xray_status(task_id: str):
     if task["status"] == "done":
         response["result"] = task["result"]
         # Clean up after delivery
-        del _xray_tasks[task_id]
+        del _bg_tasks[task_id]
     elif task["status"] == "error":
         response["error"] = task.get("error", "Erro desconhecido")
-        del _xray_tasks[task_id]
+        del _bg_tasks[task_id]
 
     return response
 

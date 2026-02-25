@@ -67,25 +67,51 @@ export async function uploadFile(file, ocrEngine = 'paddle', compress = true) {
     form.append('ocr_engine', ocrEngine);
     form.append('compress', compress.toString());
 
-    const res = await fetch(`${API_BASE}/upload`, {
+    // 1. Start background upload task
+    const startRes = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: form,
-        redirect: 'error',    // Do NOT follow redirects — fail immediately
+        redirect: 'error',
     }).catch((err) => {
-        // redirect: 'error' causes a TypeError on redirect
         throw new Error(
-            `Upload: requisição foi redirecionada ou bloqueada. ` +
-            `Verifique se o backend Python está rodando no Railway. (${err.message})`
+            `Upload: requisição redirecionada ou bloqueada. (${err.message})`
         );
     });
 
-    if (!res.ok) {
-        const err = await safeJson(res, 'Upload').catch(() => ({}));
-        throw new Error(err.detail || err.message || `Upload falhou (${res.status})`);
+    if (!startRes.ok) {
+        const err = await safeJson(startRes, 'Upload').catch(() => ({}));
+        throw new Error(err.detail || err.message || `Upload falhou (${startRes.status})`);
     }
 
-    return safeJson(res, 'Upload');
+    const { task_id } = await safeJson(startRes, 'Upload');
+    if (!task_id) throw new Error('Upload: servidor não retornou task_id.');
+
+    // 2. Poll for results every 2 seconds (max ~5 minutes)
+    const POLL_INTERVAL = 2000;
+    const MAX_POLLS = 150;
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+
+        const pollRes = await fetch(`${API_BASE}/upload/${task_id}`, {
+            headers: getAuthHeaders(),
+        }).catch(() => null);
+
+        if (!pollRes || !pollRes.ok) continue;
+
+        const data = await safeJson(pollRes, 'Upload Poll').catch(() => null);
+        if (!data) continue;
+
+        if (data.status === 'done') {
+            return data.result;
+        }
+        if (data.status === 'error') {
+            throw new Error(data.error || 'Upload falhou no servidor.');
+        }
+    }
+
+    throw new Error('Upload: tempo máximo de espera excedido.');
 }
 
 /**

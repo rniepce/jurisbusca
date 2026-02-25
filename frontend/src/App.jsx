@@ -284,8 +284,12 @@ function App() {
     setOcrEngineName(ocrEngine);
 
     try {
-      const uploadPromises = files.map((f) => uploadFile(f, ocrEngine, compress));
-      const results = await Promise.all(uploadPromises);
+      // Upload files sequentially (not parallel) to avoid overwhelming backend
+      const results = [];
+      for (const f of files) {
+        const result = await uploadFile(f, ocrEngine, compress);
+        results.push(result);
+      }
 
       // Store the extracted text for future chat messages
       const newText = results.map((r) => r.text).join('\n\n---\n\n');
