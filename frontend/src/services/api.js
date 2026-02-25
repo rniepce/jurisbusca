@@ -138,7 +138,8 @@ export async function uploadBatchXray(files) {
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
 
-    const res = await fetch(`${API_BASE}/xray`, {
+    // 1. Start background task
+    const startRes = await fetch(`${API_BASE}/xray`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: form,
@@ -149,12 +150,40 @@ export async function uploadBatchXray(files) {
         );
     });
 
-    if (!res.ok) {
-        const err = await safeJson(res, 'Raio-X').catch(() => ({}));
-        throw new Error(err.detail || err.message || `Raio-X falhou (${res.status})`);
+    if (!startRes.ok) {
+        const err = await safeJson(startRes, 'Raio-X').catch(() => ({}));
+        throw new Error(err.detail || err.message || `Raio-X falhou (${startRes.status})`);
     }
 
-    return safeJson(res, 'Raio-X');
+    const { task_id } = await safeJson(startRes, 'Raio-X');
+    if (!task_id) throw new Error('Raio-X: servidor não retornou task_id.');
+
+    // 2. Poll for results every 3 seconds (max ~10 minutes)
+    const POLL_INTERVAL = 3000;
+    const MAX_POLLS = 200;
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+
+        const pollRes = await fetch(`${API_BASE}/xray/${task_id}`, {
+            headers: getAuthHeaders(),
+        }).catch(() => null);
+
+        if (!pollRes || !pollRes.ok) continue; // Retry on network hiccup
+
+        const data = await safeJson(pollRes, 'Raio-X Poll').catch(() => null);
+        if (!data) continue;
+
+        if (data.status === 'done') {
+            return data.result;
+        }
+        if (data.status === 'error') {
+            throw new Error(data.error || 'Raio-X falhou no servidor.');
+        }
+        // else: pending/running — keep polling
+    }
+
+    throw new Error('Raio-X: tempo máximo de espera excedido.');
 }
 
 /**

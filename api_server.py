@@ -8,6 +8,7 @@ import uuid
 import hashlib
 import tempfile
 import traceback
+import threading
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -54,6 +55,10 @@ conversations_fallback: dict[str, list[dict]] = {}
 
 # ── In-memory process RAG cache (retriever per session) ──────────────────
 # Key: hash of uploaded filename+size, Value: (retriever, full_text, char_count)
+
+# ── In-memory Raio-X background task store ────────────────────────────────
+# Key: task_id, Value: {"status": str, "result": dict|None, "error": str|None, "progress": str}
+_xray_tasks: dict[str, dict] = {}
 _process_rag_cache: dict[str, tuple] = {}
 
 # ── Auth (disabled — open access) ─────────────────────────────────────────
@@ -493,41 +498,104 @@ async def upload_file(
         raise HTTPException(status_code=500, detail=f"Erro no upload: {str(e)}")
 
 
-@app.post("/api/xray")
-async def batch_xray(files: list[UploadFile] = File(...)):
-    """
-    Batch X-Ray: upload multiple process files, run MAP-REDUCE clustering.
-    Returns clustered report JSON.
-    """
+def _run_xray_background(task_id: str, file_data: list[tuple[str, bytes]]):
+    """Background worker: runs the MAP-REDUCE xray pipeline and stores result."""
     import io
 
     try:
-        # Convert UploadFiles into file-like objects with .name attribute
+        _xray_tasks[task_id]["status"] = "running"
+        _xray_tasks[task_id]["progress"] = "Extraindo texto dos arquivos..."
+
         file_objects = []
-        for f in files:
-            content = await f.read()
-            buf = io.BytesIO(content)
-            buf.name = f.filename or "documento.pdf"
+        for fname, content_bytes in file_data:
+            buf = io.BytesIO(content_bytes)
+            buf.name = fname
             buf.seek(0)
             file_objects.append(buf)
 
-        # Call the existing MAP-REDUCE pipeline (uses Azure OpenAI internally)
+        _xray_tasks[task_id]["progress"] = f"Analisando {len(file_objects)} processos (MAP-REDUCE)..."
+
         report, text_cache = be.generate_batch_xray(file_objects, None)
 
-        if "error" in report:
-            raise HTTPException(status_code=422, detail=report.get("error", "Erro desconhecido"))
+        if isinstance(report, dict) and "error" in report:
+            _xray_tasks[task_id]["status"] = "error"
+            _xray_tasks[task_id]["error"] = report.get("error", "Erro desconhecido")
+            _xray_tasks[task_id]["result"] = {"report": report, "text_cache": text_cache}
+        else:
+            _xray_tasks[task_id]["status"] = "done"
+            _xray_tasks[task_id]["result"] = {
+                "report": report,
+                "file_count": len(file_objects),
+                "text_cache": text_cache,
+            }
 
-        return {
-            "report": report,
-            "file_count": len(file_objects),
-            "text_cache": text_cache,
-        }
-
-    except HTTPException:
-        raise
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro no Raio-X: {str(e)}")
+        _xray_tasks[task_id]["status"] = "error"
+        _xray_tasks[task_id]["error"] = f"Erro no Raio-X: {str(e)}"
+
+
+@app.post("/api/xray")
+async def batch_xray(files: list[UploadFile] = File(...)):
+    """
+    Batch X-Ray: upload files and start background MAP-REDUCE clustering.
+    Returns a task_id immediately — poll GET /api/xray/{task_id} for results.
+    """
+    try:
+        # Read all file content upfront (before the request lifecycle ends)
+        file_data: list[tuple[str, bytes]] = []
+        for f in files:
+            content = await f.read()
+            file_data.append((f.filename or "documento.pdf", content))
+
+        task_id = str(uuid.uuid4())
+        _xray_tasks[task_id] = {
+            "status": "pending",
+            "result": None,
+            "error": None,
+            "progress": "Tarefa criada, aguardando início...",
+        }
+
+        # Spawn background thread
+        thread = threading.Thread(
+            target=_run_xray_background,
+            args=(task_id, file_data),
+            daemon=True,
+        )
+        thread.start()
+
+        return {"task_id": task_id, "status": "pending"}
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao iniciar Raio-X: {str(e)}")
+
+
+@app.get("/api/xray/{task_id}")
+async def xray_status(task_id: str):
+    """
+    Poll the status of a background X-Ray task.
+    Returns status ('pending', 'running', 'done', 'error') and result when done.
+    """
+    task = _xray_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+
+    response = {
+        "task_id": task_id,
+        "status": task["status"],
+        "progress": task.get("progress", ""),
+    }
+
+    if task["status"] == "done":
+        response["result"] = task["result"]
+        # Clean up after delivery
+        del _xray_tasks[task_id]
+    elif task["status"] == "error":
+        response["error"] = task.get("error", "Erro desconhecido")
+        del _xray_tasks[task_id]
+
+    return response
 
 
 @app.post("/api/style-report")
