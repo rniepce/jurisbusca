@@ -17,6 +17,14 @@ const STYLE_PHASES = [
     { icon: '✨', title: 'Finalizando dossiê de identidade...', sub: 'Gerando System Prompt de Clonagem Estilística' },
 ];
 
+// ── Raio-X phases for the xray processing animation ──
+const XRAY_PHASES = [
+    { icon: '📤', title: 'Enviando processos para análise...', sub: 'Fazendo upload e leitura dos arquivos' },
+    { icon: '🔍', title: 'Lendo e classificando documentos...', sub: 'Extraindo texto e identificando tipos processuais' },
+    { icon: '🧩', title: 'Agrupando processos por matéria...', sub: 'Clusterizando por similaridade temática' },
+    { icon: '📊', title: 'Gerando painel de Raio-X da Carteira...', sub: 'Compilando estatísticas e recomendações' },
+];
+
 /** Multi-step animation shown during Style Report generation */
 function StyleAnalysisAnimation() {
     const [phase, setPhase] = useState(0);
@@ -56,6 +64,45 @@ function StyleAnalysisAnimation() {
     );
 }
 
+/** Multi-step animation shown during Raio-X batch processing */
+function XRayProcessingAnimation() {
+    const [phase, setPhase] = useState(0);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setPhase((p) => (p + 1) % XRAY_PHASES.length);
+        }, 3500);
+        return () => clearInterval(interval);
+    }, []);
+
+    const current = XRAY_PHASES[phase];
+    const progress = ((phase + 1) / XRAY_PHASES.length) * 100;
+
+    return (
+        <div className="xray-processing-card">
+            <div className="xray-phase-icon" key={phase}>
+                <span>{current.icon}</span>
+            </div>
+            <div className="xray-processing-body">
+                <div className="xray-steps-row">
+                    {XRAY_PHASES.map((_, i) => (
+                        <span
+                            key={i}
+                            className={`xray-step-dot ${i === phase ? 'active' : ''} ${i < phase ? 'done' : ''}`}
+                        />
+                    ))}
+                    <span className="xray-step-label">Etapa {phase + 1}/{XRAY_PHASES.length}</span>
+                </div>
+                <span className="xray-processing-title" key={`t-${phase}`}>{current.title}</span>
+                <span className="xray-processing-sub" key={`s-${phase}`}>{current.sub}</span>
+                <div className="xray-progress-track">
+                    <div className="xray-progress-fill" style={{ width: `${progress}%` }} />
+                </div>
+            </div>
+        </div>
+    );
+}
+
 
 // Icon map for agent activation cards
 const iconMap = {
@@ -89,12 +136,12 @@ function V2CollapsibleCard({ icon, title, content }) {
     );
 }
 
-const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, styleAnalyzing = false, onAutoAction }) => {
+const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, onAutoAction }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, isLoading, styleAnalyzing]);
+    }, [messages, isLoading, styleAnalyzing, xrayLoading]);
 
     return (
         <div className="chat-area">
@@ -249,8 +296,12 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, sty
                             <FaFileLines size={18} />
                         </div>
                         <div className="ocr-processing-info">
-                            <span className="ocr-processing-title">Processando OCR...</span>
-                            <span className="ocr-processing-sub">Extraindo texto do documento</span>
+                            <span className="ocr-processing-title">
+                                {ocrEngineName === 'none' ? 'Fazendo a leitura do processo...' : 'Processando OCR...'}
+                            </span>
+                            <span className="ocr-processing-sub">
+                                {ocrEngineName === 'none' ? 'Extraindo texto nativo do documento' : 'Extraindo texto do documento via OCR'}
+                            </span>
                         </div>
                         <div className="ocr-processing-dots">
                             <span className="dot" />
@@ -258,6 +309,11 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, sty
                             <span className="dot" />
                         </div>
                     </div>
+                )}
+
+                {/* Raio-X Processing Animation — Multi-step */}
+                {xrayLoading && (
+                    <XRayProcessingAnimation />
                 )}
 
                 {/* Style Analysis Processing Animation — Multi-step */}

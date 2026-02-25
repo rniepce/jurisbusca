@@ -580,68 +580,81 @@ class ClusterAnalyzeRequest(BaseModel):
 
 
 def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_name: str, collection_name: str = "rag_templates_persistent"):
-    """Analyze one process. Runs in a thread pool."""
-    try:
-        llm = be.get_llm(model_name=model_name, temperature=0.3)
+    """Analyze one process. Runs in a thread pool. Retries on 429 rate limit."""
+    import time as _time
 
-        messages = []
-        system_parts = []
+    MAX_RETRIES = 3
+    BASE_DELAY = 15  # seconds
 
-        if agent_prompt:
-            system_parts.append(agent_prompt)
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            llm = be.get_llm(model_name=model_name, temperature=0.3)
 
-        system_parts.append(
-            f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{text}\n---"
-        )
+            messages = []
+            system_parts = []
 
-        # Auto-RAG: inject golden sample from persistent templates
-        op_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-        if op_key:
-            try:
-                rag_retriever = be.load_persistent_rag(collection_name=collection_name)
-                if rag_retriever:
-                    relevant_docs = rag_retriever.invoke(text[:6000])
-                    if relevant_docs:
-                        mirror_doc = relevant_docs[0]
-                        rag_block = (
-                            f"\n\n---\n💎 **CASO ESPELHO (GOLDEN SAMPLE):**\n"
-                            f"O caso abaixo ({mirror_doc.metadata.get('source', '?')}) é o GABARITO ESTRUTURAL.\n"
-                            f"Copie a estrutura, adapte fatos e nomes.\n\n"
-                            f"--- INÍCIO ---\n{mirror_doc.page_content}\n--- FIM ---\n---"
-                        )
-                        system_parts.append(rag_block)
+            if agent_prompt:
+                system_parts.append(agent_prompt)
 
-                # Inject cached style dossier
-                if be._style_dossier_cache:
-                    for cached in be._style_dossier_cache.values():
-                        cloning = cached.get('cloning_prompt', '')
-                        if cloning:
-                            system_parts.append(
-                                f"\n\n---\n🧬 **CLONAGEM ESTILÍSTICA:**\n{cloning}\n---"
+            system_parts.append(
+                f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{text}\n---"
+            )
+
+            # Auto-RAG: inject golden sample from persistent templates
+            op_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+            if op_key:
+                try:
+                    rag_retriever = be.load_persistent_rag(collection_name=collection_name)
+                    if rag_retriever:
+                        relevant_docs = rag_retriever.invoke(text[:6000])
+                        if relevant_docs:
+                            mirror_doc = relevant_docs[0]
+                            rag_block = (
+                                f"\n\n---\n💎 **CASO ESPELHO (GOLDEN SAMPLE):**\n"
+                                f"O caso abaixo ({mirror_doc.metadata.get('source', '?')}) é o GABARITO ESTRUTURAL.\n"
+                                f"Copie a estrutura, adapte fatos e nomes.\n\n"
+                                f"--- INÍCIO ---\n{mirror_doc.page_content}\n--- FIM ---\n---"
                             )
-                        break
-            except Exception as e:
-                print(f"⚠️ RAG failed for {filename}: {e}")
+                            system_parts.append(rag_block)
 
-        messages.append(SystemMessage(content="\n".join(system_parts)))
-        messages.append(HumanMessage(content="Analise o documento anexado e gere a minuta de decisão conforme as instruções."))
+                    # Inject cached style dossier
+                    if be._style_dossier_cache:
+                        for cached in be._style_dossier_cache.values():
+                            cloning = cached.get('cloning_prompt', '')
+                            if cloning:
+                                system_parts.append(
+                                    f"\n\n---\n🧬 **CLONAGEM ESTILÍSTICA:**\n{cloning}\n---"
+                                )
+                            break
+                except Exception as e:
+                    print(f"⚠️ RAG failed for {filename}: {e}")
 
-        response = llm.invoke(messages)
-        response_text = be.safe_content(response)
+            messages.append(SystemMessage(content="\n".join(system_parts)))
+            messages.append(HumanMessage(content="Analise o documento anexado e gere a minuta de decisão conforme as instruções."))
 
-        return {
-            "filename": filename,
-            "status": "ok",
-            "response": response_text,
-            "model": model_name,
-        }
-    except Exception as e:
-        return {
-            "filename": filename,
-            "status": "error",
-            "response": f"Erro: {str(e)}",
-            "model": model_name if 'model_name' in dir() else "?",
-        }
+            response = llm.invoke(messages)
+            response_text = be.safe_content(response)
+
+            return {
+                "filename": filename,
+                "status": "ok",
+                "response": response_text,
+                "model": model_name,
+            }
+        except Exception as e:
+            error_str = str(e)
+            # Retry on 429 rate limit errors
+            if "429" in error_str and attempt < MAX_RETRIES:
+                delay = BASE_DELAY * (2 ** attempt)  # 15s, 30s, 60s
+                print(f"⚠️ Rate limit (429) for {filename}, retry {attempt + 1}/{MAX_RETRIES} after {delay}s...")
+                _time.sleep(delay)
+                continue
+            return {
+                "filename": filename,
+                "status": "error",
+                "response": f"Erro: {error_str}",
+                "model": model_name,
+            }
 
 
 @app.post("/api/cluster-analyze")
@@ -662,19 +675,24 @@ async def cluster_analyze(req: ClusterAnalyzeRequest):
         collection_name = "rag_templates_persistent"
 
         results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = {
-                executor.submit(
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {}
+            for i, p in enumerate(req.processes):
+                if not p.get("text"):
+                    continue
+                # Stagger submissions to avoid rate limit bursts
+                if i > 0:
+                    import time as _time
+                    _time.sleep(2)
+                future = executor.submit(
                     _analyze_single_process,
                     p["filename"],
                     p["text"],
                     req.agent_prompt or "",
                     model_name,
                     collection_name
-                ): p["filename"]
-                for p in req.processes
-                if p.get("text")
-            }
+                )
+                futures[future] = p["filename"]
             for future in concurrent.futures.as_completed(futures):
                 results.append(future.result())
 

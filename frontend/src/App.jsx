@@ -21,6 +21,7 @@ function App() {
   const [xrayLoading, setXrayLoading] = useState(false);
   const [xrayTextCache, setXrayTextCache] = useState({});
   const [ocrProcessing, setOcrProcessing] = useState(false);
+  const [ocrEngineName, setOcrEngineName] = useState('none');
   const [styleAnalyzing, setStyleAnalyzing] = useState(false);
   const [styleDossier, setStyleDossier] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
@@ -37,7 +38,7 @@ function App() {
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 
   // ── Send message handler ────────────────────────────────────────────
-  const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles, useRag = false) => {
+  const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles, useRag = false, { hideUserBubble = false } = {}) => {
     // Use a default prompt if user sends empty message but has context
     const userTyped = message.trim();
     const effectiveMessage = userTyped ||
@@ -46,7 +47,7 @@ function App() {
     if (!effectiveMessage) return;
 
     // 1. Add user message immediately (hide auto-generated messages)
-    if (userTyped) {
+    if (userTyped && !hideUserBubble) {
       const userMsg = { role: 'user', content: userTyped };
       setMessages((prev) => [...prev, userMsg]);
     }
@@ -278,8 +279,9 @@ function App() {
   // ── Files uploaded → run OCR immediately ─────────────────────────────
   const handleFilesUploaded = useCallback(async (files, ocrEngine, compress = true) => {
     if (files.length === 0) return [];
-    // Show OCR animation only when actually running OCR (not for 'Sem OCR')
-    if (ocrEngine !== 'none') setOcrProcessing(true);
+    // Show processing animation for all uploads (OCR or plain reading)
+    setOcrProcessing(true);
+    setOcrEngineName(ocrEngine);
 
     try {
       const uploadPromises = files.map((f) => uploadFile(f, ocrEngine, compress));
@@ -371,7 +373,8 @@ function App() {
     ].join('\n');
 
     // 3. Send using the current active agent (QA) and selected model
-    await handleSend(auditMessage, globalSelectedModel, [], 'paddle', [], false);
+    // Hide the user bubble — the audit message is auto-generated, not user-typed
+    await handleSend(auditMessage, globalSelectedModel, [], 'paddle', [], false, { hideUserBubble: true });
   }, [messages, uploadedText, handleSend, globalSelectedModel]);
 
   // ── New chat handler — saves current conversation to history ────────
@@ -471,14 +474,16 @@ function App() {
         />
       );
     }
-    if (hasMessages || styleAnalyzing) {
+    if (hasMessages || styleAnalyzing || xrayLoading || ocrProcessing) {
       return (
         <ChatArea
           messages={messages}
           isLoading={isLoading}
           activeAgent={activeAgent}
           ocrProcessing={ocrProcessing}
+          ocrEngineName={ocrEngineName}
           styleAnalyzing={styleAnalyzing}
+          xrayLoading={xrayLoading}
           onAutoAction={handleAutoReview}
         />
       );

@@ -1342,33 +1342,46 @@ def map_process_individual(text_content, filename, api_key=None):
     """
     ETAPA MAP: Analisa um único processo e retorna JSON estruturado.
     Usa GPT-4.1-mini (Azure) para rapidez e custo baixíssimo nesta triagem massiva paralela.
+    Retries on 429 rate limit.
     """
-    try:
-        llm = get_llm("gpt-4.1-mini", temperature=0.1)
-        
-        # Força strict JSON no prompt
-        map_prompt = PROMPT_XRAY_MAP + "\n\nCRÍTICO: Retorne APENAS UM JSON (Strict JSON). Nenhuma palavra fora das chaves {}."
-        
-        messages = [
-            SystemMessage(content=map_prompt),
-            HumanMessage(content=f"Arquivo: {filename}\n\n{text_content[:20000]}")
-        ]
-        response = safe_content(llm.invoke(messages))
-        
-        # Limpa JSON
-        cleaned = response.replace("```json", "").replace("```", "").strip()
-        data = json.loads(cleaned)
-        data["filename"] = filename # Garante que o nome do arquivo persista
-        return data
-        
-    except Exception as e:
-        print(f"Falha total no Map de {filename} com gpt-4.1-mini (Azure). Erro: {e}")
-        return {
-            "filename": filename, 
-            "error": f"Falha na leitura (GPT-4.1-mini). Err: {str(e)}", 
-            "sintese_fatos": "Erro de leitura estruturada", 
-            "tags_juridicas": ["ERRO"]
-        }
+    import time as _time
+
+    MAX_RETRIES = 3
+    BASE_DELAY = 10  # seconds
+
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            llm = get_llm("gpt-4.1-mini", temperature=0.1)
+            
+            # Força strict JSON no prompt
+            map_prompt = PROMPT_XRAY_MAP + "\n\nCRÍTICO: Retorne APENAS UM JSON (Strict JSON). Nenhuma palavra fora das chaves {}."
+            
+            messages = [
+                SystemMessage(content=map_prompt),
+                HumanMessage(content=f"Arquivo: {filename}\n\n{text_content[:20000]}")
+            ]
+            response = safe_content(llm.invoke(messages))
+            
+            # Limpa JSON
+            cleaned = response.replace("```json", "").replace("```", "").strip()
+            data = json.loads(cleaned)
+            data["filename"] = filename # Garante que o nome do arquivo persista
+            return data
+            
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str and attempt < MAX_RETRIES:
+                delay = BASE_DELAY * (2 ** attempt)  # 10s, 20s, 40s
+                print(f"⚠️ Rate limit (429) no Map de {filename}, retry {attempt + 1}/{MAX_RETRIES} após {delay}s...")
+                _time.sleep(delay)
+                continue
+            print(f"Falha total no Map de {filename} com gpt-4.1-mini (Azure). Erro: {e}")
+            return {
+                "filename": filename, 
+                "error": f"Falha na leitura (GPT-4.1-mini). Err: {str(e)}", 
+                "sintese_fatos": "Erro de leitura estruturada", 
+                "tags_juridicas": ["ERRO"]
+            }
 
 def generate_batch_xray(files, api_key, template_files=None):
     """
@@ -1416,14 +1429,17 @@ def generate_batch_xray(files, api_key, template_files=None):
         if not raw_texts:
             return {"error": "Nenhum texto extraído."}
 
-        # 2. ETAPA MAP (Execução Paralela)
+        # 2. ETAPA MAP (Execução com paralelismo limitado + stagger)
+        import time as _time
         mapped_data = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            future_to_file = {
-                executor.submit(map_process_individual, text, fname, api_key): fname 
-                for fname, text in raw_texts
-            }
-            for future in concurrent.futures.as_completed(future_to_file):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {}
+            for i, (fname, text) in enumerate(raw_texts):
+                if i > 0:
+                    _time.sleep(2)  # Stagger para evitar rate limit
+                future = executor.submit(map_process_individual, text, fname, api_key)
+                futures[future] = fname
+            for future in concurrent.futures.as_completed(futures):
                 try:
                     res = future.result()
                     mapped_data.append(res)
@@ -1461,24 +1477,36 @@ def generate_batch_xray(files, api_key, template_files=None):
             HumanMessage(content=human_msg)
         ]
         
-        # Usa Claude 4.6 Sonnet para agregação de altíssima qualidade
-        try:
-            llm_reduce = get_llm("gpt-5.2-chat", temperature=0.1)
-            
-            # Força JSON
-            reduce_prompt = PROMPT_XRAY_BATCH + "\n\nCRÍTICO: Retorne APENAS UM JSON VÁLIDO. Sem Markdown, sem formatação extra, inicie com { e termine com }."
-            
-            messages = [
-                SystemMessage(content=reduce_prompt),
-                HumanMessage(content=human_msg)
-            ]
-            
-            response = safe_content(llm_reduce.invoke(messages))
-            content = response
-            
-        except Exception as e:
-            print(f"Erro Crítico no Reduce (Claude 4.6): {e}")
-            return {"error": f"Erro na consolidação de dados. Detalhe: {str(e)}", "raw_content": ""}, text_cache
+        # Usa GPT-5.2 para agregação de altíssima qualidade (com retry)
+        MAX_REDUCE_RETRIES = 3
+        REDUCE_BASE_DELAY = 15
+        content = None
+
+        for reduce_attempt in range(MAX_REDUCE_RETRIES + 1):
+            try:
+                llm_reduce = get_llm("gpt-5.2-chat", temperature=0.1)
+                
+                # Força JSON
+                reduce_prompt = PROMPT_XRAY_BATCH + "\n\nCRÍTICO: Retorne APENAS UM JSON VÁLIDO. Sem Markdown, sem formatação extra, inicie com { e termine com }."
+                
+                messages = [
+                    SystemMessage(content=reduce_prompt),
+                    HumanMessage(content=human_msg)
+                ]
+                
+                response = safe_content(llm_reduce.invoke(messages))
+                content = response
+                break  # Success, exit retry loop
+                
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str and reduce_attempt < MAX_REDUCE_RETRIES:
+                    delay = REDUCE_BASE_DELAY * (2 ** reduce_attempt)
+                    print(f"⚠️ Rate limit (429) no Reduce, retry {reduce_attempt + 1}/{MAX_REDUCE_RETRIES} após {delay}s...")
+                    _time.sleep(delay)
+                    continue
+                print(f"Erro Crítico no Reduce (GPT-5.2): {e}")
+                return {"error": f"Erro na consolidação de dados. Detalhe: {str(e)}", "raw_content": ""}, text_cache
 
         
         # Garante que content é string (algumas versões retornam lista)
