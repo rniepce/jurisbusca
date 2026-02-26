@@ -1074,6 +1074,50 @@ async def jurisprudencia_stats():
     return jsearch.get_stats()
 
 
+@app.get("/api/jurisprudencia/diagnostics")
+async def jurisprudencia_diagnostics():
+    """Diagnóstico: verifica tabelas e embeddings no banco."""
+    if not HAS_JURISPRUDENCIA:
+        raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
+
+    import sqlite3 as _sqlite3
+
+    db_path = os.environ.get(
+        "JURISPRUDENCIA_DB_PATH",
+        os.path.join(os.path.dirname(__file__), "data", "jurisprudencia.db"),
+    )
+    conn = _sqlite3.connect(db_path)
+    c = conn.cursor()
+
+    # List all tables
+    tables = c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    table_names = [t[0] for t in tables]
+
+    result = {"db_path": db_path, "tables": {}}
+    for tname in table_names:
+        try:
+            count = c.execute(f"SELECT COUNT(*) FROM [{tname}]").fetchone()[0]
+            result["tables"][tname] = {"count": count}
+        except Exception as e:
+            result["tables"][tname] = {"error": str(e)}
+
+    # Check embeddings specifically
+    if "embeddings" in table_names:
+        try:
+            sample = c.execute("SELECT length(embedding) FROM embeddings LIMIT 1").fetchone()
+            if sample:
+                result["embedding_dimensions"] = sample[0] // 4
+                result["embedding_blob_bytes"] = sample[0]
+        except Exception:
+            pass
+
+    db_size = os.path.getsize(db_path) if os.path.exists(db_path) else 0
+    result["db_size_mb"] = round(db_size / 1024 / 1024, 1)
+
+    conn.close()
+    return result
+
+
 # ── Serve React frontend (production) ────────────────────────────────────────
 FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 if FRONTEND_DIR.is_dir():
