@@ -1,145 +1,131 @@
 import React, { useState, useEffect } from 'react';
-import { FaBookOpen, FaChevronDown, FaChevronUp, FaArrowRight, FaSpinner, FaGavel } from 'react-icons/fa6';
+import { FaBookOpen, FaChevronDown, FaChevronUp, FaPlus, FaSpinner } from 'react-icons/fa6';
 import './JurisprudenciaInsightsCard.css';
 
 /**
- * Collapsible card showing jurisprudence research results.
- * Used by the V0.5 engine — appears after the main analysis response.
+ * Minicard showing jurisprudence research results (V0.5).
+ * White background, clean design. Click to expand LLM summary per theme.
+ * User can include individual results into the minuta.
  */
 const JurisprudenciaInsightsCard = ({ data, isLoading, progress, onImport }) => {
-    const [expanded, setExpanded] = useState(true);
+    const [expanded, setExpanded] = useState(false);
     const [expandedThemes, setExpandedThemes] = useState({});
-
-    // Auto-expand when data arrives
-    useEffect(() => {
-        if (data && data.research && data.research.length > 0) {
-            setExpanded(true);
-        }
-    }, [data]);
+    const [includedItems, setIncludedItems] = useState(new Set());
 
     const toggleTheme = (index) => {
         setExpandedThemes((prev) => ({ ...prev, [index]: !prev[index] }));
     };
 
-    // Loading state
+    const handleInclude = (theme, result) => {
+        const key = `${theme}-${result.numero_processo}`;
+        if (includedItems.has(key)) return;
+        setIncludedItems((prev) => new Set([...prev, key]));
+        if (onImport) {
+            // Import a single result
+            onImport({
+                research: [{
+                    theme,
+                    summary: `**${result.tipo_recurso || 'Acórdão'}** — ${result.numero_processo || '?'} (${result.data_publicacao || '?'})\n\n${(result.ementa || '').slice(0, 500)}`,
+                    results: [result],
+                    total: 1,
+                }],
+                total_themes: 1,
+            });
+        }
+    };
+
+    // Loading state — compact
     if (isLoading && !data) {
         return (
-            <div className="juris-insights-card loading">
-                <div className="juris-insights-header" onClick={() => setExpanded(!expanded)}>
-                    <div className="juris-insights-title">
-                        <FaBookOpen className="juris-icon pulse" />
-                        <span>📚 Agente Pesquisador — Buscando Jurisprudência...</span>
-                    </div>
-                    <div className="juris-insights-badge loading-badge">
-                        <FaSpinner className="spin" size={12} />
-                        <span>Pesquisando</span>
-                    </div>
+            <div className="juris-minicard">
+                <div className="juris-minicard-header" onClick={() => setExpanded(!expanded)}>
+                    <FaBookOpen size={13} className="juris-minicard-icon" />
+                    <span className="juris-minicard-title">Pesquisa na Jurisprudência</span>
+                    <span className="juris-minicard-status">
+                        <FaSpinner size={10} className="juris-spin" />
+                        <span>Buscando...</span>
+                    </span>
                 </div>
                 {expanded && (
-                    <div className="juris-insights-body">
-                        <div className="juris-loading-indicator">
-                            <div className="juris-loading-bar" />
-                            <span className="juris-loading-text">{progress || 'Extraindo temas jurídicos do processo...'}</span>
-                        </div>
+                    <div className="juris-minicard-body">
+                        <div className="juris-loading-bar" />
+                        <p className="juris-loading-text">{progress || 'Extraindo temas jurídicos...'}</p>
                     </div>
                 )}
             </div>
         );
     }
 
-    // No data
-    if (!data || !data.research || data.research.length === 0) {
-        return null;
-    }
+    if (!data || !data.research || data.research.length === 0) return null;
 
     const totalAcordaos = data.research.reduce((sum, r) => sum + (r.results?.length || 0), 0);
 
     return (
-        <div className="juris-insights-card">
-            <div className="juris-insights-header" onClick={() => setExpanded(!expanded)}>
-                <div className="juris-insights-title">
-                    <FaBookOpen className="juris-icon" />
-                    <span>📚 Jurisprudência Sugerida para este Caso</span>
-                </div>
-                <div className="juris-insights-meta">
-                    <span className="juris-insights-badge">
-                        <FaGavel size={11} />
-                        <span>{totalAcordaos} acórdão{totalAcordaos !== 1 ? 's' : ''}</span>
-                    </span>
-                    <span className="juris-insights-badge theme-badge">
-                        {data.total_themes} tema{data.total_themes !== 1 ? 's' : ''}
-                    </span>
-                    {expanded ? <FaChevronUp size={12} /> : <FaChevronDown size={12} />}
-                </div>
+        <div className="juris-minicard">
+            <div className="juris-minicard-header" onClick={() => setExpanded(!expanded)}>
+                <FaBookOpen size={13} className="juris-minicard-icon" />
+                <span className="juris-minicard-title">Pesquisa na Jurisprudência</span>
+                <span className="juris-minicard-count">{totalAcordaos} acórdão{totalAcordaos !== 1 ? 's' : ''} · {data.total_themes} tema{data.total_themes !== 1 ? 's' : ''}</span>
+                {expanded ? <FaChevronUp size={10} className="juris-minicard-chevron" /> : <FaChevronDown size={10} className="juris-minicard-chevron" />}
             </div>
 
             {expanded && (
-                <div className="juris-insights-body">
+                <div className="juris-minicard-body">
                     {data.research.map((item, idx) => (
-                        <div key={idx} className="juris-theme-block">
-                            <div
-                                className="juris-theme-header"
-                                onClick={() => toggleTheme(idx)}
-                            >
-                                <span className="juris-theme-number">{idx + 1}</span>
-                                <span className="juris-theme-title">{item.theme}</span>
-                                <span className="juris-theme-count">
-                                    {item.results?.length || 0} resultado{(item.results?.length || 0) !== 1 ? 's' : ''}
-                                </span>
-                                {expandedThemes[idx] ? <FaChevronUp size={10} /> : <FaChevronDown size={10} />}
+                        <div key={idx} className="juris-theme">
+                            <div className="juris-theme-head" onClick={() => toggleTheme(idx)}>
+                                <span className="juris-theme-num">{idx + 1}.</span>
+                                <span className="juris-theme-label">{item.theme}</span>
+                                {expandedThemes[idx] ? <FaChevronUp size={9} /> : <FaChevronDown size={9} />}
                             </div>
 
-                            {/* Summary always visible */}
-                            <div className="juris-theme-summary">
-                                {formatSummary(item.summary)}
-                            </div>
+                            {expandedThemes[idx] && (
+                                <div className="juris-theme-content">
+                                    {/* LLM Summary */}
+                                    <div className="juris-summary">
+                                        {item.summary.split('\n').filter(Boolean).map((p, i) => (
+                                            <p key={i}>{p}</p>
+                                        ))}
+                                    </div>
 
-                            {/* Detailed results (collapsible) */}
-                            {expandedThemes[idx] && item.results && item.results.length > 0 && (
-                                <div className="juris-theme-results">
-                                    {item.results.map((r, rIdx) => (
-                                        <div key={rIdx} className="juris-result-item">
-                                            <div className="juris-result-header">
-                                                <span className="juris-result-tipo">{r.tipo_recurso || 'Acórdão'}</span>
-                                                <span className="juris-result-processo">{r.numero_processo || '?'}</span>
-                                                <span className="juris-result-data">{r.data_publicacao || '?'}</span>
-                                                {r.similarity && (
-                                                    <span className="juris-result-sim">{Math.round(r.similarity * 100)}%</span>
-                                                )}
-                                            </div>
-                                            <div className="juris-result-ementa">
-                                                {(r.ementa || '').slice(0, 300)}
-                                                {(r.ementa || '').length > 300 ? '...' : ''}
-                                            </div>
+                                    {/* Individual results with "include" button */}
+                                    {item.results && item.results.length > 0 && (
+                                        <div className="juris-results">
+                                            {item.results.map((r, rIdx) => {
+                                                const key = `${item.theme}-${r.numero_processo}`;
+                                                const isIncluded = includedItems.has(key);
+                                                return (
+                                                    <div key={rIdx} className={`juris-result ${isIncluded ? 'included' : ''}`}>
+                                                        <div className="juris-result-top">
+                                                            <span className="juris-result-tipo">{r.tipo_recurso || 'Acórdão'}</span>
+                                                            <span className="juris-result-proc">{r.numero_processo || '?'}</span>
+                                                            <span className="juris-result-date">{r.data_publicacao || '?'}</span>
+                                                            <button
+                                                                className={`juris-include-btn ${isIncluded ? 'done' : ''}`}
+                                                                onClick={(e) => { e.stopPropagation(); handleInclude(item.theme, r); }}
+                                                                title={isIncluded ? 'Incluído na minuta' : 'Incluir na minuta'}
+                                                                disabled={isIncluded}
+                                                            >
+                                                                {isIncluded ? '✓ Incluído' : <><FaPlus size={9} /> Incluir</>}
+                                                            </button>
+                                                        </div>
+                                                        <p className="juris-result-ementa">
+                                                            {(r.ementa || '').slice(0, 250)}
+                                                            {(r.ementa || '').length > 250 ? '…' : ''}
+                                                        </p>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
-                                    ))}
+                                    )}
                                 </div>
                             )}
                         </div>
                     ))}
-
-                    {/* Import button */}
-                    {onImport && (
-                        <button className="juris-import-btn" onClick={() => onImport(data)}>
-                            <FaArrowRight size={12} />
-                            <span>Importar Insights para o Chat</span>
-                        </button>
-                    )}
                 </div>
             )}
         </div>
     );
 };
-
-/**
- * Simple markdown-like formatter for summaries.
- */
-function formatSummary(text) {
-    if (!text) return null;
-    // Split into paragraphs and render
-    return text.split('\n').filter(Boolean).map((para, i) => (
-        <p key={i} className="juris-summary-para">{para}</p>
-    ));
-}
 
 export default JurisprudenciaInsightsCard;

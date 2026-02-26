@@ -1,29 +1,21 @@
-/* ── Jurisprudência Insights Card (V0.5) ─────────────────────────────────── */
+/* ── Jurisprudência Minicard (V0.5) ──────────────────────────────────────── */
 
-.juris-insights-card {
-    margin: 12px 0;
-    border-radius: 14px;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(30, 32, 40, 0.95) 100%);
-    border: 1px solid rgba(139, 92, 246, 0.25);
+.juris-minicard {
+    margin: 10px 0;
+    border-radius: 10px;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
     overflow: hidden;
-    transition: all 0.3s ease;
-    animation: jurisSlideIn 0.5s ease-out;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    animation: jurisFadeIn 0.4s ease-out;
+    color: #1a1a1a;
+    font-family: 'Inter', -apple-system, sans-serif;
 }
 
-.juris-insights-card:hover {
-    border-color: rgba(139, 92, 246, 0.45);
-    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.12);
-}
-
-.juris-insights-card.loading {
-    border-color: rgba(139, 92, 246, 0.3);
-    animation: jurisSlideIn 0.5s ease-out, jurisPulse 2s ease-in-out infinite;
-}
-
-@keyframes jurisSlideIn {
+@keyframes jurisFadeIn {
     from {
         opacity: 0;
-        transform: translateY(12px);
+        transform: translateY(6px);
     }
 
     to {
@@ -32,122 +24,73 @@
     }
 }
 
-@keyframes jurisPulse {
-
-    0%,
-    100% {
-        border-color: rgba(139, 92, 246, 0.2);
-    }
-
-    50% {
-        border-color: rgba(139, 92, 246, 0.5);
-    }
-}
-
-/* Header */
-.juris-insights-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 18px;
-    cursor: pointer;
-    user-select: none;
-    transition: background 0.2s;
-}
-
-.juris-insights-header:hover {
-    background: rgba(139, 92, 246, 0.06);
-}
-
-.juris-insights-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 14px;
-    font-weight: 600;
-    color: #e1dff5;
-}
-
-.juris-icon {
-    color: #8B5CF6;
-    font-size: 16px;
-}
-
-.juris-icon.pulse {
-    animation: iconPulse 1.5s ease-in-out infinite;
-}
-
-@keyframes iconPulse {
-
-    0%,
-    100% {
-        opacity: 0.6;
-        transform: scale(1);
-    }
-
-    50% {
-        opacity: 1;
-        transform: scale(1.15);
-    }
-}
-
-.juris-insights-meta {
+/* ── Header ── */
+.juris-minicard-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    color: rgba(255, 255, 255, 0.5);
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
 }
 
-.juris-insights-badge {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 10px;
-    border-radius: 12px;
+.juris-minicard-header:hover {
+    background: #f8f8f8;
+}
+
+.juris-minicard-icon {
+    color: #555;
+    flex-shrink: 0;
+}
+
+.juris-minicard-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a1a1a;
+    flex: 1;
+}
+
+.juris-minicard-count {
     font-size: 11px;
-    font-weight: 500;
-    background: rgba(139, 92, 246, 0.15);
-    color: #b8a5f0;
+    color: #888;
     white-space: nowrap;
 }
 
-.juris-insights-badge.loading-badge {
-    background: rgba(139, 92, 246, 0.2);
-    color: #c4b5fd;
+.juris-minicard-chevron {
+    color: #999;
 }
 
-.juris-insights-badge.theme-badge {
-    background: rgba(59, 130, 246, 0.15);
-    color: #93c5fd;
+.juris-minicard-status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #888;
 }
 
-.spin {
-    animation: spin 1s linear infinite;
+.juris-spin {
+    animation: jSpin 1s linear infinite;
 }
 
-@keyframes spin {
+@keyframes jSpin {
     to {
         transform: rotate(360deg);
     }
 }
 
-/* Body */
-.juris-insights-body {
-    padding: 0 18px 16px;
+/* ── Body ── */
+.juris-minicard-body {
+    padding: 0 14px 12px;
+    border-top: 1px solid #eee;
 }
 
-/* Loading indicator */
-.juris-loading-indicator {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 16px 0;
-}
-
+/* Loading */
 .juris-loading-bar {
-    height: 3px;
-    background: rgba(139, 92, 246, 0.15);
-    border-radius: 2px;
+    height: 2px;
+    margin: 10px 0 6px;
+    background: #eee;
+    border-radius: 1px;
     overflow: hidden;
     position: relative;
 }
@@ -159,178 +102,166 @@
     left: -30%;
     width: 30%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, #8B5CF6, transparent);
-    animation: loadingSweep 1.8s ease-in-out infinite;
+    background: #aaa;
+    animation: jSweep 1.5s ease-in-out infinite;
 }
 
-@keyframes loadingSweep {
+@keyframes jSweep {
     to {
         left: 100%;
     }
 }
 
 .juris-loading-text {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.45);
+    font-size: 11.5px;
+    color: #999;
+    margin: 4px 0 0;
     font-style: italic;
 }
 
-/* Theme blocks */
-.juris-theme-block {
-    margin-bottom: 14px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    overflow: hidden;
-    transition: border-color 0.2s;
+/* ── Theme blocks ── */
+.juris-theme {
+    border-bottom: 1px solid #f0f0f0;
 }
 
-.juris-theme-block:hover {
-    border-color: rgba(139, 92, 246, 0.2);
+.juris-theme:last-child {
+    border-bottom: none;
 }
 
-.juris-theme-block:last-child {
-    margin-bottom: 0;
-}
-
-.juris-theme-header {
+.juris-theme-head {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
+    gap: 6px;
+    padding: 9px 0;
     cursor: pointer;
     user-select: none;
-    transition: background 0.2s;
+    color: #555;
 }
 
-.juris-theme-header:hover {
-    background: rgba(139, 92, 246, 0.06);
+.juris-theme-head:hover {
+    color: #1a1a1a;
 }
 
-.juris-theme-number {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%);
-    color: #fff;
-    font-size: 11px;
+.juris-theme-num {
+    font-size: 12px;
     font-weight: 700;
-    flex-shrink: 0;
+    color: #1a1a1a;
+    min-width: 16px;
 }
 
-.juris-theme-title {
+.juris-theme-label {
     flex: 1;
-    font-size: 13px;
-    font-weight: 500;
-    color: #d4d0e8;
-}
-
-.juris-theme-count {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.35);
-    white-space: nowrap;
-}
-
-/* Summary */
-.juris-theme-summary {
-    padding: 8px 14px 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.juris-summary-para {
     font-size: 12.5px;
-    line-height: 1.65;
-    color: rgba(255, 255, 255, 0.7);
-    margin: 0 0 8px;
+    font-weight: 500;
+    color: #333;
 }
 
-.juris-summary-para:last-child {
+/* ── Theme content (expanded) ── */
+.juris-theme-content {
+    padding: 0 0 10px 22px;
+}
+
+.juris-summary {
+    margin-bottom: 10px;
+}
+
+.juris-summary p {
+    font-size: 12px;
+    line-height: 1.6;
+    color: #444;
+    margin: 0 0 6px;
+}
+
+.juris-summary p:last-child {
     margin-bottom: 0;
 }
 
-/* Detailed results */
-.juris-theme-results {
-    border-top: 1px solid rgba(255, 255, 255, 0.04);
-    padding: 8px 14px 10px;
+/* ── Results list ── */
+.juris-results {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
-.juris-result-item {
+.juris-result {
     padding: 8px 10px;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.025);
-    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 6px;
+    border: 1px solid #e8e8e8;
+    background: #fafafa;
+    transition: border-color 0.15s;
 }
 
-.juris-result-header {
+.juris-result:hover {
+    border-color: #ccc;
+}
+
+.juris-result.included {
+    border-color: #34a853;
+    background: #f6fef8;
+}
+
+.juris-result-top {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 5px;
+    gap: 6px;
     flex-wrap: wrap;
+    margin-bottom: 4px;
 }
 
 .juris-result-tipo {
-    font-size: 10px;
-    font-weight: 600;
+    font-size: 9.5px;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    color: #8B5CF6;
-    background: rgba(139, 92, 246, 0.12);
-    padding: 2px 8px;
-    border-radius: 4px;
+    color: #555;
+    background: #eee;
+    padding: 1px 6px;
+    border-radius: 3px;
 }
 
-.juris-result-processo {
+.juris-result-proc {
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.6);
+    color: #333;
     font-family: 'SF Mono', 'Fira Code', monospace;
 }
 
-.juris-result-data {
+.juris-result-date {
     font-size: 10px;
-    color: rgba(255, 255, 255, 0.35);
+    color: #999;
 }
 
-.juris-result-sim {
-    font-size: 10px;
-    font-weight: 600;
-    color: #34D399;
+.juris-include-btn {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+    color: #333;
+    font-size: 10.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.juris-include-btn:hover:not(:disabled) {
+    background: #f0f0f0;
+    border-color: #bbb;
+}
+
+.juris-include-btn.done {
+    background: #f0faf3;
+    border-color: #34a853;
+    color: #34a853;
+    cursor: default;
 }
 
 .juris-result-ementa {
-    font-size: 11.5px;
-    line-height: 1.55;
-    color: rgba(255, 255, 255, 0.5);
-}
-
-/* Import button */
-.juris-import-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    padding: 10px;
-    margin-top: 14px;
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    border-radius: 8px;
-    background: rgba(139, 92, 246, 0.08);
-    color: #b8a5f0;
-    font-size: 12.5px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.juris-import-btn:hover {
-    background: rgba(139, 92, 246, 0.15);
-    border-color: rgba(139, 92, 246, 0.5);
-    color: #d4c5ff;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #666;
+    margin: 0;
 }
