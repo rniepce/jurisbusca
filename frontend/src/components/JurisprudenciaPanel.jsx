@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { FaMagnifyingGlass, FaChevronLeft, FaChevronRight, FaXmark, FaScaleBalanced, FaCalendarDays, FaLocationDot, FaArrowLeft, FaCopy, FaCheck } from 'react-icons/fa6';
+import { FaMagnifyingGlass, FaChevronLeft, FaChevronRight, FaXmark, FaScaleBalanced, FaCalendarDays, FaLocationDot, FaArrowLeft, FaCopy, FaCheck, FaBrain } from 'react-icons/fa6';
 import { searchJurisprudencia, getJurisprudenciaDoc, getJurisprudenciaStats } from '../services/api';
 import './JurisprudenciaPanel.css';
 
@@ -184,7 +184,7 @@ const JurisprudenciaPanel = ({ onClose }) => {
                     <input
                         ref={searchInputRef}
                         type="text"
-                        placeholder='Buscar por termos, ex: "dano moral", "contrato bancário", "usucapião"...'
+                        placeholder='Descreva o que procura, ex: "indenização por erro médico", "guarda de menor"...'
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         onKeyDown={handleKeyDown}
@@ -197,7 +197,7 @@ const JurisprudenciaPanel = ({ onClose }) => {
                         disabled={loading || !query.trim()}
                         id="jurisprudencia-search-btn"
                     >
-                        {loading ? 'Buscando...' : 'Pesquisar'}
+                        {loading ? 'Analisando...' : 'Pesquisar'}
                     </button>
                 </div>
 
@@ -240,7 +240,7 @@ const JurisprudenciaPanel = ({ onClose }) => {
                 {loading && (
                     <div className="jurisprudencia-loading">
                         <div className="jurisprudencia-spinner" />
-                        <span>Pesquisando na base de jurisprudência...</span>
+                        <span>Analisando significado da consulta com IA...</span>
                     </div>
                 )}
 
@@ -248,7 +248,11 @@ const JurisprudenciaPanel = ({ onClose }) => {
                     <>
                         <div className="jurisprudencia-results-header">
                             <span className="jurisprudencia-results-count">
-                                {results.total.toLocaleString('pt-BR')} resultado{results.total !== 1 ? 's' : ''} encontrado{results.total !== 1 ? 's' : ''}
+                                {results.total.toLocaleString('pt-BR')} resultado{results.total !== 1 ? 's' : ''}
+                                {results.mode === 'semantic' && <span className="jurisprudencia-mode-badge semantic"><FaBrain size={10} /> IA Semântica</span>}
+                                {results.mode === 'keyword' && <span className="jurisprudencia-mode-badge keyword">Palavras-chave</span>}
+                                {results.mode === 'hybrid' && <span className="jurisprudencia-mode-badge hybrid"><FaBrain size={10} /> Híbrido</span>}
+                                {results.mode === 'keyword_fallback' && <span className="jurisprudencia-mode-badge keyword">Palavras-chave (fallback)</span>}
                             </span>
                             <span className="jurisprudencia-results-page">
                                 Página {results.page} de {results.pages}
@@ -276,9 +280,16 @@ const JurisprudenciaPanel = ({ onClose }) => {
                                             <span className="jurisprudencia-card-tipo">
                                                 {item.tipo_recurso || 'Acórdão'}
                                             </span>
-                                            <span className="jurisprudencia-card-date">
-                                                {item.data_publicacao}
-                                            </span>
+                                            <div className="jurisprudencia-card-top-right">
+                                                {item.similarity != null && item.similarity > 0 && (
+                                                    <span className={`jurisprudencia-card-similarity ${item.similarity >= 0.6 ? 'high' : item.similarity >= 0.4 ? 'mid' : 'low'}`}>
+                                                        {Math.round(item.similarity * 100)}% relevante
+                                                    </span>
+                                                )}
+                                                <span className="jurisprudencia-card-date">
+                                                    {item.data_publicacao}
+                                                </span>
+                                            </div>
                                         </div>
                                         <div className="jurisprudencia-card-processo">
                                             {formatProcesso(item.numero_processo)}
@@ -354,18 +365,18 @@ const JurisprudenciaPanel = ({ onClose }) => {
                 {/* Empty state (no search yet) */}
                 {!results && !loading && !error && (
                     <div className="jurisprudencia-welcome">
-                        <FaScaleBalanced size={48} className="jurisprudencia-welcome-icon" />
-                        <h3>Pesquise na base de jurisprudência do TJMG</h3>
+                        <FaBrain size={48} className="jurisprudencia-welcome-icon" />
+                        <h3>Pesquisa Inteligente de Jurisprudência</h3>
                         <p>
-                            Digite termos de busca para encontrar acórdãos relevantes.
-                            A busca funciona por palavras-chave no texto completo dos acórdãos.
+                            Descreva em linguagem natural o que procura.
+                            A busca usa IA semântica para encontrar acórdãos por <strong>significado</strong>, não apenas palavras-chave.
                         </p>
                         <div className="jurisprudencia-tips">
-                            <span className="jurisprudencia-tip" onClick={() => { setQuery('dano moral'); }}>dano moral</span>
-                            <span className="jurisprudencia-tip" onClick={() => { setQuery('contrato bancário'); }}>contrato bancário</span>
-                            <span className="jurisprudencia-tip" onClick={() => { setQuery('usucapião'); }}>usucapião</span>
-                            <span className="jurisprudencia-tip" onClick={() => { setQuery('responsabilidade civil'); }}>responsabilidade civil</span>
-                            <span className="jurisprudencia-tip" onClick={() => { setQuery('alimentos'); }}>alimentos</span>
+                            <span className="jurisprudencia-tip" onClick={() => { setQuery('indenização por acidente de trânsito com dano moral'); }}>acidente de trânsito</span>
+                            <span className="jurisprudencia-tip" onClick={() => { setQuery('erro médico em hospital com responsabilidade civil'); }}>erro médico</span>
+                            <span className="jurisprudencia-tip" onClick={() => { setQuery('guarda compartilhada de menor e alienação parental'); }}>guarda de menor</span>
+                            <span className="jurisprudencia-tip" onClick={() => { setQuery('rescisão de contrato de aluguel por inadimplência'); }}>rescisão de aluguel</span>
+                            <span className="jurisprudencia-tip" onClick={() => { setQuery('prescrição em cobrança de dívida bancária'); }}>prescrição bancária</span>
                         </div>
                     </div>
                 )}

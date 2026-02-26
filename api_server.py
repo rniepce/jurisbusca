@@ -1031,8 +1031,13 @@ async def jurisprudencia_search(
     tipo: str = "",
     page: int = 1,
     page_size: int = 20,
+    mode: str = "semantic",
 ):
-    """Full-text search across TJMG case law database."""
+    """Full-text or semantic search across TJMG case law database.
+    
+    mode: 'keyword' (FTS5), 'semantic' (embedding similarity), 'hybrid' (both)
+    Default is 'semantic' for AI-powered search.
+    """
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(
             status_code=503,
@@ -1043,14 +1048,66 @@ async def jurisprudencia_search(
 
     page_size = min(max(1, page_size), 50)  # Clamp 1-50
 
-    result = jsearch.search(
-        query=q,
-        ano_inicio=ano_inicio,
-        ano_fim=ano_fim,
-        tipo_recurso=tipo,
-        page=max(1, page),
-        page_size=page_size,
-    )
+    if mode == "semantic":
+        result = jsearch.semantic_search(
+            query=q,
+            ano_inicio=ano_inicio,
+            ano_fim=ano_fim,
+            tipo_recurso=tipo,
+            page=max(1, page),
+            page_size=page_size,
+        )
+        # If semantic fails (no key, no embeddings), fallback to keyword
+        if result.get("error"):
+            print(f"⚠️ Semantic search failed: {result['error']}. Falling back to keyword.")
+            result = jsearch.search(
+                query=q, ano_inicio=ano_inicio, ano_fim=ano_fim,
+                tipo_recurso=tipo, page=max(1, page), page_size=page_size,
+            )
+            result["mode"] = "keyword_fallback"
+    elif mode == "keyword":
+        result = jsearch.search(
+            query=q, ano_inicio=ano_inicio, ano_fim=ano_fim,
+            tipo_recurso=tipo, page=max(1, page), page_size=page_size,
+        )
+        result["mode"] = "keyword"
+    else:
+        # Hybrid: run both and merge
+        sem_result = jsearch.semantic_search(
+            query=q, ano_inicio=ano_inicio, ano_fim=ano_fim,
+            tipo_recurso=tipo, page=1, page_size=50,
+        )
+        kw_result = jsearch.search(
+            query=q, ano_inicio=ano_inicio, ano_fim=ano_fim,
+            tipo_recurso=tipo, page=1, page_size=50,
+        )
+        
+        # Merge: use semantic results but boost those also found in keyword
+        seen = {}
+        for r in sem_result.get("results", []):
+            seen[r["id"]] = r
+        for r in kw_result.get("results", []):
+            if r["id"] not in seen:
+                r["similarity"] = 0.0
+                seen[r["id"]] = r
+            else:
+                # Boost items found in both
+                seen[r["id"]]["similarity"] = round(seen[r["id"]].get("similarity", 0) * 1.1, 4)
+        
+        merged = sorted(seen.values(), key=lambda x: x.get("similarity", 0), reverse=True)
+        total = len(merged)
+        offset = (max(1, page) - 1) * page_size
+        
+        result = {
+            "results": merged[offset:offset + page_size],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": (total + page_size - 1) // page_size if total > 0 else 0,
+            "query": q,
+            "mode": "hybrid",
+        }
+
     return result
 
 

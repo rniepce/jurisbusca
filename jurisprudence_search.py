@@ -252,6 +252,213 @@ def get_stats() -> dict:
     }
 
 
+# ── Semantic Search (Embedding-based) ─────────────────────────────────────────
+
+import struct
+import numpy as np
+
+# In-memory cache for embeddings (lazy loaded)
+_emb_cache = {
+    "ids": None,        # np.ndarray of acordao IDs
+    "matrix": None,     # np.ndarray (N, 1024) normalized
+    "loaded": False,
+}
+
+# Azure OpenAI config for query embedding
+_AZURE_EMBEDDING_ENDPOINT = os.environ.get(
+    "AZURE_EMBEDDING_ENDPOINT",
+    "https://assistente-web-resource.cognitiveservices.azure.com",
+)
+_AZURE_EMBEDDING_KEY = os.environ.get(
+    "AZURE_EMBEDDING_KEY",
+    os.environ.get("AZURE_AI_KEY", ""),
+)
+_EMBEDDING_MODEL = "text-embedding-3-large"
+_EMBEDDING_DIM = 1024
+
+
+def _load_embeddings():
+    """Carrega todos os embeddings do SQLite para memória (uma vez)."""
+    if _emb_cache["loaded"]:
+        return _emb_cache["matrix"] is not None
+
+    _emb_cache["loaded"] = True
+
+    try:
+        conn = _get_conn()
+        rows = conn.execute(
+            "SELECT acordao_id, embedding FROM embeddings ORDER BY acordao_id"
+        ).fetchall()
+
+        if not rows:
+            print("⚠️ Nenhum embedding encontrado no banco.")
+            return False
+
+        ids = np.array([r[0] for r in rows], dtype=np.int32)
+        matrix = np.array(
+            [list(struct.unpack(f"{_EMBEDDING_DIM}f", r[1])) for r in rows],
+            dtype=np.float32,
+        )
+
+        # Normalize for cosine similarity via dot product
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        matrix = matrix / np.maximum(norms, 1e-8)
+
+        _emb_cache["ids"] = ids
+        _emb_cache["matrix"] = matrix
+        print(f"📐 {len(ids):,} embeddings carregados ({matrix.nbytes / 1024 / 1024:.0f} MB)")
+        return True
+
+    except Exception as e:
+        print(f"⚠️ Erro ao carregar embeddings: {e}")
+        return False
+
+
+def _embed_query(query: str) -> Optional[np.ndarray]:
+    """Gera embedding da query do usuário via Azure OpenAI."""
+    if not _AZURE_EMBEDDING_KEY:
+        return None
+
+    try:
+        from openai import AzureOpenAI
+
+        client = AzureOpenAI(
+            api_key=_AZURE_EMBEDDING_KEY,
+            azure_endpoint=_AZURE_EMBEDDING_ENDPOINT,
+            api_version="2024-12-01-preview",
+        )
+        resp = client.embeddings.create(
+            model=_EMBEDDING_MODEL,
+            input=query,
+            dimensions=_EMBEDDING_DIM,
+        )
+        emb = np.array(resp.data[0].embedding, dtype=np.float32)
+        emb /= np.linalg.norm(emb)
+        return emb
+    except Exception as e:
+        print(f"⚠️ Erro ao gerar embedding da query: {e}")
+        return None
+
+
+def semantic_search(
+    query: str,
+    ano_inicio: int = 0,
+    ano_fim: int = 9999,
+    tipo_recurso: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """
+    Busca semântica nos acórdãos usando embeddings (text-embedding-3-large).
+
+    Returns:
+        {
+            "results": [{"id", "numero_processo", "data_publicacao", "ano", "tipo_recurso",
+                          "relator", "comarca", "ementa", "similarity"}],
+            "total": int,
+            "page": int,
+            "page_size": int,
+            "pages": int,
+            "query": str,
+            "mode": "semantic"
+        }
+    """
+    # Load embeddings if not cached
+    if not _load_embeddings():
+        return {
+            "results": [], "total": 0, "page": page, "page_size": page_size,
+            "pages": 0, "query": query, "mode": "semantic",
+            "error": "Embeddings não disponíveis. Execute vectorize_jurisprudencia.py",
+        }
+
+    # Embed the query
+    q_emb = _embed_query(query)
+    if q_emb is None:
+        return {
+            "results": [], "total": 0, "page": page, "page_size": page_size,
+            "pages": 0, "query": query, "mode": "semantic",
+            "error": "AZURE_EMBEDDING_KEY não configurada para busca semântica.",
+        }
+
+    # Compute cosine similarities
+    scores = _emb_cache["matrix"] @ q_emb  # (N,)
+    ids = _emb_cache["ids"]
+
+    # Get full metadata to apply filters
+    conn = _get_conn()
+
+    # Sort by similarity (descending)
+    sorted_indices = np.argsort(scores)[::-1]
+
+    # We need to apply filters — fetch metadata for top candidates
+    # To avoid fetching all 26K, we over-fetch the top 500 and filter
+    top_n = min(500, len(sorted_indices))
+    candidate_indices = sorted_indices[:top_n]
+    candidate_ids = ids[candidate_indices].tolist()
+    candidate_scores = scores[candidate_indices].tolist()
+
+    # Build ID→score map
+    id_score = {int(cid): cscore for cid, cscore in zip(candidate_ids, candidate_scores)}
+
+    # Fetch metadata for candidates
+    placeholders = ",".join("?" * len(candidate_ids))
+    where_parts = [f"id IN ({placeholders})"]
+    params = list(candidate_ids)
+
+    if ano_inicio > 0:
+        where_parts.append("ano >= ?")
+        params.append(ano_inicio)
+    if ano_fim < 9999:
+        where_parts.append("ano <= ?")
+        params.append(ano_fim)
+    if tipo_recurso:
+        where_parts.append("tipo_recurso LIKE ?")
+        params.append(f"%{tipo_recurso}%")
+
+    where_clause = " AND ".join(where_parts)
+
+    rows = conn.execute(
+        f"""SELECT id, numero_processo, data_publicacao, ano, mes,
+                   tipo_recurso, relator, comarca, ementa
+            FROM acordaos WHERE {where_clause}""",
+        params,
+    ).fetchall()
+
+    # Sort by similarity score
+    results_raw = []
+    for row in rows:
+        doc_id = row["id"]
+        results_raw.append({
+            "id": doc_id,
+            "numero_processo": row["numero_processo"],
+            "data_publicacao": row["data_publicacao"],
+            "ano": row["ano"],
+            "mes": row["mes"],
+            "tipo_recurso": row["tipo_recurso"] or "",
+            "relator": row["relator"] or "",
+            "comarca": row["comarca"] or "",
+            "ementa": row["ementa"] or "",
+            "similarity": round(id_score.get(doc_id, 0), 4),
+        })
+
+    results_raw.sort(key=lambda x: x["similarity"], reverse=True)
+
+    total = len(results_raw)
+    pages = (total + page_size - 1) // page_size if total > 0 else 0
+    offset = (max(1, page) - 1) * page_size
+    page_results = results_raw[offset : offset + page_size]
+
+    return {
+        "results": page_results,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages,
+        "query": query,
+        "mode": "semantic",
+    }
+
+
 def reload_db():
     """Fecha a conexão atual e força reinicialização na próxima query."""
     global _conn
@@ -261,8 +468,13 @@ def reload_db():
         except Exception:
             pass
         _conn = None
+    # Also reset embedding cache
+    _emb_cache["ids"] = None
+    _emb_cache["matrix"] = None
+    _emb_cache["loaded"] = False
 
 
 def is_available() -> bool:
     """Verifica se o banco de jurisprudência está disponível."""
     return os.path.exists(_DB_PATH)
+
