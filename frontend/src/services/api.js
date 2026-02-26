@@ -381,3 +381,29 @@ export async function getJurisprudenciaStats() {
     if (!res.ok) return { total: 0, por_ano: {}, por_tipo: {}, ano_min: 2020, ano_max: 2026 };
     return safeJson(res, 'Jurisprudência Stats');
 }
+
+/**
+ * Ask jurisprudência with LLM summary (RAG).
+ * @param {string} query - Natural language question
+ * @param {object} [filters] - Optional filters
+ * @returns {Promise<{summary: string, results: Array, total: number, query: string, mode: string}>}
+ */
+export async function askJurisprudencia(query, filters = {}) {
+    const body = { query };
+    if (filters.anoInicio) body.ano_inicio = filters.anoInicio;
+    if (filters.anoFim) body.ano_fim = filters.anoFim;
+    if (filters.tipo) body.tipo = filters.tipo;
+
+    const res = await fetch(`${API_BASE}/jurisprudencia/ask`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+        const err = await safeJson(res, 'Jurisprudência Ask').catch(() => ({}));
+        throw new Error(err.detail || `Erro na pesquisa inteligente (${res.status})`);
+    }
+
+    return safeJson(res, 'Jurisprudência Ask');
+}

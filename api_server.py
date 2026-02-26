@@ -1111,6 +1111,110 @@ async def jurisprudencia_search(
     return result
 
 
+# ── Jurisprudência Ask (RAG: semantic search + LLM summary) ───────────────────
+
+class JurisprudenciaAskRequest(BaseModel):
+    query: str
+    ano_inicio: int = 0
+    ano_fim: int = 9999
+    tipo: str = ""
+
+@app.post("/api/jurisprudencia/ask")
+async def jurisprudencia_ask(req: JurisprudenciaAskRequest):
+    """
+    RAG: busca semântica + resumo por LLM.
+    Retorna um resumo inteligente dos acórdãos mais relevantes + os resultados brutos.
+    """
+    if not HAS_JURISPRUDENCIA:
+        raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="Parâmetro 'query' é obrigatório.")
+
+    try:
+        # 1. Semantic search — top 10 results
+        search_result = jsearch.semantic_search(
+            query=req.query,
+            ano_inicio=req.ano_inicio,
+            ano_fim=req.ano_fim,
+            tipo_recurso=req.tipo,
+            page=1,
+            page_size=10,
+        )
+
+        results = search_result.get("results", [])
+        if not results:
+            # Fallback to keyword if semantic fails
+            search_result = jsearch.search(
+                query=req.query,
+                ano_inicio=req.ano_inicio,
+                ano_fim=req.ano_fim,
+                tipo_recurso=req.tipo,
+                page=1,
+                page_size=10,
+            )
+            results = search_result.get("results", [])
+
+        if not results:
+            return {
+                "summary": f"Não foram encontrados acórdãos relevantes para: \"{req.query}\". Tente reformular a consulta ou ajustar os filtros de ano.",
+                "results": [],
+                "total": 0,
+                "query": req.query,
+                "mode": search_result.get("mode", "unknown"),
+            }
+
+        # 2. Build context from top ementas
+        context_parts = []
+        for i, r in enumerate(results[:10], 1):
+            sim_pct = round(r.get("similarity", 0) * 100)
+            context_parts.append(
+                f"[{i}] {r.get('tipo_recurso', 'Acórdão')} | {r.get('comarca', '?')} | "
+                f"{r.get('data_publicacao', '?')} | Relevância: {sim_pct}%\n"
+                f"Processo: {r.get('numero_processo', '?')}\n"
+                f"Ementa: {r.get('ementa', '')[:800]}"
+            )
+        context = "\n\n---\n\n".join(context_parts)
+
+        # 3. Enriched prompt for the LLM
+        system_prompt = (
+            "Você é um assistente jurídico especializado em jurisprudência do TJMG. "
+            "O usuário fez uma pesquisa e você recebeu os acórdãos mais relevantes encontrados por busca semântica. "
+            "Sua tarefa é:\n\n"
+            "1. **Resumir o entendimento predominante** do TJMG sobre o tema pesquisado\n"
+            "2. **Identificar tendências** (ex: o tribunal tende a conceder ou negar o pedido?)\n"
+            "3. **Destacar os argumentos jurídicos recorrentes** nos acórdãos\n"
+            "4. **Mencionar valores de indenização** quando aplicável\n"
+            "5. **Citar os acórdãos mais relevantes** pelo número do processo\n\n"
+            "Responda em linguagem clara e acessível, como se estivesse explicando para um advogado. "
+            "Use markdown para formatar a resposta. "
+            "NÃO invente informações — baseie-se APENAS nas ementas fornecidas."
+        )
+
+        user_prompt = (
+            f"**Pesquisa do usuário:** {req.query}\n\n"
+            f"**{len(results)} acórdãos mais relevantes encontrados:**\n\n"
+            f"{context}"
+        )
+
+        # 4. Call LLM
+        llm = be.get_llm(model_name="gpt-4.1-mini", temperature=0.3)
+        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
+        response = llm.invoke([SM(content=system_prompt), HM(content=user_prompt)])
+        summary = be.safe_content(response)
+
+        return {
+            "summary": summary,
+            "results": results[:10],
+            "total": search_result.get("total", len(results)),
+            "query": req.query,
+            "mode": search_result.get("mode", "semantic"),
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na pesquisa inteligente: {str(e)}")
+
+
 @app.get("/api/jurisprudencia/doc/{doc_id}")
 async def jurisprudencia_doc(doc_id: int):
     """Retrieve full text of a specific case law document."""

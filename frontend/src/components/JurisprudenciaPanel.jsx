@@ -1,14 +1,17 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { FaMagnifyingGlass, FaChevronLeft, FaChevronRight, FaXmark, FaScaleBalanced, FaCalendarDays, FaLocationDot, FaArrowLeft, FaCopy, FaCheck, FaBrain } from 'react-icons/fa6';
-import { searchJurisprudencia, getJurisprudenciaDoc, getJurisprudenciaStats } from '../services/api';
+import { FaMagnifyingGlass, FaChevronLeft, FaChevronRight, FaXmark, FaScaleBalanced, FaCalendarDays, FaLocationDot, FaArrowLeft, FaCopy, FaCheck, FaBrain, FaChevronDown, FaChevronUp } from 'react-icons/fa6';
+import { askJurisprudencia, getJurisprudenciaDoc, getJurisprudenciaStats } from '../services/api';
 import './JurisprudenciaPanel.css';
 
 const JurisprudenciaPanel = ({ onClose }) => {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState(null);
+    const [summary, setSummary] = useState('');
+    const [showResults, setShowResults] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [loadingPhase, setLoadingPhase] = useState('');
+
     const [error, setError] = useState('');
-    const [page, setPage] = useState(1);
     const [anoInicio, setAnoInicio] = useState(2020);
     const [anoFim, setAnoFim] = useState(2026);
     const [stats, setStats] = useState(null);
@@ -31,25 +34,29 @@ const JurisprudenciaPanel = ({ onClose }) => {
         }
     }, []);
 
-    const handleSearch = useCallback(async (newPage = 1) => {
+    const handleSearch = useCallback(async () => {
         if (!query.trim()) return;
 
         setLoading(true);
         setError('');
-        setPage(newPage);
+        setSummary('');
+        setResults(null);
+        setShowResults(false);
+        setLoadingPhase('Buscando acórdãos relevantes...');
 
         try {
-            const data = await searchJurisprudencia(query, {
+            setTimeout(() => setLoadingPhase('Analisando jurisprudência com IA...'), 2000);
+            const data = await askJurisprudencia(query, {
                 anoInicio,
                 anoFim,
-                page: newPage,
-                pageSize: 20,
             });
+            setSummary(data.summary || '');
             setResults(data);
         } catch (err) {
             setError(err.message || 'Erro na busca.');
         } finally {
             setLoading(false);
+            setLoadingPhase('');
         }
     }, [query, anoInicio, anoFim]);
 
@@ -197,7 +204,7 @@ const JurisprudenciaPanel = ({ onClose }) => {
                         disabled={loading || !query.trim()}
                         id="jurisprudencia-search-btn"
                     >
-                        {loading ? 'Analisando...' : 'Pesquisar'}
+                        {loading ? 'Analisando...' : 'Pesquisar com IA'}
                     </button>
                 </div>
 
@@ -240,34 +247,41 @@ const JurisprudenciaPanel = ({ onClose }) => {
                 {loading && (
                     <div className="jurisprudencia-loading">
                         <div className="jurisprudencia-spinner" />
-                        <span>Analisando significado da consulta com IA...</span>
+                        <span>{loadingPhase || 'Analisando...'}</span>
                     </div>
                 )}
 
-                {results && !loading && (
-                    <>
-                        <div className="jurisprudencia-results-header">
-                            <span className="jurisprudencia-results-count">
-                                {results.total.toLocaleString('pt-BR')} resultado{results.total !== 1 ? 's' : ''}
-                                {results.mode === 'semantic' && <span className="jurisprudencia-mode-badge semantic"><FaBrain size={10} /> IA Semântica</span>}
-                                {results.mode === 'keyword' && <span className="jurisprudencia-mode-badge keyword">Palavras-chave</span>}
-                                {results.mode === 'hybrid' && <span className="jurisprudencia-mode-badge hybrid"><FaBrain size={10} /> Híbrido</span>}
-                                {results.mode === 'keyword_fallback' && <span className="jurisprudencia-mode-badge keyword">Palavras-chave (fallback)</span>}
-                            </span>
-                            <span className="jurisprudencia-results-page">
-                                Página {results.page} de {results.pages}
-                            </span>
+                {/* LLM Summary */}
+                {summary && !loading && (
+                    <div className="jurisprudencia-summary-section">
+                        <div className="jurisprudencia-summary-header">
+                            <FaBrain size={16} className="jurisprudencia-summary-icon" />
+                            <span>Análise da IA</span>
+                            {results?.mode && (
+                                <span className="jurisprudencia-mode-badge semantic"><FaBrain size={10} /> Semântica</span>
+                            )}
                         </div>
+                        <div className="jurisprudencia-summary-content" dangerouslySetInnerHTML={{ __html: formatMarkdown(summary) }} />
+                    </div>
+                )}
 
-                        {results.results.length === 0 ? (
-                            <div className="jurisprudencia-empty">
-                                <FaMagnifyingGlass size={40} />
-                                <p>Nenhum acórdão encontrado para "<strong>{results.query}</strong>"</p>
-                                <p className="jurisprudencia-empty-hint">
-                                    Tente termos diferentes ou ajuste os filtros de ano.
-                                </p>
-                            </div>
-                        ) : (
+                {/* Expandable Results */}
+                {results && !loading && results.results?.length > 0 && (
+                    <>
+                        <button
+                            className="jurisprudencia-toggle-results"
+                            onClick={() => setShowResults(!showResults)}
+                        >
+                            {showResults ? <FaChevronUp size={12} /> : <FaChevronDown size={12} />}
+                            {showResults ? 'Ocultar' : 'Ver'} {results.results.length} acórdãos encontrados
+                            {results.results[0]?.similarity != null && (
+                                <span className="jurisprudencia-toggle-hint">
+                                    (até {Math.round((results.results[0]?.similarity || 0) * 100)}% relevante)
+                                </span>
+                            )}
+                        </button>
+
+                        {showResults && (
                             <div className="jurisprudencia-list">
                                 {results.results.map((item) => (
                                     <button
@@ -314,52 +328,18 @@ const JurisprudenciaPanel = ({ onClose }) => {
                                 ))}
                             </div>
                         )}
-
-                        {/* Pagination */}
-                        {results.pages > 1 && (
-                            <div className="jurisprudencia-pagination">
-                                <button
-                                    className="jurisprudencia-page-btn"
-                                    disabled={page <= 1}
-                                    onClick={() => handleSearch(page - 1)}
-                                >
-                                    <FaChevronLeft size={12} /> Anterior
-                                </button>
-
-                                <div className="jurisprudencia-page-numbers">
-                                    {Array.from({ length: Math.min(5, results.pages) }, (_, i) => {
-                                        let pageNum;
-                                        if (results.pages <= 5) {
-                                            pageNum = i + 1;
-                                        } else if (page <= 3) {
-                                            pageNum = i + 1;
-                                        } else if (page >= results.pages - 2) {
-                                            pageNum = results.pages - 4 + i;
-                                        } else {
-                                            pageNum = page - 2 + i;
-                                        }
-                                        return (
-                                            <button
-                                                key={pageNum}
-                                                className={`jurisprudencia-page-num ${pageNum === page ? 'active' : ''}`}
-                                                onClick={() => handleSearch(pageNum)}
-                                            >
-                                                {pageNum}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-
-                                <button
-                                    className="jurisprudencia-page-btn"
-                                    disabled={page >= results.pages}
-                                    onClick={() => handleSearch(page + 1)}
-                                >
-                                    Próxima <FaChevronRight size={12} />
-                                </button>
-                            </div>
-                        )}
                     </>
+                )}
+
+                {/* Empty state: summary exists but no results */}
+                {results && !loading && (!results.results || results.results.length === 0) && !summary && (
+                    <div className="jurisprudencia-empty">
+                        <FaMagnifyingGlass size={40} />
+                        <p>Nenhum acórdão encontrado para "<strong>{results.query}</strong>"</p>
+                        <p className="jurisprudencia-empty-hint">
+                            Tente termos diferentes ou ajuste os filtros de ano.
+                        </p>
+                    </div>
                 )}
 
                 {/* Empty state (no search yet) */}
@@ -392,5 +372,20 @@ const JurisprudenciaPanel = ({ onClose }) => {
         </div>
     );
 };
+
+// Simple markdown to HTML converter
+function formatMarkdown(text) {
+    return text
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/^### (.+)$/gm, '<h4>$1</h4>')
+        .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+        .replace(/<\/ul>\s*<ul>/g, '')
+        .replace(/\n\n/g, '<br/><br/>')
+        .replace(/\n/g, '<br/>');
+}
 
 export default JurisprudenciaPanel;
