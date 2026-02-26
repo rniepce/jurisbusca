@@ -7,6 +7,15 @@ import './JurisprudenciaInsightsCard.css';
  * White background, clean design. Click to expand LLM summary per theme.
  * User can include individual results into the minuta.
  */
+
+/** Format date from YYYY-MM-DD (or similar) to DD/MM/YYYY */
+function fmtDate(d) {
+    if (!d) return '?';
+    const m = String(d).match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    return d;
+}
+
 const JurisprudenciaInsightsCard = ({ data, isLoading, progress, onImport }) => {
     const [expanded, setExpanded] = useState(false);
     const [expandedThemes, setExpandedThemes] = useState({});
@@ -25,7 +34,7 @@ const JurisprudenciaInsightsCard = ({ data, isLoading, progress, onImport }) => 
             onImport({
                 research: [{
                     theme,
-                    summary: `**${result.tipo_recurso || 'Acórdão'}** — ${result.numero_processo || '?'} (${result.data_publicacao || '?'})\n\n${(result.ementa || '').slice(0, 500)}`,
+                    summary: `**${result.tipo_recurso || 'Acórdão'}** — ${result.numero_processo || '?'} (${fmtDate(result.data_publicacao)})\n\n${(result.ementa || '').slice(0, 500)}`,
                     results: [result],
                     total: 1,
                 }],
@@ -99,7 +108,7 @@ const JurisprudenciaInsightsCard = ({ data, isLoading, progress, onImport }) => 
                                                         <div className="juris-result-top">
                                                             <span className="juris-result-tipo">{r.tipo_recurso || 'Acórdão'}</span>
                                                             <span className="juris-result-proc">{r.numero_processo || '?'}</span>
-                                                            <span className="juris-result-date">{r.data_publicacao || '?'}</span>
+                                                            <span className="juris-result-date">{fmtDate(r.data_publicacao)}</span>
                                                             <button
                                                                 className={`juris-include-btn ${isIncluded ? 'done' : ''}`}
                                                                 onClick={(e) => { e.stopPropagation(); handleInclude(item.theme, r); }}
