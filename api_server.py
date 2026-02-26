@@ -82,6 +82,7 @@ MODEL_MAP = {
     "claude": "gpt-5.2-chat",
     "gpt":    "gpt-5.2-chat",
     "v0":     "gpt-5.2-chat",
+    "v0.5":   "gpt-5.2-chat",
     "v1":     "gpt-5.2-chat",
     "v2":     "gpt-5.2-chat",
 }
@@ -430,7 +431,24 @@ async def chat(req: ChatRequest, request: Request):
         # Include V2 structured sections if available
         if req.model == "v2" and 'v2_sections' in locals():
             result_payload["v2_sections"] = v2_sections
-        
+
+        # ── V0.5: trigger background jurisprudence research ──────────────
+        if req.model == "v0.5" and req.uploaded_text and HAS_JURISPRUDENCIA:
+            juris_task_id = str(uuid.uuid4())
+            _bg_tasks[juris_task_id] = {
+                "status": "pending",
+                "result": None,
+                "error": None,
+                "progress": "Extraindo temas jurídicos do processo...",
+            }
+            thread = threading.Thread(
+                target=_run_jurisprudence_research_background,
+                args=(juris_task_id, req.uploaded_text, response_text),
+                daemon=True,
+            )
+            thread.start()
+            result_payload["jurisprudence_task_id"] = juris_task_id
+
         return result_payload
 
     except HTTPException:
@@ -1006,6 +1024,155 @@ async def admin_upload_jurisprudencia(
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro no upload: {str(e)}")
+
+
+# ── Jurisprudência Research Agent (V0.5 background task) ──────────────────────
+
+def _run_jurisprudence_research_background(task_id: str, uploaded_text: str, analysis_text: str):
+    """
+    Background worker: extracts legal themes from the process analysis,
+    then queries the jurisprudence database for each theme.
+    Uses a separate LLM context (does NOT pollute the main analysis context).
+    """
+    try:
+        _bg_tasks[task_id]["status"] = "running"
+        _bg_tasks[task_id]["progress"] = "Extraindo temas jurídicos do processo..."
+
+        # 1. Extract key legal themes using a lightweight LLM call
+        extraction_llm = be.get_llm(model_name="gpt-4.1-mini", temperature=0.1, max_tokens=500)
+        extraction_prompt = (
+            "Você é um assistente de pesquisa jurídica. "
+            "Analise o texto processual abaixo e extraia EXATAMENTE 3 temas/questões jurídicas "
+            "centrais que seriam úteis para pesquisar entendimento jurisprudencial recente.\n\n"
+            "Retorne APENAS as 3 queries de busca, uma por linha, sem numeração ou prefixo. "
+            "Cada query deve ser uma frase curta e precisa (máximo 15 palavras) "
+            "que capture a essência jurídica do ponto controvertido.\n\n"
+            "Exemplos de boas queries:\n"
+            "- responsabilidade civil por inscrição indevida em cadastro de inadimplentes\n"
+            "- dano moral in re ipsa negativação indevida\n"
+            "- inversão do ônus da prova relação de consumo\n\n"
+            "TEXTO DO PROCESSO (trecho):\n"
+        )
+        # Use first 3000 chars of uploaded text + first 2000 chars of analysis
+        context_snippet = uploaded_text[:3000]
+        if analysis_text:
+            context_snippet += "\n\nANÁLISE DO ASSISTENTE:\n" + analysis_text[:2000]
+
+        from langchain_core.messages import HumanMessage as HM, SystemMessage as SM
+        extraction_response = extraction_llm.invoke([
+            SM(content=extraction_prompt),
+            HM(content=context_snippet),
+        ])
+        themes_text = be.safe_content(extraction_response).strip()
+        themes = [line.strip().lstrip("- ").lstrip("0123456789.").strip()
+                  for line in themes_text.split("\n")
+                  if line.strip() and len(line.strip()) > 5][:3]
+
+        if not themes:
+            themes = ["questão jurídica do processo"]
+
+        print(f"🔍 Agente Pesquisador: {len(themes)} temas extraídos: {themes}")
+
+        _bg_tasks[task_id]["progress"] = f"Pesquisando jurisprudência para {len(themes)} temas..."
+
+        # 2. Search jurisprudence for each theme
+        import jurisprudence_search as jsearch
+        research_results = []
+
+        for i, theme in enumerate(themes):
+            _bg_tasks[task_id]["progress"] = f"Pesquisando tema {i+1}/{len(themes)}: {theme[:50]}..."
+
+            # Semantic search
+            search_result = jsearch.semantic_search(
+                query=theme, page=1, page_size=5,
+            )
+            results = search_result.get("results", [])
+
+            # Fallback to keyword if semantic fails
+            if not results:
+                search_result = jsearch.search(query=theme, page=1, page_size=5)
+                results = search_result.get("results", [])
+
+            if not results:
+                research_results.append({
+                    "theme": theme,
+                    "summary": f"Nenhum acórdão encontrado para: \"{theme}\"",
+                    "results": [],
+                    "total": 0,
+                })
+                continue
+
+            # Build context for LLM summary
+            context_parts = []
+            for j, r in enumerate(results[:5], 1):
+                sim_pct = round(r.get("similarity", 0) * 100)
+                context_parts.append(
+                    f"[{j}] {r.get('tipo_recurso', 'Acórdão')} | {r.get('comarca', '?')} | "
+                    f"{r.get('data_publicacao', '?')} | Relevância: {sim_pct}%\n"
+                    f"Processo: {r.get('numero_processo', '?')}\n"
+                    f"Ementa: {r.get('ementa', '')[:600]}"
+                )
+            context = "\n\n---\n\n".join(context_parts)
+
+            # LLM summary for this theme
+            summary_llm = be.get_llm(model_name="gpt-4.1-mini", temperature=0.3, max_tokens=800)
+            summary_prompt = (
+                "Você é um assistente de pesquisa jurisprudencial do TJMG. "
+                "Resuma em 3-5 parágrafos o entendimento predominante dos acórdãos abaixo "
+                "sobre o tema pesquisado. Seja objetivo e cite os números dos processos. "
+                "Destaque a TENDÊNCIA do tribunal (favorável ou desfavorável ao pedido) "
+                "e valores de indenização quando aplicável. "
+                "NÃO invente informações — baseie-se APENAS nas ementas."
+            )
+            summary_response = summary_llm.invoke([
+                SM(content=summary_prompt),
+                HM(content=f"**Tema:** {theme}\n\n**Acórdãos:**\n\n{context}"),
+            ])
+            summary_text = be.safe_content(summary_response)
+
+            research_results.append({
+                "theme": theme,
+                "summary": summary_text,
+                "results": results[:5],
+                "total": search_result.get("total", len(results)),
+            })
+
+        # 3. Store results
+        _bg_tasks[task_id]["status"] = "done"
+        _bg_tasks[task_id]["result"] = {
+            "themes": themes,
+            "research": research_results,
+            "total_themes": len(themes),
+        }
+        print(f"✅ Agente Pesquisador: pesquisa concluída ({len(research_results)} temas)")
+
+    except Exception as e:
+        traceback.print_exc()
+        _bg_tasks[task_id]["status"] = "error"
+        _bg_tasks[task_id]["error"] = f"Erro na pesquisa jurisprudencial: {str(e)}"
+
+
+@app.get("/api/jurisprudencia/research/{task_id}")
+async def jurisprudencia_research_status(task_id: str):
+    """Poll the status of a background jurisprudence research task."""
+    task = _bg_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarefa de pesquisa não encontrada.")
+
+    response = {
+        "task_id": task_id,
+        "status": task["status"],
+        "progress": task.get("progress", ""),
+    }
+
+    if task["status"] == "done":
+        response["result"] = task["result"]
+        del _bg_tasks[task_id]
+    elif task["status"] == "error":
+        response["error"] = task.get("error", "Erro desconhecido")
+        del _bg_tasks[task_id]
+
+    return response
 
 
 # ── Jurisprudência Search ─────────────────────────────────────────────────────

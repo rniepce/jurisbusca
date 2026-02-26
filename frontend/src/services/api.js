@@ -407,3 +407,17 @@ export async function askJurisprudencia(query, filters = {}) {
 
     return safeJson(res, 'Jurisprudência Ask');
 }
+
+/**
+ * Poll for jurisprudence research results (V0.5 background task).
+ * @param {string} taskId - Task ID returned from chat endpoint
+ * @returns {Promise<{status: string, result?: object, error?: string, progress?: string}>}
+ */
+export async function pollJurisprudenciaResearch(taskId) {
+    const res = await fetch(`${API_BASE}/jurisprudencia/research/${taskId}`, {
+        headers: getAuthHeaders(),
+    }).catch(() => null);
+
+    if (!res || !res.ok) return null;
+    return safeJson(res, 'Jurisprudência Research Poll').catch(() => null);
+}

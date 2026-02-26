@@ -7,7 +7,7 @@ import ChatInput from './components/ChatInput';
 import XRayDashboard from './components/XRayDashboard';
 import BatchPanel from './components/BatchPanel';
 import JurisprudenciaPanel from './components/JurisprudenciaPanel';
-import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, uploadTemplates } from './services/api';
+import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, uploadTemplates, pollJurisprudenciaResearch } from './services/api';
 import agentDefinitions from './config/agents';
 import './App.css';
 
@@ -31,6 +31,10 @@ function App() {
   const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
   const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'v0', name: 'Gabinete V0', color: '#10B981', llm: 'gpt-5.2-chat' });
   const [showJurisprudencia, setShowJurisprudencia] = useState(false);
+  // V0.5 jurisprudence research state
+  const [jurisResearch, setJurisResearch] = useState(null);
+  const [jurisResearchLoading, setJurisResearchLoading] = useState(false);
+  const [jurisResearchProgress, setJurisResearchProgress] = useState('');
 
   // Fetch template/RAG status on mount
   useEffect(() => {
@@ -92,7 +96,7 @@ function App() {
       if (activeAgent?.promptModule) {
         // Agent explicitly selected from sidebar
         try {
-          if (engineId === 'v0') {
+          if (engineId === 'v0' || engineId === 'v0.5') {
             const mod = await import('./prompts/gabineteCivelV0.js');
             agentPrompt = mod.default || null;
           } else {
@@ -102,10 +106,10 @@ function App() {
         } catch {
           console.warn('Could not load agent prompt');
         }
-      } else if (['v0', 'v1', 'v2'].includes(engineId)) {
+      } else if (['v0', 'v0.5', 'v1', 'v2'].includes(engineId)) {
         // No agent selected but engine is Gabinete — auto-load prompt
         try {
-          if (engineId === 'v0') {
+          if (engineId === 'v0' || engineId === 'v0.5') {
             const mod = await import('./prompts/gabineteCivelV0.js');
             agentPrompt = mod.default || null;
           } else {
@@ -144,6 +148,14 @@ function App() {
         v2Sections: result.v2_sections || null,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+
+      // ── V0.5: Start polling jurisprudence research ──────────────
+      if (result.jurisprudence_task_id) {
+        setJurisResearchLoading(true);
+        setJurisResearch(null);
+        setJurisResearchProgress('Extraindo temas jurídicos do processo...');
+        _pollJurisResearch(result.jurisprudence_task_id);
+      }
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
@@ -155,6 +167,34 @@ function App() {
       setIsLoading(false);
     }
   }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus]);
+
+  // ── V0.5: Poll jurisprudence research task ──────────────────────
+  const _pollJurisResearch = async (taskId) => {
+    const POLL_INTERVAL = 2500;
+    const MAX_POLLS = 60; // ~2.5 min max
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+
+      const data = await pollJurisprudenciaResearch(taskId);
+      if (!data) continue;
+
+      if (data.progress) setJurisResearchProgress(data.progress);
+
+      if (data.status === 'done') {
+        setJurisResearch(data.result);
+        setJurisResearchLoading(false);
+        return;
+      }
+      if (data.status === 'error') {
+        console.error('Jurisprudence research failed:', data.error);
+        setJurisResearchLoading(false);
+        return;
+      }
+    }
+    // Timeout
+    setJurisResearchLoading(false);
+  };
 
   // ── X-Ray handler (batch clustering) ────────────────────────────────
   const handleXray = useCallback(async (files) => {
@@ -411,6 +451,8 @@ function App() {
     setConversationId(null);
     setUploadedText(null);
     setXrayReport(null);
+    setJurisResearch(null);
+    setJurisResearchLoading(false);
   }, [messages, activeAgent, conversationId]);
 
   // ── Load chat from history ──────────────────────────────────────────
@@ -498,6 +540,21 @@ function App() {
           styleAnalyzing={styleAnalyzing}
           xrayLoading={xrayLoading}
           onAutoAction={handleAutoReview}
+          jurisResearch={jurisResearch}
+          jurisResearchLoading={jurisResearchLoading}
+          jurisResearchProgress={jurisResearchProgress}
+          onJurisImport={(data) => {
+            // Build a summary message from the research
+            const parts = data.research.map((r) =>
+              `### 📌 ${r.theme}\n\n${r.summary}`
+            );
+            const importMsg = {
+              role: 'assistant',
+              content: `## 📚 Jurisprudência Importada\n\n${parts.join('\n\n---\n\n')}`,
+              model: 'pesquisador',
+            };
+            setMessages((prev) => [...prev, importMsg]);
+          }}
         />
       );
     }

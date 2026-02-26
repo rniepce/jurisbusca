@@ -11,6 +11,7 @@ import './ChatInput.css';
 
 const ENGINE_VERSIONS = [
     { id: 'v0', name: 'Gabinete V0', color: '#10B981' },
+    { id: 'v0.5', name: 'V0.5 + Jurisprud.', color: '#8B5CF6' },
     { id: 'v1', name: 'Gabinete V1', color: '#4285F4' },
     { id: 'v2', name: 'Gabinete V2 (Agêntico)', color: '#D97706' },
 ];

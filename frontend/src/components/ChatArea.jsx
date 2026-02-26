@@ -5,6 +5,7 @@ import {
     FaBookOpen, FaPenNib, FaClipboardCheck
 } from 'react-icons/fa6';
 import OcrPreview from './OcrPreview';
+import JurisprudenciaInsightsCard from './JurisprudenciaInsightsCard';
 import logoSvg from '../assets/logo.svg';
 import './ChatArea.css';
 
@@ -136,7 +137,7 @@ function V2CollapsibleCard({ icon, title, content }) {
     );
 }
 
-const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, onAutoAction }) => {
+const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, onAutoAction, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
@@ -319,6 +320,16 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                 {/* Style Analysis Processing Animation — Multi-step */}
                 {styleAnalyzing && (
                     <StyleAnalysisAnimation />
+                )}
+
+                {/* V0.5: Jurisprudence Research Insights Card */}
+                {(jurisResearchLoading || jurisResearch) && (
+                    <JurisprudenciaInsightsCard
+                        data={jurisResearch}
+                        isLoading={jurisResearchLoading}
+                        progress={jurisResearchProgress}
+                        onImport={onJurisImport}
+                    />
                 )}
 
                 {/* Typing indicator */}
