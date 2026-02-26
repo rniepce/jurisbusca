@@ -316,3 +316,68 @@ export async function clearTemplates() {
     }
     return safeJson(res, 'Clear Templates');
 }
+
+
+// ── Jurisprudência Search ───────────────────────────────────────────────────
+
+/**
+ * Search TJMG case law database.
+ * @param {string} query - Search terms
+ * @param {object} [filters] - Optional filters
+ * @param {number} [filters.anoInicio] - Start year
+ * @param {number} [filters.anoFim] - End year
+ * @param {string} [filters.tipo] - Case type filter
+ * @param {number} [filters.page] - Page number (1-indexed)
+ * @param {number} [filters.pageSize] - Results per page
+ * @returns {Promise<{results: Array, total: number, page: number, pages: number}>}
+ */
+export async function searchJurisprudencia(query, filters = {}) {
+    const params = new URLSearchParams({ q: query });
+    if (filters.anoInicio) params.set('ano_inicio', filters.anoInicio);
+    if (filters.anoFim) params.set('ano_fim', filters.anoFim);
+    if (filters.tipo) params.set('tipo', filters.tipo);
+    if (filters.page) params.set('page', filters.page);
+    if (filters.pageSize) params.set('page_size', filters.pageSize);
+
+    const res = await fetch(`${API_BASE}/jurisprudencia/search?${params}`, {
+        headers: getAuthHeaders(),
+    });
+
+    if (!res.ok) {
+        const err = await safeJson(res, 'Jurisprudência').catch(() => ({}));
+        throw new Error(err.detail || `Erro na busca de jurisprudência (${res.status})`);
+    }
+
+    return safeJson(res, 'Jurisprudência');
+}
+
+/**
+ * Get full text of a specific case law document.
+ * @param {number} docId
+ * @returns {Promise<{id: number, numero_processo: string, texto_completo: string, ...}>}
+ */
+export async function getJurisprudenciaDoc(docId) {
+    const res = await fetch(`${API_BASE}/jurisprudencia/doc/${docId}`, {
+        headers: getAuthHeaders(),
+    });
+
+    if (!res.ok) {
+        const err = await safeJson(res, 'Jurisprudência Doc').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao buscar acórdão (${res.status})`);
+    }
+
+    return safeJson(res, 'Jurisprudência Doc');
+}
+
+/**
+ * Get statistics about the case law database.
+ * @returns {Promise<{total: number, por_ano: object, por_tipo: object, ano_min: number, ano_max: number}>}
+ */
+export async function getJurisprudenciaStats() {
+    const res = await fetch(`${API_BASE}/jurisprudencia/stats`, {
+        headers: getAuthHeaders(),
+    });
+
+    if (!res.ok) return { total: 0, por_ano: {}, por_tipo: {}, ano_min: 2020, ano_max: 2026 };
+    return safeJson(res, 'Jurisprudência Stats');
+}

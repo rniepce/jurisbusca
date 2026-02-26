@@ -1346,8 +1346,8 @@ def map_process_individual(text_content, filename, api_key=None):
     """
     import time as _time
 
-    MAX_RETRIES = 3
-    BASE_DELAY = 10  # seconds
+    MAX_RETRIES = 5
+    BASE_DELAY = 30  # seconds (Azure S0 asks for 60s, so 30→60→120 covers it)
 
     for attempt in range(MAX_RETRIES + 1):
         try:
@@ -1436,7 +1436,7 @@ def generate_batch_xray(files, api_key, template_files=None):
             futures = {}
             for i, (fname, text) in enumerate(raw_texts):
                 if i > 0:
-                    _time.sleep(2)  # Stagger para evitar rate limit
+                    _time.sleep(5)  # Stagger para evitar rate limit (Azure S0)
                 future = executor.submit(map_process_individual, text, fname, api_key)
                 futures[future] = fname
             for future in concurrent.futures.as_completed(futures):
@@ -1873,8 +1873,8 @@ def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=
 
             results_list.append(res)
             
-            # Opcional: Pausa curta para aliviar API
-            time.sleep(1)
+            # Pausa entre processos para respeitar rate limit Azure S0 (tokens/min)
+            time.sleep(10)
 
         except Exception as e:
             print(f"❌ Erro Crítico em {data['name']}: {e}")

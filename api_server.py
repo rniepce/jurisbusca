@@ -703,8 +703,8 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
     """Analyze one process. Runs in a thread pool. Retries on 429 rate limit."""
     import time as _time
 
-    MAX_RETRIES = 3
-    BASE_DELAY = 15  # seconds
+    MAX_RETRIES = 5
+    BASE_DELAY = 30  # seconds (Azure S0 asks for 60s, so 30→60→120 covers it)
 
     for attempt in range(MAX_RETRIES + 1):
         try:
@@ -795,15 +795,16 @@ async def cluster_analyze(req: ClusterAnalyzeRequest):
         collection_name = "rag_templates_persistent"
 
         results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        # Serial execution (max_workers=1) to respect Azure S0 token-per-minute limits
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             futures = {}
             for i, p in enumerate(req.processes):
                 if not p.get("text"):
                     continue
-                # Stagger submissions to avoid rate limit bursts
+                # Stagger submissions to avoid rate limit bursts (Azure S0)
                 if i > 0:
                     import time as _time
-                    _time.sleep(2)
+                    _time.sleep(5)
                 future = executor.submit(
                     _analyze_single_process,
                     p["filename"],
@@ -926,6 +927,72 @@ async def clear_templates():
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao limpar modelos: {str(e)}")
+
+
+# ── Jurisprudência Search ─────────────────────────────────────────────────────
+
+try:
+    import jurisprudence_search as jsearch
+    HAS_JURISPRUDENCIA = jsearch.is_available()
+    if HAS_JURISPRUDENCIA:
+        print("📚 Banco de jurisprudência disponível.")
+    else:
+        print("⚠️ Banco de jurisprudência não encontrado. Execute: python jurisprudence_indexer.py")
+except ImportError:
+    HAS_JURISPRUDENCIA = False
+    jsearch = None
+    print("⚠️ Módulo jurisprudence_search não disponível.")
+
+
+@app.get("/api/jurisprudencia/search")
+async def jurisprudencia_search(
+    q: str = "",
+    ano_inicio: int = 0,
+    ano_fim: int = 9999,
+    tipo: str = "",
+    page: int = 1,
+    page_size: int = 20,
+):
+    """Full-text search across TJMG case law database."""
+    if not HAS_JURISPRUDENCIA:
+        raise HTTPException(
+            status_code=503,
+            detail="Banco de jurisprudência não disponível. Execute: python jurisprudence_indexer.py",
+        )
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Parâmetro de busca 'q' é obrigatório.")
+
+    page_size = min(max(1, page_size), 50)  # Clamp 1-50
+
+    result = jsearch.search(
+        query=q,
+        ano_inicio=ano_inicio,
+        ano_fim=ano_fim,
+        tipo_recurso=tipo,
+        page=max(1, page),
+        page_size=page_size,
+    )
+    return result
+
+
+@app.get("/api/jurisprudencia/doc/{doc_id}")
+async def jurisprudencia_doc(doc_id: int):
+    """Retrieve full text of a specific case law document."""
+    if not HAS_JURISPRUDENCIA:
+        raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
+
+    doc = jsearch.get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Acórdão não encontrado.")
+    return doc
+
+
+@app.get("/api/jurisprudencia/stats")
+async def jurisprudencia_stats():
+    """Get statistics about the case law database."""
+    if not HAS_JURISPRUDENCIA:
+        raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
+    return jsearch.get_stats()
 
 
 # ── Serve React frontend (production) ────────────────────────────────────────

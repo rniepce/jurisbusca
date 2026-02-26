@@ -1,0 +1,385 @@
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { FaMagnifyingGlass, FaChevronLeft, FaChevronRight, FaXmark, FaScaleBalanced, FaCalendarDays, FaLocationDot, FaArrowLeft, FaCopy, FaCheck } from 'react-icons/fa6';
+import { searchJurisprudencia, getJurisprudenciaDoc, getJurisprudenciaStats } from '../services/api';
+import './JurisprudenciaPanel.css';
+
+const JurisprudenciaPanel = ({ onClose }) => {
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [page, setPage] = useState(1);
+    const [anoInicio, setAnoInicio] = useState(2020);
+    const [anoFim, setAnoFim] = useState(2026);
+    const [stats, setStats] = useState(null);
+    const [selectedDoc, setSelectedDoc] = useState(null);
+    const [loadingDoc, setLoadingDoc] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const searchInputRef = useRef(null);
+
+    // Load stats on mount
+    useEffect(() => {
+        getJurisprudenciaStats()
+            .then(setStats)
+            .catch(() => { });
+    }, []);
+
+    // Focus search input on mount
+    useEffect(() => {
+        if (searchInputRef.current) {
+            searchInputRef.current.focus();
+        }
+    }, []);
+
+    const handleSearch = useCallback(async (newPage = 1) => {
+        if (!query.trim()) return;
+
+        setLoading(true);
+        setError('');
+        setPage(newPage);
+
+        try {
+            const data = await searchJurisprudencia(query, {
+                anoInicio,
+                anoFim,
+                page: newPage,
+                pageSize: 20,
+            });
+            setResults(data);
+        } catch (err) {
+            setError(err.message || 'Erro na busca.');
+        } finally {
+            setLoading(false);
+        }
+    }, [query, anoInicio, anoFim]);
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            handleSearch(1);
+        }
+    };
+
+    const handleDocClick = async (docId) => {
+        setLoadingDoc(true);
+        try {
+            const doc = await getJurisprudenciaDoc(docId);
+            setSelectedDoc(doc);
+        } catch (err) {
+            setError(err.message || 'Erro ao carregar documento.');
+        } finally {
+            setLoadingDoc(false);
+        }
+    };
+
+    const handleCopy = async () => {
+        if (!selectedDoc) return;
+        try {
+            await navigator.clipboard.writeText(selectedDoc.texto_completo);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            // Fallback
+            const ta = document.createElement('textarea');
+            ta.value = selectedDoc.texto_completo;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
+
+    const formatProcesso = (num) => {
+        if (!num || num.length < 15) return num;
+        // Format: NNNNNNN-NN.NNNN.N.NN.NNNN
+        return num.replace(
+            /^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/,
+            '$1-$2.$3.$4.$5.$6'
+        );
+    };
+
+    // Document viewer
+    if (selectedDoc) {
+        return (
+            <div className="jurisprudencia-panel">
+                <div className="jurisprudencia-doc-view">
+                    <div className="jurisprudencia-doc-header">
+                        <button
+                            className="jurisprudencia-back-btn"
+                            onClick={() => setSelectedDoc(null)}
+                        >
+                            <FaArrowLeft size={14} />
+                            <span>Voltar aos resultados</span>
+                        </button>
+                        <button
+                            className={`jurisprudencia-copy-btn ${copied ? 'copied' : ''}`}
+                            onClick={handleCopy}
+                            title="Copiar texto completo"
+                        >
+                            {copied ? <><FaCheck size={13} /> Copiado</> : <><FaCopy size={13} /> Copiar</>}
+                        </button>
+                    </div>
+
+                    <div className="jurisprudencia-doc-meta">
+                        <div className="jurisprudencia-doc-meta-row">
+                            <span className="meta-badge tipo">{selectedDoc.tipo_recurso || 'Acórdão'}</span>
+                            {selectedDoc.data_publicacao && (
+                                <span className="meta-badge date">
+                                    <FaCalendarDays size={11} /> {selectedDoc.data_publicacao}
+                                </span>
+                            )}
+                            {selectedDoc.comarca && (
+                                <span className="meta-badge comarca">
+                                    <FaLocationDot size={11} /> {selectedDoc.comarca}
+                                </span>
+                            )}
+                        </div>
+                        <div className="jurisprudencia-doc-processo">
+                            Processo: {formatProcesso(selectedDoc.numero_processo)}
+                        </div>
+                        {selectedDoc.relator && (
+                            <div className="jurisprudencia-doc-relator">
+                                Relator(a): {selectedDoc.relator}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="jurisprudencia-doc-content">
+                        <pre>{selectedDoc.texto_completo}</pre>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="jurisprudencia-panel">
+            {/* Header */}
+            <div className="jurisprudencia-header">
+                <div className="jurisprudencia-header-content">
+                    <div className="jurisprudencia-title-row">
+                        <FaScaleBalanced size={22} className="jurisprudencia-title-icon" />
+                        <div>
+                            <h2>Pesquisa de Jurisprudência</h2>
+                            <p className="jurisprudencia-subtitle">
+                                {stats
+                                    ? `${stats.total?.toLocaleString('pt-BR')} acórdãos do TJMG (${stats.ano_min}–${stats.ano_max})`
+                                    : 'Base de acórdãos do TJMG'}
+                            </p>
+                        </div>
+                    </div>
+                    {onClose && (
+                        <button className="jurisprudencia-close-btn" onClick={onClose} title="Fechar">
+                            <FaXmark size={18} />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Search bar */}
+            <div className="jurisprudencia-search-section">
+                <div className="jurisprudencia-search-bar">
+                    <FaMagnifyingGlass size={16} className="jurisprudencia-search-icon" />
+                    <input
+                        ref={searchInputRef}
+                        type="text"
+                        placeholder='Buscar por termos, ex: "dano moral", "contrato bancário", "usucapião"...'
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="jurisprudencia-search-input"
+                        id="jurisprudencia-search-input"
+                    />
+                    <button
+                        className="jurisprudencia-search-btn"
+                        onClick={() => handleSearch(1)}
+                        disabled={loading || !query.trim()}
+                        id="jurisprudencia-search-btn"
+                    >
+                        {loading ? 'Buscando...' : 'Pesquisar'}
+                    </button>
+                </div>
+
+                {/* Filters */}
+                <div className="jurisprudencia-filters">
+                    <label className="jurisprudencia-filter">
+                        <span>De:</span>
+                        <select
+                            value={anoInicio}
+                            onChange={(e) => setAnoInicio(Number(e.target.value))}
+                        >
+                            {Array.from({ length: 7 }, (_, i) => 2020 + i).map((y) => (
+                                <option key={y} value={y}>{y}</option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="jurisprudencia-filter">
+                        <span>Até:</span>
+                        <select
+                            value={anoFim}
+                            onChange={(e) => setAnoFim(Number(e.target.value))}
+                        >
+                            {Array.from({ length: 7 }, (_, i) => 2020 + i).map((y) => (
+                                <option key={y} value={y}>{y}</option>
+                            ))}
+                        </select>
+                    </label>
+                </div>
+            </div>
+
+            {/* Error */}
+            {error && (
+                <div className="jurisprudencia-error">
+                    ⚠️ {error}
+                </div>
+            )}
+
+            {/* Results */}
+            <div className="jurisprudencia-results">
+                {loading && (
+                    <div className="jurisprudencia-loading">
+                        <div className="jurisprudencia-spinner" />
+                        <span>Pesquisando na base de jurisprudência...</span>
+                    </div>
+                )}
+
+                {results && !loading && (
+                    <>
+                        <div className="jurisprudencia-results-header">
+                            <span className="jurisprudencia-results-count">
+                                {results.total.toLocaleString('pt-BR')} resultado{results.total !== 1 ? 's' : ''} encontrado{results.total !== 1 ? 's' : ''}
+                            </span>
+                            <span className="jurisprudencia-results-page">
+                                Página {results.page} de {results.pages}
+                            </span>
+                        </div>
+
+                        {results.results.length === 0 ? (
+                            <div className="jurisprudencia-empty">
+                                <FaMagnifyingGlass size={40} />
+                                <p>Nenhum acórdão encontrado para "<strong>{results.query}</strong>"</p>
+                                <p className="jurisprudencia-empty-hint">
+                                    Tente termos diferentes ou ajuste os filtros de ano.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="jurisprudencia-list">
+                                {results.results.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        className="jurisprudencia-card"
+                                        onClick={() => handleDocClick(item.id)}
+                                        id={`juris-result-${item.id}`}
+                                    >
+                                        <div className="jurisprudencia-card-top">
+                                            <span className="jurisprudencia-card-tipo">
+                                                {item.tipo_recurso || 'Acórdão'}
+                                            </span>
+                                            <span className="jurisprudencia-card-date">
+                                                {item.data_publicacao}
+                                            </span>
+                                        </div>
+                                        <div className="jurisprudencia-card-processo">
+                                            {formatProcesso(item.numero_processo)}
+                                        </div>
+                                        <div
+                                            className="jurisprudencia-card-snippet"
+                                            dangerouslySetInnerHTML={{ __html: item.snippet || item.ementa?.slice(0, 300) }}
+                                        />
+                                        <div className="jurisprudencia-card-bottom">
+                                            {item.comarca && (
+                                                <span className="jurisprudencia-card-comarca">
+                                                    <FaLocationDot size={10} /> {item.comarca}
+                                                </span>
+                                            )}
+                                            {item.relator && (
+                                                <span className="jurisprudencia-card-relator">
+                                                    Rel. {item.relator}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Pagination */}
+                        {results.pages > 1 && (
+                            <div className="jurisprudencia-pagination">
+                                <button
+                                    className="jurisprudencia-page-btn"
+                                    disabled={page <= 1}
+                                    onClick={() => handleSearch(page - 1)}
+                                >
+                                    <FaChevronLeft size={12} /> Anterior
+                                </button>
+
+                                <div className="jurisprudencia-page-numbers">
+                                    {Array.from({ length: Math.min(5, results.pages) }, (_, i) => {
+                                        let pageNum;
+                                        if (results.pages <= 5) {
+                                            pageNum = i + 1;
+                                        } else if (page <= 3) {
+                                            pageNum = i + 1;
+                                        } else if (page >= results.pages - 2) {
+                                            pageNum = results.pages - 4 + i;
+                                        } else {
+                                            pageNum = page - 2 + i;
+                                        }
+                                        return (
+                                            <button
+                                                key={pageNum}
+                                                className={`jurisprudencia-page-num ${pageNum === page ? 'active' : ''}`}
+                                                onClick={() => handleSearch(pageNum)}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <button
+                                    className="jurisprudencia-page-btn"
+                                    disabled={page >= results.pages}
+                                    onClick={() => handleSearch(page + 1)}
+                                >
+                                    Próxima <FaChevronRight size={12} />
+                                </button>
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {/* Empty state (no search yet) */}
+                {!results && !loading && !error && (
+                    <div className="jurisprudencia-welcome">
+                        <FaScaleBalanced size={48} className="jurisprudencia-welcome-icon" />
+                        <h3>Pesquise na base de jurisprudência do TJMG</h3>
+                        <p>
+                            Digite termos de busca para encontrar acórdãos relevantes.
+                            A busca funciona por palavras-chave no texto completo dos acórdãos.
+                        </p>
+                        <div className="jurisprudencia-tips">
+                            <span className="jurisprudencia-tip" onClick={() => { setQuery('dano moral'); }}>dano moral</span>
+                            <span className="jurisprudencia-tip" onClick={() => { setQuery('contrato bancário'); }}>contrato bancário</span>
+                            <span className="jurisprudencia-tip" onClick={() => { setQuery('usucapião'); }}>usucapião</span>
+                            <span className="jurisprudencia-tip" onClick={() => { setQuery('responsabilidade civil'); }}>responsabilidade civil</span>
+                            <span className="jurisprudencia-tip" onClick={() => { setQuery('alimentos'); }}>alimentos</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Loading overlay for doc */}
+            {loadingDoc && (
+                <div className="jurisprudencia-doc-loading-overlay">
+                    <div className="jurisprudencia-spinner" />
+                    <span>Carregando acórdão...</span>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default JurisprudenciaPanel;

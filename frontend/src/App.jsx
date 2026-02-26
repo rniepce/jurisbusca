@@ -6,6 +6,7 @@ import ChatArea from './components/ChatArea';
 import ChatInput from './components/ChatInput';
 import XRayDashboard from './components/XRayDashboard';
 import BatchPanel from './components/BatchPanel';
+import JurisprudenciaPanel from './components/JurisprudenciaPanel';
 import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, uploadTemplates } from './services/api';
 import agentDefinitions from './config/agents';
 import './App.css';
@@ -29,6 +30,7 @@ function App() {
   const [batchResults, setBatchResults] = useState([]);
   const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
   const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'v0', name: 'Gabinete V0', color: '#10B981', llm: 'gpt-5.2-chat' });
+  const [showJurisprudencia, setShowJurisprudencia] = useState(false);
 
   // Fetch template/RAG status on mount
   useEffect(() => {
@@ -469,6 +471,13 @@ function App() {
 
   // Determine what to show in main content
   const renderContent = () => {
+    if (showJurisprudencia) {
+      return (
+        <JurisprudenciaPanel
+          onClose={() => setShowJurisprudencia(false)}
+        />
+      );
+    }
     if (xrayReport) {
       return (
         <XRayDashboard
@@ -492,7 +501,7 @@ function App() {
         />
       );
     }
-    return <WelcomeContent />;
+    return <WelcomeContent onOpenJurisprudencia={() => setShowJurisprudencia(true)} />;
   };
 
   const showBatchPanel = batchResults.length > 0;
