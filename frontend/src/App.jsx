@@ -35,6 +35,7 @@ function App() {
   const [jurisResearch, setJurisResearch] = useState(null);
   const [jurisResearchLoading, setJurisResearchLoading] = useState(false);
   const [jurisResearchProgress, setJurisResearchProgress] = useState('');
+  const [jurisContext, setJurisContext] = useState(''); // accumulated imported jurisprudence for LLM
 
   // Fetch template/RAG status on mount
   useEffect(() => {
@@ -131,6 +132,7 @@ function App() {
         uploadedText,
         styleDossier: currentStyleDossier,
         useRag: useRag,
+        jurisprudenceContext: jurisContext || null,
       });
 
       setConversationId(result.conversation_id);
@@ -453,6 +455,7 @@ function App() {
     setXrayReport(null);
     setJurisResearch(null);
     setJurisResearchLoading(false);
+    setJurisContext('');
   }, [messages, activeAgent, conversationId]);
 
   // ── Load chat from history ──────────────────────────────────────────
@@ -544,13 +547,20 @@ function App() {
           jurisResearchLoading={jurisResearchLoading}
           jurisResearchProgress={jurisResearchProgress}
           onJurisImport={(data) => {
-            // Build a summary message from the research
-            const parts = data.research.map((r) =>
-              `### 📌 ${r.theme}\n\n${r.summary}`
-            );
+            // Accumulate imported jurisprudence into context for the LLM
+            const parts = data.research.map((r) => {
+              const resultsText = (r.results || []).map((res) =>
+                `- ${res.tipo_recurso || 'Acórdão'} ${res.numero_processo || '?'} (${res.data_publicacao || '?'}): ${(res.ementa || '').slice(0, 400)}`
+              ).join('\n');
+              return `**Tema:** ${r.theme}\n${r.summary}\n\n${resultsText}`;
+            });
+            const newContext = parts.join('\n\n---\n\n');
+            setJurisContext((prev) => prev ? `${prev}\n\n---\n\n${newContext}` : newContext);
+
+            // Also show visual confirmation in chat
             const importMsg = {
               role: 'assistant',
-              content: `## 📚 Jurisprudência Importada\n\n${parts.join('\n\n---\n\n')}`,
+              content: `✅ **Jurisprudência incluída na fundamentação.** O LLM utilizará este entendimento na elaboração da minuta.`,
               model: 'pesquisador',
             };
             setMessages((prev) => [...prev, importMsg]);

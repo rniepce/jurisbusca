@@ -74,6 +74,7 @@ class ChatRequest(BaseModel):
     uploaded_text: Optional[str] = None  # pre-extracted text from uploaded file
     style_dossier: Optional[str] = None  # cloning prompt from style report
     use_rag: bool = False  # if True, use RAG retrieval instead of full text
+    jurisprudence_context: Optional[str] = None  # V0.5: imported jurisprudence for minuta fundamentação
 
 
 # ── Model mapping (Azure AI Foundry) ──────────────────────────────────────────
@@ -221,6 +222,15 @@ async def chat(req: ChatRequest, request: Request):
                 f"\n\n---\n🧬 **SYSTEM PROMPT DE CLONAGEM ESTILÍSTICA (DOSSIÊ DO MAGISTRADO):**\n"
                 f"⚠️ INSTRUÇÃO PRIMÁRIA: Replique rigorosamente o estilo descrito abaixo ao redigir qualquer decisão.\n\n"
                 f"{req.style_dossier}\n---"
+            )
+
+        # V0.5: Inject imported jurisprudence into the LLM context
+        if req.jurisprudence_context:
+            system_parts.append(
+                f"\n\n---\n📚 **JURISPRUDÊNCIA SELECIONADA PELO MAGISTRADO (INCLUIR NA FUNDAMENTAÇÃO DA MINUTA):**\n"
+                f"⚠️ INSTRUÇÃO: O magistrado selecionou a(s) jurisprudência(s) abaixo como relevante(s) para este caso. "
+                f"INCLUA obrigatoriamente na fundamentação da minuta, citando o número do processo e o entendimento.\n\n"
+                f"{req.jurisprudence_context}\n---"
             )
 
         # ── Auto RAG: retrieve mirror context from persisted templates ──
@@ -433,7 +443,8 @@ async def chat(req: ChatRequest, request: Request):
             result_payload["v2_sections"] = v2_sections
 
         # ── V0.5: trigger background jurisprudence research ──────────────
-        if req.model == "v0.5" and req.uploaded_text and HAS_JURISPRUDENCIA:
+        # Only on the SECOND interaction (after triagem is done), when there's history
+        if req.model == "v0.5" and req.uploaded_text and HAS_JURISPRUDENCIA and len(past_messages) >= 2:
             juris_task_id = str(uuid.uuid4())
             _bg_tasks[juris_task_id] = {
                 "status": "pending",

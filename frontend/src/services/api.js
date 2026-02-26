@@ -124,7 +124,7 @@ export async function uploadFile(file, ocrEngine = 'paddle', compress = true) {
  * @param {string|null} params.uploadedText
  * @returns {Promise<{conversation_id: string, response: string, model: string}>}
  */
-export async function sendMessage({ message, model, llm, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false }) {
+export async function sendMessage({ message, model, llm, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false, jurisprudenceContext = null }) {
     const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -138,6 +138,7 @@ export async function sendMessage({ message, model, llm, agentPrompt, conversati
             uploaded_text: uploadedText || null,
             style_dossier: styleDossier || null,
             use_rag: useRag,
+            jurisprudence_context: jurisprudenceContext || null,
         }),
         redirect: 'error',    // Do NOT follow redirects
     }).catch((err) => {
