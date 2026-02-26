@@ -10,7 +10,10 @@ import sqlite3
 from typing import Optional
 
 
-_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "jurisprudencia.db")
+_DB_PATH = os.environ.get(
+    "JURISPRUDENCIA_DB_PATH",
+    os.path.join(os.path.dirname(__file__), "data", "jurisprudencia.db"),
+)
 
 # Module-level connection (lazy init)
 _conn: Optional[sqlite3.Connection] = None
@@ -247,6 +250,17 @@ def get_stats() -> dict:
         "ano_min": min(row["ano"] for row in anos) if anos else 0,
         "ano_max": max(row["ano"] for row in anos) if anos else 0,
     }
+
+
+def reload_db():
+    """Fecha a conexão atual e força reinicialização na próxima query."""
+    global _conn
+    if _conn is not None:
+        try:
+            _conn.close()
+        except Exception:
+            pass
+        _conn = None
 
 
 def is_available() -> bool:

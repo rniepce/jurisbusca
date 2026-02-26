@@ -929,6 +929,85 @@ async def clear_templates():
         raise HTTPException(status_code=500, detail=f"Erro ao limpar modelos: {str(e)}")
 
 
+# ── Admin: Upload Jurisprudência DB ───────────────────────────────────────────
+
+@app.post("/api/admin/upload-jurisprudencia")
+async def admin_upload_jurisprudencia(
+    file: UploadFile = File(...),
+    request: Request = None,
+):
+    """
+    Upload do banco SQLite de jurisprudência (gzip compressed).
+    Protegido por X-Admin-Key header.
+    """
+    # Auth check
+    admin_key = os.getenv("ADMIN_KEY", "")
+    if not admin_key:
+        raise HTTPException(status_code=503, detail="ADMIN_KEY não configurada no servidor.")
+
+    provided_key = ""
+    if request:
+        provided_key = request.headers.get("X-Admin-Key", "")
+    if provided_key != admin_key:
+        raise HTTPException(status_code=403, detail="Admin key inválida.")
+
+    import gzip as _gzip
+
+    try:
+        # Determine target path
+        db_path = os.environ.get(
+            "JURISPRUDENCIA_DB_PATH",
+            os.path.join(os.path.dirname(__file__), "data", "jurisprudencia.db"),
+        )
+        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+
+        # Read uploaded gzip file and decompress
+        print(f"📥 Recebendo DB de jurisprudência...")
+        content = await file.read()
+        compressed_size = len(content)
+        print(f"   📦 Recebido: {compressed_size / 1024 / 1024:.0f} MB comprimido")
+
+        # Decompress
+        print(f"   🔓 Descomprimindo para {db_path}...")
+        decompressed = _gzip.decompress(content)
+        with open(db_path, "wb") as f:
+            f.write(decompressed)
+
+        db_size = os.path.getsize(db_path)
+        print(f"   💾 Salvo: {db_size / 1024 / 1024:.0f} MB")
+
+        # Reload jurisprudence_search module connection
+        global HAS_JURISPRUDENCIA, jsearch
+        try:
+            import jurisprudence_search as _jsearch
+            _jsearch.reload_db()
+            jsearch = _jsearch
+            HAS_JURISPRUDENCIA = _jsearch.is_available()
+
+            # Quick stats
+            stats = _jsearch.get_stats()
+            total = stats.get("total", 0)
+            print(f"   ✅ DB recarregado: {total:,} acórdãos")
+
+            return {
+                "status": "ok",
+                "total_acordaos": total,
+                "db_size_mb": round(db_size / 1024 / 1024, 1),
+                "compressed_size_mb": round(compressed_size / 1024 / 1024, 1),
+            }
+        except Exception as reload_err:
+            print(f"   ⚠️ DB salvo mas erro ao recarregar: {reload_err}")
+            return {
+                "status": "ok",
+                "warning": f"DB salvo ({db_size/1024/1024:.0f} MB) mas reload falhou: {str(reload_err)}",
+                "db_size_mb": round(db_size / 1024 / 1024, 1),
+            }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro no upload: {str(e)}")
+
+
 # ── Jurisprudência Search ─────────────────────────────────────────────────────
 
 try:
