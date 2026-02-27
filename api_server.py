@@ -277,6 +277,33 @@ async def chat(req: ChatRequest, request: Request):
             except Exception as e:
                 print(f"⚠️ RAG auto-retrieval failed (non-blocking): {e}")
 
+        # ── Claude rate-limit guard: truncate to stay under 30K input tokens ──
+        # Anthropic Tier 1 allows 30K input tokens/min. ~4 chars ≈ 1 token.
+        # We cap at 80K chars (~20K tokens) for the system prompt, leaving room
+        # for conversation history, user message, and output tokens.
+        if model_name.startswith("claude") and system_parts:
+            CLAUDE_MAX_CHARS = 80_000
+            total_chars = sum(len(p) for p in system_parts)
+            if total_chars > CLAUDE_MAX_CHARS:
+                print(f"✂️ Claude truncation: {total_chars} chars → ~{CLAUDE_MAX_CHARS} chars (rate limit guard)")
+                # Truncate the largest part (usually uploaded_text at index 1+)
+                # Strategy: keep agent prompt (first part) intact, truncate the rest proportionally
+                budget = CLAUDE_MAX_CHARS
+                truncated_parts = []
+                for i, part in enumerate(system_parts):
+                    if budget <= 0:
+                        truncated_parts.append("\n\n⚠️ *[Conteúdo adicional omitido para respeitar o limite do Claude. Use GPT-5.2 para contextos maiores.]*")
+                        break
+                    if len(part) <= budget or i == 0:
+                        # Keep agent prompt (i==0) and small parts intact
+                        truncated_parts.append(part)
+                        budget -= len(part)
+                    else:
+                        # Truncate this part to fit the remaining budget
+                        truncated_parts.append(part[:budget] + "\n\n⚠️ *[Texto truncado para caber no limite do Claude (30K tokens/min). Use GPT-5.2 para o texto integral.]*")
+                        budget = 0
+                system_parts = truncated_parts
+
         if system_parts:
             messages.append(SystemMessage(content="\n".join(system_parts)))
 
