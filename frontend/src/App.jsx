@@ -168,7 +168,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus]);
+  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext]);
 
   // ── V0.5: Poll jurisprudence research task ──────────────────────
   const _pollJurisResearch = async (taskId) => {
