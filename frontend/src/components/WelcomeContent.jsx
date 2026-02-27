@@ -19,7 +19,7 @@ const WelcomeContent = ({ onOpenJurisprudencia }) => {
                     <FaScaleBalanced size={22} className="welcome-action-icon" />
                     <div className="welcome-action-text">
                         <span className="welcome-action-title">Pesquisar Jurisprudência</span>
-                        <span className="welcome-action-desc">Busque acórdãos do TJMG por palavras-chave</span>
+                        <span className="welcome-action-desc">Busque acórdãos do TJMG com IA</span>
                     </div>
                 </button>
             </div>
