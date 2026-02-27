@@ -7,11 +7,15 @@ import ChatInput from './components/ChatInput';
 import XRayDashboard from './components/XRayDashboard';
 import BatchPanel from './components/BatchPanel';
 import JurisprudenciaPanel from './components/JurisprudenciaPanel';
-import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, uploadTemplates, pollJurisprudenciaResearch } from './services/api';
+import ModelManagerPanel from './components/ModelManagerPanel';
+import LoginPage from './components/LoginPage';
+import SignupPage from './components/SignupPage';
+import { AuthProvider, useAuth } from './components/AuthContext';
+import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, uploadTemplates, triggerJurisprudenciaResearch, pollJurisprudenciaResearch } from './services/api';
 import agentDefinitions from './config/agents';
 import './App.css';
 
-function App() {
+function MainApp() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -31,6 +35,7 @@ function App() {
   const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
   const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'v0', name: 'Gabinete V0', color: '#10B981', llm: 'gpt-5.2-chat' });
   const [showJurisprudencia, setShowJurisprudencia] = useState(false);
+  const [showModelManager, setShowModelManager] = useState(false);
   // V0.5 jurisprudence research state
   const [jurisResearch, setJurisResearch] = useState(null);
   const [jurisResearchLoading, setJurisResearchLoading] = useState(false);
@@ -151,13 +156,8 @@ function App() {
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
-      // ── V0.5: Start polling jurisprudence research ──────────────
-      if (result.jurisprudence_task_id) {
-        setJurisResearchLoading(true);
-        setJurisResearch(null);
-        setJurisResearchProgress('Extraindo temas jurídicos do processo...');
-        _pollJurisResearch(result.jurisprudence_task_id);
-      }
+      // V0.5: jurisprudence research is now triggered manually via button
+      // (no longer auto-triggered on each chat response)
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
@@ -169,6 +169,31 @@ function App() {
       setIsLoading(false);
     }
   }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext]);
+
+  // ── V0.5: Manually trigger jurisprudence research ─────────────────
+  const handleJurisSearch = useCallback(async () => {
+    if (!uploadedText) return;
+    setJurisResearchLoading(true);
+    setJurisResearch(null);
+    setJurisResearchProgress('Extraindo temas jurídicos do processo...');
+
+    try {
+      // Get the latest assistant message for better theme extraction
+      const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant' && m.content?.length > 100);
+      const analysisText = lastAssistant?.content || '';
+
+      const { task_id } = await triggerJurisprudenciaResearch(uploadedText, analysisText);
+      _pollJurisResearch(task_id);
+    } catch (err) {
+      console.error('Juris research trigger failed:', err);
+      setJurisResearchLoading(false);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `⚠️ **Erro na pesquisa jurisprudencial:** ${err.message}`,
+        model: 'erro',
+      }]);
+    }
+  }, [uploadedText, messages]);
 
   // ── V0.5: Poll jurisprudence research task ──────────────────────
   const _pollJurisResearch = async (taskId) => {
@@ -516,6 +541,14 @@ function App() {
 
   // Determine what to show in main content
   const renderContent = () => {
+    if (showModelManager) {
+      return (
+        <ModelManagerPanel
+          onClose={() => setShowModelManager(false)}
+          onRagStatusChange={setRagStatus}
+        />
+      );
+    }
     if (showJurisprudencia) {
       return (
         <JurisprudenciaPanel
@@ -547,12 +580,19 @@ function App() {
           jurisResearchLoading={jurisResearchLoading}
           jurisResearchProgress={jurisResearchProgress}
           onJurisImport={(data) => {
-            // Accumulate imported jurisprudence into context for the LLM
+            // Format imported jurisprudence with explicit ementa + citation for LLM
             const parts = data.research.map((r) => {
-              const resultsText = (r.results || []).map((res) =>
-                `- ${res.tipo_recurso || 'Acórdão'} ${res.numero_processo || '?'} (${res.data_publicacao || '?'}): ${(res.ementa || '').slice(0, 400)}`
-              ).join('\n');
-              return `**Tema:** ${r.theme}\n${r.summary}\n\n${resultsText}`;
+              const resultsText = (r.results || []).map((res) => {
+                const ementa = (res.ementa || '').trim();
+                const processo = res.numero_processo || '?';
+                const tipo = res.tipo_recurso || 'Acórdão';
+                const data_pub = res.data_publicacao || '?';
+                return (
+                  `Nesse sentido, assim entende o Eg. TJMG:\n` +
+                  `"EMENTA: ${ementa}" (TJMG, ${tipo}, nº ${processo}, ${data_pub})`
+                );
+              }).join('\n\n');
+              return `**Tema:** ${r.theme}\n\n${resultsText}`;
             });
             const newContext = parts.join('\n\n---\n\n');
             setJurisContext((prev) => prev ? `${prev}\n\n---\n\n${newContext}` : newContext);
@@ -560,11 +600,13 @@ function App() {
             // Also show visual confirmation in chat
             const importMsg = {
               role: 'assistant',
-              content: `✅ **Jurisprudência incluída na fundamentação.** O LLM utilizará este entendimento na elaboração da minuta.`,
+              content: `✅ **Jurisprudência incluída na fundamentação.** A próxima minuta gerada incluirá a ementa com a citação \"Assim entende o TJMG:\".`,
               model: 'pesquisador',
             };
             setMessages((prev) => [...prev, importMsg]);
           }}
+          onJurisSearch={handleJurisSearch}
+          selectedModel={globalSelectedModel}
         />
       );
     }
@@ -606,6 +648,7 @@ function App() {
           onFilesUploaded={handleFilesUploaded}
           onStyleReport={handleStyleReport}
           onModelChange={setGlobalSelectedModel}
+          onOpenModelManager={() => setShowModelManager(true)}
           isLoading={isLoading || xrayLoading || styleAnalyzing}
           ocrProcessing={ocrProcessing}
           hasContext={!!(uploadedText || activeAgent)}
@@ -615,6 +658,37 @@ function App() {
       </div>
     </div>
   );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
+  );
+}
+
+function AuthGate() {
+  const { user, loading } = useAuth();
+  const [showSignup, setShowSignup] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background text-primary">
+        <div className="animate-spin text-3xl">⚙️</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return showSignup ? (
+      <SignupPage onNavigateLogin={() => setShowSignup(false)} />
+    ) : (
+      <LoginPage onNavigateSignup={() => setShowSignup(true)} />
+    );
+  }
+
+  return <MainApp />;
 }
 
 export default App;

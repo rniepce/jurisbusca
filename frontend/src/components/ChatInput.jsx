@@ -32,7 +32,7 @@ const OCR_ENGINES = [
     { id: 'mistral_doc_ai', label: 'Mistral DocAI' },
 ];
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange }) => {
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(ENGINE_VERSIONS[0]);
     const [selectedLlm, setSelectedLlm] = useState(LLM_OPTIONS[0]);
@@ -131,10 +131,31 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         e.target.value = '';
     };
 
-    const handleTemplateChange = (e) => {
+    const handleTemplateChange = async (e) => {
         const selected = Array.from(e.target.files);
         if (selected.length > 0) {
             setTemplateFiles((prev) => [...prev, ...selected]);
+            // Auto-index in RAG immediately
+            setIndexing(true);
+            try {
+                const result = await uploadTemplates(selected);
+                if (onRagStatusChange) {
+                    onRagStatusChange({
+                        indexed_chunks: result.indexed_chunks,
+                        has_dossier: result.has_dossier,
+                    });
+                }
+                setIndexing(false);
+                setIndexSuccess(true);
+                setTimeout(() => {
+                    setIndexSuccess(false);
+                    setTemplateFiles([]);
+                }, 2500);
+            } catch (err) {
+                console.error('Auto-indexing failed:', err);
+                setIndexing(false);
+                alert(`Erro ao indexar modelos: ${err.message}`);
+            }
         }
         e.target.value = '';
     };
@@ -207,7 +228,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                         onChange={handleFileChange}
                         style={{ display: 'none' }}
                     />
-                    <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={handleTemplateClick}>
+                    <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={() => onOpenModelManager && onOpenModelManager()}>
                         <FaBook />
                     </button>
                     <input
@@ -271,58 +292,32 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                         </div>
                     )}
 
-                    {/* Show newly selected (un-indexed) templates */}
+                    {/* Show newly selected templates — auto-indexing in progress */}
                     {templateFiles.length > 0 && (
                         <>
-                            <div className="template-pill">
-                                <FaBook size={12} />
-                                <span>{templateFiles.length} modelo{templateFiles.length > 1 ? 's' : ''} selecionado{templateFiles.length > 1 ? 's' : ''}</span>
-                                <button
-                                    className="template-pill-clear"
-                                    onClick={() => setTemplateFiles([])}
-                                    aria-label="Remover modelos"
-                                >
-                                    <FaXmark size={10} />
-                                </button>
-                            </div>
-                            <button
-                                className={`style-report-btn ${indexSuccess ? 'index-success' : ''} ${indexing ? 'indexing-active' : ''}`}
-                                onClick={async () => {
-                                    if (indexing || indexSuccess) return;
-                                    setIndexing(true);
-                                    try {
-                                        const result = await uploadTemplates(templateFiles);
-                                        if (onRagStatusChange) {
-                                            onRagStatusChange({
-                                                indexed_chunks: result.indexed_chunks,
-                                                has_dossier: result.has_dossier,
-                                            });
-                                        }
-                                        // Show success state
-                                        setIndexing(false);
-                                        setIndexSuccess(true);
-                                        setTimeout(() => {
-                                            setIndexSuccess(false);
-                                            setTemplateFiles([]);
-                                        }, 2500);
-                                    } catch (err) {
-                                        console.error('Indexing failed:', err);
-                                        setIndexing(false);
-                                        alert(`Erro ao indexar modelos: ${err.message}`);
-                                    }
-                                }}
-                                disabled={isLoading || indexing || indexSuccess}
-                            >
-                                {indexSuccess ? (
+                            <div className={`template-pill ${indexing ? 'indexing-active' : ''} ${indexSuccess ? 'rag-active' : ''}`}>
+                                {indexing ? (
+                                    <><FaDatabase size={12} /><span>Indexando {templateFiles.length} modelo{templateFiles.length > 1 ? 's' : ''}...</span></>
+                                ) : indexSuccess ? (
                                     <><FaCheck size={12} /><span>Modelos indexados!</span></>
                                 ) : (
-                                    <><FaDatabase size={12} /><span>{indexing ? 'Indexando...' : 'Indexar no RAG'}</span></>
+                                    <>
+                                        <FaBook size={12} />
+                                        <span>{templateFiles.length} modelo{templateFiles.length > 1 ? 's' : ''} selecionado{templateFiles.length > 1 ? 's' : ''}</span>
+                                        <button
+                                            className="template-pill-clear"
+                                            onClick={() => setTemplateFiles([])}
+                                            aria-label="Remover modelos"
+                                        >
+                                            <FaXmark size={10} />
+                                        </button>
+                                    </>
                                 )}
-                            </button>
+                            </div>
                             <button
                                 className="style-report-btn"
                                 onClick={() => onStyleReport && onStyleReport(templateFiles)}
-                                disabled={isLoading}
+                                disabled={isLoading || indexing}
                             >
                                 <FaPalette size={12} />
                                 <span>Relatório de Estilo</span>

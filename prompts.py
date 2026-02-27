@@ -18,7 +18,7 @@ Identifique no texto:
 8. **DATAS CHAVE:** Data do Fato, Data da Citação, Prazos.
 
 ## SAÍDA ESPERADA
-Gere um relatório estruturado e conciso. Use tópicos.
+Gere um relatório estruturado e detalhado. Use tópicos.
 """
 
 # 2. AGENTE FORMAL (Fase 1 e 2 do Protocolo)
@@ -98,9 +98,15 @@ Sua missão é transformar o raciocínio bruto do Juiz em uma sentença final, p
 
 ## ESTRUTURA DA SENTENÇA
 1.  **CABEÇALHO:** Comarca, Vara, Número do Processo (se houver).
-2.  **RELATÓRIO:** Breve histórico (dispensado em JEC, mas siga o estilo).
-3.  **FUNDAMENTAÇÃO:** Desenvolva o raciocínio do Juiz em linguagem jurídica culta e persuasiva.
+2.  **RELATÓRIO:** Histórico processual completo (dispensado em JEC, mas siga o estilo).
+3.  **FUNDAMENTAÇÃO:** Desenvolva EXTENSAMENTE o raciocínio do Juiz em linguagem jurídica culta e persuasiva. Aprofunde cada ponto jurídico, enfrente todos os argumentos das partes e fundamente cada conclusão com a legislação aplicável.
 4.  **DISPOSITIVO:** A conclusão formal ("Ante o exposto...").
+
+## REGRAS DE EXTENSÃO
+- A minuta deve ser COMPLETA e DETALHADA, nunca resumida.
+- Desenvolva cada tópico da fundamentação com profundidade analítica.
+- Enfrente cada argumento relevante das partes.
+- Não economize na redação: uma sentença bem fundamentada é mais valiosa que uma sentença curta.
 
 ## SAÍDA
 Retorne APENAS o texto da Sentença. Sem conversas.

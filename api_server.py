@@ -18,11 +18,13 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from jose import jwt
 
 import backend as be
 import history_db
@@ -61,8 +63,36 @@ conversations_fallback: dict[str, list[dict]] = {}
 _bg_tasks: dict[str, dict] = {}
 _process_rag_cache: dict[str, tuple] = {}
 
-# ── Auth (disabled — open access) ─────────────────────────────────────────
+# ── Auth (Supabase JWT Verification) ──────────────────────────────────────────
 
+security = HTTPBearer()
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
+    """Validate Supabase JWT token and return user ID."""
+    token = credentials.credentials
+    if not SUPABASE_JWT_SECRET:
+        print("⚠️ AVISO: SUPABASE_JWT_SECRET não configurado no .env. Ignorando auth local.")
+        return "development_user"
+        
+    try:
+        # Supabase uses HS256 by default for its JWTs
+        payload = jwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            options={"verify_aud": False}
+        )
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Token inválido (sem usuário)")
+        return user_id
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Sessão expirada. Faça login novamente.")
+    except jwt.JWTError as e:
+        print(f"⚠️ JWT Error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Token de autenticação inválido.")
+        
 
 class ChatRequest(BaseModel):
     message: str
@@ -136,7 +166,7 @@ async def debug_routes():
 
 
 @app.post("/api/chat")
-async def chat(req: ChatRequest, request: Request):
+async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_current_user)):
     """Process a chat message and return LLM response."""
     try:
         # Resolve LLM deployment: prefer explicit llm field, fallback to MODEL_MAP
@@ -227,18 +257,26 @@ async def chat(req: ChatRequest, request: Request):
         # V0.5: Inject imported jurisprudence into the LLM context
         if req.jurisprudence_context:
             system_parts.append(
-                f"\n\n---\n📚 **JURISPRUDÊNCIA SELECIONADA PELO MAGISTRADO (INCLUIR NA FUNDAMENTAÇÃO DA MINUTA):**\n"
-                f"⚠️ INSTRUÇÃO: O magistrado selecionou a(s) jurisprudência(s) abaixo como relevante(s) para este caso. "
-                f"INCLUA obrigatoriamente na fundamentação da minuta, citando o número do processo e o entendimento.\n\n"
+                f"\n\n---\n📚 **JURISPRUDÊNCIA SELECIONADA PELO MAGISTRADO (OBRIGATÓRIO NA FUNDAMENTAÇÃO):**\n"
+                f"⚠️ INSTRUÇÃO OBRIGATÓRIA: O magistrado selecionou a(s) jurisprudência(s) abaixo para INCLUSÃO NA FUNDAMENTAÇÃO da minuta.\n"
+                f"Para CADA jurisprudência incluída, você DEVE:\n"
+                f"1. Inserir na seção de FUNDAMENTAÇÃO da minuta/sentença\n"
+                f"2. Usar a seguinte formatação: primeiro contextualize o tema, depois escreva 'Nesse sentido, assim entende o TJMG:' \n"
+                f"3. Em seguida, transcreva a EMENTA COMPLETA do acórdão entre aspas, citando o número do processo e a data\n"
+                f"4. Após a ementa, faça a ponte entre o entendimento jurisprudencial e o caso concreto\n\n"
+                f"Exemplo de formatação esperada:\n"
+                f"'Nesse sentido, assim entende o Eg. TJMG:\n"
+                f"\"EMENTA: [texto da ementa]\" (TJMG, [tipo recurso], nº [processo], [data])\n'"
+                f"\n\nJURISPRUDÊNCIA SELECIONADA:\n"
                 f"{req.jurisprudence_context}\n---"
             )
 
-        # ── Auto RAG: retrieve mirror context from persisted templates ──
+        # ── Auto RAG: retrieve mirror context from persisted templates (per-user) ──
         if req.uploaded_text:
             try:
                 if True:  # Templates use local storage, no API key needed
                     collection_name = "rag_templates_persistent"
-                    rag_retriever = be.load_persistent_rag(collection_name=collection_name)
+                    rag_retriever = be.load_persistent_rag(collection_name=collection_name, user_id=user_id)
                     if rag_retriever:
                         # Search for similar cases
                         relevant_docs = rag_retriever.invoke(req.uploaded_text[:6000])
@@ -477,23 +515,8 @@ async def chat(req: ChatRequest, request: Request):
         if req.model == "v2" and 'v2_sections' in locals():
             result_payload["v2_sections"] = v2_sections
 
-        # ── V0.5: trigger background jurisprudence research ──────────────
-        # Only on the SECOND interaction (after triagem is done), when there's history
-        if req.model == "v0.5" and req.uploaded_text and HAS_JURISPRUDENCIA and len(past_messages) >= 2:
-            juris_task_id = str(uuid.uuid4())
-            _bg_tasks[juris_task_id] = {
-                "status": "pending",
-                "result": None,
-                "error": None,
-                "progress": "Extraindo temas jurídicos do processo...",
-            }
-            thread = threading.Thread(
-                target=_run_jurisprudence_research_background,
-                args=(juris_task_id, req.uploaded_text, response_text),
-                daemon=True,
-            )
-            thread.start()
-            result_payload["jurisprudence_task_id"] = juris_task_id
+        # V0.5: jurisprudence research is now triggered manually via
+        # POST /api/jurisprudencia/research (no longer auto-triggered here)
 
         return result_payload
 
@@ -505,8 +528,8 @@ async def chat(req: ChatRequest, request: Request):
 
 
 @app.get("/api/history")
-async def get_history():
-    """Fetch conversation history (currently returns empty — no auth)."""
+async def get_history(user_id: str = Depends(get_current_user)):
+    """Fetch conversation history."""
     return {"conversations": []}
 
 
@@ -563,6 +586,7 @@ async def upload_file(
     file: UploadFile = File(...),
     ocr_engine: str = Form("paddle"),
     compress: bool = Form(True),
+    user_id: str = Depends(get_current_user)
 ):
     """Upload and extract text from a file. Returns task_id for polling."""
     try:
@@ -592,7 +616,7 @@ async def upload_file(
 
 
 @app.get("/api/upload/{task_id}")
-async def upload_status(task_id: str):
+async def upload_status(task_id: str, user_id: str = Depends(get_current_user)):
     """Poll the status of a background upload task."""
     task = _bg_tasks.get(task_id)
     if not task:
@@ -652,7 +676,10 @@ def _run_xray_background(task_id: str, file_data: list[tuple[str, bytes]]):
 
 
 @app.post("/api/xray")
-async def batch_xray(files: list[UploadFile] = File(...)):
+async def batch_xray(
+    files: list[UploadFile] = File(...),
+    user_id: str = Depends(get_current_user)
+):
     """
     Batch X-Ray: upload files and start background MAP-REDUCE clustering.
     Returns a task_id immediately — poll GET /api/xray/{task_id} for results.
@@ -688,7 +715,7 @@ async def batch_xray(files: list[UploadFile] = File(...)):
 
 
 @app.get("/api/xray/{task_id}")
-async def xray_status(task_id: str):
+async def xray_status(task_id: str, user_id: str = Depends(get_current_user)):
     """
     Poll the status of a background X-Ray task.
     Returns status ('pending', 'running', 'done', 'error') and result when done.
@@ -715,7 +742,10 @@ async def xray_status(task_id: str):
 
 
 @app.post("/api/style-report")
-async def style_report(files: list[UploadFile] = File(...)):
+async def style_report(
+    files: list[UploadFile] = File(...),
+    user_id: str = Depends(get_current_user)
+):
     """
     Generate a Style Dossier (Dossiê de Identidade Decisional) from template files.
     Uses the existing generate_style_dossier pipeline in backend.py.
@@ -763,7 +793,7 @@ class ClusterAnalyzeRequest(BaseModel):
     llm: Optional[str] = None
 
 
-def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_name: str, collection_name: str = "rag_templates_persistent"):
+def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_name: str, collection_name: str = "rag_templates_persistent", user_id: str = "default"):
     """Analyze one process. Runs in a thread pool. Retries on 429 rate limit."""
     import time as _time
 
@@ -788,7 +818,7 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
             op_key = os.getenv("AZURE_OPENAI_API_KEY", "")
             if op_key:
                 try:
-                    rag_retriever = be.load_persistent_rag(collection_name=collection_name)
+                    rag_retriever = be.load_persistent_rag(collection_name=collection_name, user_id=user_id)
                     if rag_retriever:
                         relevant_docs = rag_retriever.invoke(text[:6000])
                         if relevant_docs:
@@ -842,7 +872,10 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
 
 
 @app.post("/api/cluster-analyze")
-async def cluster_analyze(req: ClusterAnalyzeRequest):
+async def cluster_analyze(
+    req: ClusterAnalyzeRequest,
+    user_id: str = Depends(get_current_user)
+):
     """
     Process all files in a cluster individually, in parallel.
     Returns a list of individual analysis results.
@@ -875,7 +908,8 @@ async def cluster_analyze(req: ClusterAnalyzeRequest):
                     p["text"],
                     req.agent_prompt or "",
                     model_name,
-                    collection_name
+                    collection_name,
+                    user_id
                 )
                 futures[future] = p["filename"]
             for future in concurrent.futures.as_completed(futures):
@@ -902,6 +936,7 @@ async def cluster_analyze(req: ClusterAnalyzeRequest):
 @app.post("/api/templates")
 async def upload_templates(
     files: list[UploadFile] = File(...),
+    user_id: str = Depends(get_current_user)
 ):
     """
     Upload and index template files in ChromaDB for persistent RAG.
@@ -925,7 +960,7 @@ async def upload_templates(
         # 1. Index templates (100% local — no ChromaDB, no embeddings)
         t0 = _time.time()
         collection_name = "rag_templates_persistent"
-        retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name)
+        retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name, user_id=user_id)
         indexed_count = len(docs) if docs else 0
         print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks)")
 
@@ -965,12 +1000,12 @@ async def upload_templates(
 
 
 @app.get("/api/templates/status")
-async def templates_status():
-    """Check how many templates are indexed."""
+async def templates_status(user_id: str = Depends(get_current_user)):
+    """Check how many templates are indexed for the current user."""
     try:
-        if not be._template_store:
-            be._load_template_store()
-        count = len(be._template_store)
+        if user_id not in be._template_store or not be._template_store.get(user_id):
+            be._load_template_store(user_id)
+        count = len(be._template_store.get(user_id, []))
         has_dossier = len(be._style_dossier_cache) > 0
         return {"indexed_chunks": count, "has_dossier": has_dossier}
     except Exception:
@@ -978,19 +1013,379 @@ async def templates_status():
 
 
 @app.delete("/api/templates")
-async def clear_templates():
-    """Clear all indexed templates."""
+async def clear_templates(user_id: str = Depends(get_current_user)):
+    """Clear all indexed templates for the current user."""
     try:
-        be._template_store.clear()
-        # Remove persisted JSON
-        if os.path.exists(be._TEMPLATE_STORE_PATH):
-            os.remove(be._TEMPLATE_STORE_PATH)
+        # Clear only this user's templates
+        be._template_store.pop(user_id, None)
+        # Remove persisted JSON for this user
+        user_path = be._get_template_store_path(user_id)
+        if os.path.exists(user_path):
+            os.remove(user_path)
         # Clear style dossier cache
         be._style_dossier_cache.clear()
         return {"status": "ok", "message": "Modelos e cache limpos."}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao limpar modelos: {str(e)}")
+
+
+@app.get("/api/templates/list")
+async def list_templates(user_id: str = Depends(get_current_user)):
+    """List all template files for the current user with metadata."""
+    try:
+        templates = be.list_templates(user_id)
+        return {"templates": templates, "total": len(templates)}
+    except Exception as e:
+        traceback.print_exc()
+        return {"templates": [], "total": 0}
+
+
+@app.delete("/api/templates/{filename:path}")
+async def delete_single_template(filename: str, user_id: str = Depends(get_current_user)):
+    """Delete a specific template file by source filename."""
+    try:
+        removed = be.delete_template_by_source(user_id, filename)
+        if removed == 0:
+            raise HTTPException(status_code=404, detail=f"Modelo '{filename}' não encontrado.")
+        
+        # Update remaining count
+        remaining = be.list_templates(user_id)
+        return {
+            "status": "ok",
+            "removed_chunks": removed,
+            "remaining_templates": len(remaining),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao remover modelo: {str(e)}")
+
+
+class TemplateAskRequest(BaseModel):
+    query: str
+
+
+@app.post("/api/templates/ask")
+async def templates_ask(req: TemplateAskRequest, user_id: str = Depends(get_current_user)):
+    """
+    RAG: busca nos templates do usuário + resumo por LLM.
+    Similar ao /api/jurisprudencia/ask mas para os modelos de decisão do usuário.
+    """
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="Parâmetro 'query' é obrigatório.")
+
+    try:
+        # 1. Search user's templates
+        results = be.search_templates(user_id, req.query, k=5)
+        if not results:
+            return {
+                "summary": f"Nenhum trecho relevante encontrado em seus modelos para: \"{req.query}\". Faça upload de modelos de decisão primeiro.",
+                "results": [],
+                "total": 0,
+                "query": req.query,
+            }
+
+        # 2. Build context from relevant chunks
+        context_parts = []
+        for i, r in enumerate(results, 1):
+            context_parts.append(
+                f"[{i}] Fonte: {r['source']} | {r['full_length']} caracteres\n"
+                f"Trecho: {r['text']}"
+            )
+        context = "\n\n---\n\n".join(context_parts)
+
+        # 3. LLM summarization
+        system_prompt = (
+            "Você é um assistente jurídico especializado em modelos de decisão. "
+            "O usuário possui modelos de sentença/decisão indexados e fez uma busca. "
+            "Você recebeu os trechos mais relevantes desses modelos.\n\n"
+            "Sua tarefa é:\n"
+            "1. **Resumir como os modelos tratam** o tema pesquisado\n"
+            "2. **Identificar padrões de fundamentação** usados nos modelos\n"
+            "3. **Destacar frases e estruturas** recorrentes que possam ser reaproveitadas\n"
+            "4. **Citar os modelos** pelo nome do arquivo fonte\n\n"
+            "Responda em linguagem clara. Use markdown para formatar. "
+            "NÃO invente informações — baseie-se APENAS nos trechos fornecidos."
+        )
+
+        user_prompt = (
+            f"**Pesquisa do usuário:** {req.query}\n\n"
+            f"**{len(results)} trechos mais relevantes dos modelos:**\n\n"
+            f"{context}"
+        )
+
+        llm = be.get_llm(model_name="gpt-4.1-mini", temperature=0.3)
+        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
+        response = llm.invoke([SM(content=system_prompt), HM(content=user_prompt)])
+        summary = be.safe_content(response)
+
+        return {
+            "summary": summary,
+            "results": results,
+            "total": len(results),
+            "query": req.query,
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na pesquisa nos modelos: {str(e)}")
+
+
+# ── Template Jurisprudence Verification ───────────────────────────────────────
+
+@app.post("/api/templates/extract-themes")
+async def extract_themes(user_id: str = Depends(get_current_user)):
+    """
+    LLM reads user's templates and extracts the main legal themes.
+    Returns a list of themes with titles and descriptions.
+    """
+    try:
+        # Get user's template chunks
+        if user_id not in be._template_store or not be._template_store.get(user_id):
+            be._load_template_store(user_id)
+        user_store = be._template_store.get(user_id, [])
+
+        if not user_store:
+            raise HTTPException(status_code=400, detail="Nenhum modelo indexado. Faça upload de modelos primeiro.")
+
+        # Sample representative chunks (up to 15 chunks, spread across sources)
+        import random
+        sources = {}
+        for chunk in user_store:
+            src = chunk.get("metadata", {}).get("source", "?")
+            if src not in sources:
+                sources[src] = []
+            sources[src].append(chunk)
+
+        sampled = []
+        for src, chunks in sources.items():
+            n = min(3, len(chunks))
+            sampled.extend(random.sample(chunks, n))
+        if len(sampled) > 15:
+            sampled = random.sample(sampled, 15)
+
+        # Build context
+        context_parts = []
+        for i, chunk in enumerate(sampled, 1):
+            source = chunk.get("metadata", {}).get("source", "?")
+            text = chunk.get("text", "")[:2000]
+            context_parts.append(f"[Trecho {i} — {source}]\n{text}")
+        context = "\n\n---\n\n".join(context_parts)
+
+        # LLM extraction
+        system_prompt = (
+            "Você é um analista jurídico sênior. Analise os trechos de modelos de decisão/sentença "
+            "fornecidos e identifique os TEMAS JURÍDICOS CENTRAIS tratados neles.\n\n"
+            "Extraia até 10 temas distintos. Para cada tema, retorne:\n"
+            "- Um TÍTULO curto (máximo 8 palavras)\n"
+            "- Uma DESCRIÇÃO de 1 frase explicando o tema\n\n"
+            "Retorne APENAS um JSON array, sem markdown, sem explicações:\n"
+            '[{"title": "...", "description": "..."}, ...]\n\n'
+            "Exemplos de bons temas:\n"
+            '- {"title": "Dano moral por negativação indevida", "description": "Responsabilidade civil por inscrição indevida em cadastros de inadimplentes."}\n'
+            '- {"title": "Tutela de urgência", "description": "Concessão de tutela antecipada em casos de verossimilhança e perigo de dano."}\n'
+        )
+
+        llm = be.get_llm(model_name="gpt-4.1-mini", temperature=0.2, max_tokens=2000)
+        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
+        response = llm.invoke([
+            SM(content=system_prompt),
+            HM(content=f"Analise estes trechos de modelos de decisão e extraia os temas:\n\n{context}"),
+        ])
+        raw = be.safe_content(response).strip()
+
+        # Parse JSON
+        import re
+        json_match = re.search(r'\[.*\]', raw, re.DOTALL)
+        if json_match:
+            themes = json.loads(json_match.group())
+        else:
+            themes = json.loads(raw)
+
+        # Add IDs
+        for i, t in enumerate(themes):
+            t["id"] = i + 1
+
+        return {"themes": themes[:10], "total": len(themes[:10])}
+
+    except HTTPException:
+        raise
+    except json.JSONDecodeError:
+        return {"themes": [{"id": 1, "title": "Análise geral", "description": "Tema extraído dos modelos de decisão."}], "total": 1}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao extrair temas: {str(e)}")
+
+
+class VerifyThemeRequest(BaseModel):
+    theme: str
+
+
+@app.post("/api/templates/verify-theme")
+async def verify_theme(req: VerifyThemeRequest, user_id: str = Depends(get_current_user)):
+    """
+    For a given theme:
+    1. Search user's templates for relevant excerpts
+    2. Search jurisprudence DB for relevant case law
+    3. GPT-5.2 compares both and classifies: aligned / divergent / no_data
+    """
+    if not req.theme.strip():
+        raise HTTPException(status_code=400, detail="Tema não pode ser vazio.")
+
+    try:
+        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
+
+        # 1. Get relevant template excerpts
+        template_results = be.search_templates(user_id, req.theme, k=3)
+        template_context = ""
+        if template_results:
+            parts = []
+            for i, r in enumerate(template_results, 1):
+                parts.append(f"[Modelo {i} — {r['source']}]\n{r['text']}")
+            template_context = "\n\n---\n\n".join(parts)
+
+        # 2. Search jurisprudence
+        juris_results = []
+        juris_context = ""
+        if HAS_JURISPRUDENCIA:
+            try:
+                search_result = jsearch.semantic_search(
+                    query=req.theme, page=1, page_size=5,
+                )
+                juris_results = search_result.get("results", [])
+
+                # Fallback to keyword if semantic returns nothing
+                if not juris_results:
+                    search_result = jsearch.search(
+                        query=req.theme, page=1, page_size=5,
+                    )
+                    juris_results = search_result.get("results", [])
+
+                if juris_results:
+                    jp = []
+                    for i, r in enumerate(juris_results[:5], 1):
+                        sim = round(r.get("similarity", 0) * 100)
+                        jp.append(
+                            f"[Acórdão {i}] {r.get('tipo_recurso', 'Acórdão')} | "
+                            f"Processo: {r.get('numero_processo', '?')} | "
+                            f"{r.get('data_publicacao', '?')} | {r.get('comarca', '?')} | "
+                            f"Relevância: {sim}%\n"
+                            f"Ementa: {r.get('ementa', '')[:800]}"
+                        )
+                    juris_context = "\n\n---\n\n".join(jp)
+            except Exception as e:
+                print(f"⚠️ Jurisprudence search failed for theme '{req.theme}': {e}")
+
+        # 3. If no data on either side
+        if not template_context and not juris_context:
+            return {
+                "status": "no_data",
+                "theme": req.theme,
+                "summary": "Dados insuficientes para comparação. Verifique se há modelos indexados e se o banco de jurisprudência está disponível.",
+                "model_approach": "",
+                "majority_understanding": "",
+                "comparison": "",
+                "alert": None,
+                "acordaos": [],
+            }
+
+        if not juris_context:
+            return {
+                "status": "no_data",
+                "theme": req.theme,
+                "summary": "Banco de jurisprudência não disponível ou sem acórdãos relevantes para este tema.",
+                "model_approach": template_context[:500] if template_context else "",
+                "majority_understanding": "",
+                "comparison": "",
+                "alert": None,
+                "acordaos": [],
+            }
+
+        # 4. GPT-5.2 comparative analysis
+        system_prompt = (
+            "Você é um analista jurisprudencial sênior do TJMG. Sua tarefa é COMPARAR "
+            "como os modelos de decisão do magistrado tratam um tema versus o entendimento "
+            "MAJORITÁRIO da jurisprudência recente do TJMG.\n\n"
+            "Você receberá:\n"
+            "- TRECHOS DOS MODELOS DE DECISÃO do magistrado\n"
+            "- ACÓRDÃOS RECENTES do TJMG sobre o mesmo tema\n\n"
+            "Responda em JSON estrito (sem markdown):\n"
+            "{\n"
+            '  "status": "aligned" ou "divergent",\n'
+            '  "majority_understanding": "Resumo de 2-3 parágrafos do entendimento predominante do TJMG",\n'
+            '  "model_approach": "Resumo de 1-2 parágrafos de como os modelos do magistrado tratam o tema",\n'
+            '  "comparison": "Comparação detalhada (3-4 parágrafos). Se divergente, explique EXATAMENTE onde e por que diverge, citando os acórdãos pelo número do processo. Se alinhado, explique os pontos de concordância.",\n'
+            '  "alert_title": "Se divergent: título curto do alerta (1 frase). Se aligned: null",\n'
+            '  "alert_detail": "Se divergent: explicação detalhada da divergência com recomendação. Se aligned: null"\n'
+            "}\n\n"
+            "REGRAS:\n"
+            "- Baseie-se APENAS nos textos fornecidos\n"
+            "- NÃO invente informações\n"
+            "- Cite números de processo dos acórdãos quando relevante\n"
+            "- Seja objetivo e imparcial"
+        )
+
+        user_prompt = (
+            f"**TEMA:** {req.theme}\n\n"
+            f"## MODELOS DE DECISÃO DO MAGISTRADO:\n\n{template_context}\n\n"
+            f"## ACÓRDÃOS RECENTES DO TJMG:\n\n{juris_context}"
+        )
+
+        llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.2, max_tokens=3000)
+        response = llm.invoke([SM(content=system_prompt), HM(content=user_prompt)])
+        raw = be.safe_content(response).strip()
+
+        # Parse JSON response
+        import re
+        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if json_match:
+            analysis = json.loads(json_match.group())
+        else:
+            analysis = json.loads(raw)
+
+        # Build response with acórdãos metadata
+        acordaos = []
+        for r in juris_results[:5]:
+            acordaos.append({
+                "id": r.get("id"),
+                "numero_processo": r.get("numero_processo", "?"),
+                "tipo_recurso": r.get("tipo_recurso", "Acórdão"),
+                "ementa": r.get("ementa", "")[:500],
+                "data_publicacao": r.get("data_publicacao", "?"),
+                "comarca": r.get("comarca", "?"),
+                "relator": r.get("relator", ""),
+                "similarity": r.get("similarity", 0),
+            })
+
+        return {
+            "status": analysis.get("status", "no_data"),
+            "theme": req.theme,
+            "majority_understanding": analysis.get("majority_understanding", ""),
+            "model_approach": analysis.get("model_approach", ""),
+            "comparison": analysis.get("comparison", ""),
+            "alert": {
+                "title": analysis.get("alert_title"),
+                "detail": analysis.get("alert_detail"),
+            } if analysis.get("alert_title") else None,
+            "acordaos": acordaos,
+        }
+
+    except json.JSONDecodeError:
+        # LLM didn't return valid JSON — return raw as summary
+        return {
+            "status": "aligned",
+            "theme": req.theme,
+            "majority_understanding": raw[:1500] if raw else "Análise indisponível.",
+            "model_approach": "",
+            "comparison": "",
+            "alert": None,
+            "acordaos": [],
+        }
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao verificar tema: {str(e)}")
 
 
 # ── Admin: Upload Jurisprudência DB ───────────────────────────────────────────
@@ -1199,7 +1594,7 @@ def _run_jurisprudence_research_background(task_id: str, uploaded_text: str, ana
 
 
 @app.get("/api/jurisprudencia/research/{task_id}")
-async def jurisprudencia_research_status(task_id: str):
+async def jurisprudencia_research_status(task_id: str, user_id: str = Depends(get_current_user)):
     """Poll the status of a background jurisprudence research task."""
     task = _bg_tasks.get(task_id)
     if not task:
@@ -1219,6 +1614,34 @@ async def jurisprudencia_research_status(task_id: str):
         del _bg_tasks[task_id]
 
     return response
+
+
+class JurisResearchRequest(BaseModel):
+    uploaded_text: str
+    analysis_text: str = ""
+
+
+@app.post("/api/jurisprudencia/research")
+async def trigger_jurisprudencia_research(req: JurisResearchRequest, user_id: str = Depends(get_current_user)):
+    """Manually trigger jurisprudence research for the given process text."""
+    if not HAS_JURISPRUDENCIA:
+        raise HTTPException(status_code=503, detail="Módulo de jurisprudência não disponível.")
+
+    task_id = str(uuid.uuid4())
+    _bg_tasks[task_id] = {
+        "status": "pending",
+        "result": None,
+        "error": None,
+        "progress": "Extraindo temas jurídicos do processo...",
+    }
+    thread = threading.Thread(
+        target=_run_jurisprudence_research_background,
+        args=(task_id, req.uploaded_text, req.analysis_text),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"task_id": task_id, "status": "pending"}
 
 
 # ── Jurisprudência Search ─────────────────────────────────────────────────────
@@ -1245,6 +1668,7 @@ async def jurisprudencia_search(
     page: int = 1,
     page_size: int = 20,
     mode: str = "semantic",
+    user_id: str = Depends(get_current_user)
 ):
     """Full-text or semantic search across TJMG case law database.
     
@@ -1333,7 +1757,10 @@ class JurisprudenciaAskRequest(BaseModel):
     tipo: str = ""
 
 @app.post("/api/jurisprudencia/ask")
-async def jurisprudencia_ask(req: JurisprudenciaAskRequest):
+async def jurisprudencia_ask(
+    req: JurisprudenciaAskRequest,
+    user_id: str = Depends(get_current_user)
+):
     """
     RAG: busca semântica + resumo por LLM.
     Retorna um resumo inteligente dos acórdãos mais relevantes + os resultados brutos.
@@ -1429,7 +1856,7 @@ async def jurisprudencia_ask(req: JurisprudenciaAskRequest):
 
 
 @app.get("/api/jurisprudencia/doc/{doc_id}")
-async def jurisprudencia_doc(doc_id: int):
+async def jurisprudencia_doc(doc_id: int, user_id: str = Depends(get_current_user)):
     """Retrieve full text of a specific case law document."""
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
@@ -1441,7 +1868,7 @@ async def jurisprudencia_doc(doc_id: int):
 
 
 @app.get("/api/jurisprudencia/stats")
-async def jurisprudencia_stats():
+async def jurisprudencia_stats(user_id: str = Depends(get_current_user)):
     """Get statistics about the case law database."""
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
@@ -1449,7 +1876,7 @@ async def jurisprudencia_stats():
 
 
 @app.get("/api/jurisprudencia/diagnostics")
-async def jurisprudencia_diagnostics():
+async def jurisprudencia_diagnostics(user_id: str = Depends(get_current_user)):
     """Diagnóstico: verifica tabelas e embeddings no banco."""
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")

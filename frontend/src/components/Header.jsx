@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FaKey } from 'react-icons/fa';
 import { LuPanelLeftClose, LuPanelLeftOpen } from 'react-icons/lu';
 import { validateAzureKey } from '../services/api';
+import { useAuth } from './AuthContext';
+import { FaUserCircle } from 'react-icons/fa';
 import logoSvg from '../assets/logo.svg';
 import './Header.css';
 
@@ -11,6 +13,7 @@ const Header = ({ onMenuClick, isOpen }) => {
     const [keyStatus, setKeyStatus] = useState('unknown'); // 'unknown' | 'valid' | 'invalid' | 'checking'
     const [keyMessage, setKeyMessage] = useState('');
     const popoverRef = useRef(null);
+    const { user, signOut } = useAuth();
 
     // Load stored key status on mount
     useEffect(() => {
@@ -121,6 +124,19 @@ const Header = ({ onMenuClick, isOpen }) => {
                         </div>
                     )}
                 </div>
+
+                {/* User Profile */}
+                {user && (
+                    <div className="user-profile">
+                        <div className="user-info">
+                            <FaUserCircle className="user-avatar" size={20} />
+                            <span className="user-name">{user.user_metadata?.full_name || user.email}</span>
+                        </div>
+                        <button className="logout-btn" onClick={signOut} title="Sair da conta">
+                            Sair
+                        </button>
+                    </div>
+                )}
             </div>
         </header>
     );

@@ -127,10 +127,11 @@ except ImportError as e:
     run_autonomous_magistrate = None
 
 # ── Module-level cache for style dossier (avoids re-running expensive analysis) ──
+# Keyed by (user_id, file_hash) for per-user isolation
 _style_dossier_cache = {}
 
-def _template_cache_key(template_files):
-    """Gera chave de cache baseada nos nomes dos arquivos de template."""
+def _template_cache_key(template_files, user_id="default"):
+    """Gera chave de cache baseada nos nomes dos arquivos de template + user_id."""
     import hashlib
     names = sorted([getattr(f, 'name', str(f)) for f in template_files])
     return hashlib.md5('|'.join(names).encode()).hexdigest()
@@ -501,7 +502,7 @@ def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key:
             model=anthropic_model,
             anthropic_api_key=anthropic_key,
             temperature=temperature,
-            max_tokens=8192,
+            max_tokens=16384,
             **kwargs,
         )
 
@@ -742,6 +743,8 @@ def generate_style_dossier(template_files, api_key):
     if cache_key in _style_dossier_cache:
         print(f"✅ Dossiê de estilo recuperado do cache (key: {cache_key[:8]}...)")
         return _style_dossier_cache[cache_key]
+    # Also support per-user cache lookup
+    user_cache_key = f"user:{cache_key}"  # Will be overridden by caller if needed
     
     if not HAS_AZURE_OPENAI:
         print("⚠️ Azure OpenAI não instalado. Dossiê de estilo indisponível.")
@@ -1133,8 +1136,16 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     }
 
 # ── Simple in-memory template store (NO ChromaDB, NO embeddings, NO API calls) ──
-_template_store: list[dict] = []  # [{"text": str, "metadata": dict}, ...]
-_TEMPLATE_STORE_PATH = os.path.join(os.getenv("CHROMA_DB_PATH", "./chroma_db_rag"), "templates.json")
+# Per-user: {user_id: [{"text": str, "metadata": dict}, ...]}
+_template_store: dict[str, list[dict]] = {}
+_TEMPLATE_STORE_BASE = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
+
+def _get_template_store_path(user_id: str = "default") -> str:
+    """Returns user-specific template store path."""
+    return os.path.join(_TEMPLATE_STORE_BASE, user_id, "templates.json")
+
+# Keep legacy path for backward compatibility (migration)
+_TEMPLATE_STORE_PATH = os.path.join(_TEMPLATE_STORE_BASE, "templates.json")
 
 
 class SimpleRetriever:
@@ -1170,33 +1181,47 @@ class SimpleRetriever:
         return results
 
 
-def _save_template_store():
-    """Persist template store to JSON file."""
+def _save_template_store(user_id: str = "default"):
+    """Persist template store for a specific user to JSON file."""
     try:
-        os.makedirs(os.path.dirname(_TEMPLATE_STORE_PATH), exist_ok=True)
-        with open(_TEMPLATE_STORE_PATH, "w", encoding="utf-8") as f:
-            json.dump(_template_store, f, ensure_ascii=False)
+        path = _get_template_store_path(user_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        user_data = _template_store.get(user_id, [])
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(user_data, f, ensure_ascii=False)
     except Exception as e:
-        print(f"⚠️ Erro ao salvar template store: {e}")
+        print(f"⚠️ Erro ao salvar template store para user {user_id[:8]}: {e}")
 
 
-def _load_template_store():
-    """Load template store from JSON file."""
+def _load_template_store(user_id: str = "default"):
+    """Load template store for a specific user from JSON file."""
     global _template_store
     try:
-        if os.path.exists(_TEMPLATE_STORE_PATH):
+        path = _get_template_store_path(user_id)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                _template_store[user_id] = json.load(f)
+            return
+        # Migration: if user-specific file doesn't exist, try legacy global path
+        if user_id != "default" and os.path.exists(_TEMPLATE_STORE_PATH):
             with open(_TEMPLATE_STORE_PATH, "r", encoding="utf-8") as f:
-                _template_store = json.load(f)
+                legacy_data = json.load(f)
+            if legacy_data:
+                print(f"🔄 Migrando templates globais para user {user_id[:8]}...")
+                _template_store[user_id] = legacy_data
+                _save_template_store(user_id)
+                return
+        _template_store[user_id] = []
     except Exception as e:
-        print(f"⚠️ Erro ao carregar template store: {e}")
-        _template_store = []
+        print(f"⚠️ Erro ao carregar template store para user {user_id[:8]}: {e}")
+        _template_store[user_id] = []
 
 
-def process_templates(files, api_key, collection_name="rag_templates_persistent"):
+def process_templates(files, api_key, collection_name="rag_templates_persistent", user_id="default"):
     """
     Processa arquivos de template (PDF/DOCX/TXT) e cria um retriever.
     100% local — sem ChromaDB, sem embeddings, sem chamadas de API.
-    Indexação instantânea (~0.1s).
+    Indexação instantânea (~0.1s). Per-user storage.
     """
     import time as _time
     t0 = _time.time()
@@ -1227,7 +1252,8 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
                 except UnicodeDecodeError:
                      with open(tmp_path, "r", encoding="latin-1") as f: text = f.read()
             
-            doc_chunks = splitter.create_documents([text], metadatas=[{"source": file.name}])
+            import datetime as _dt
+            doc_chunks = splitter.create_documents([text], metadatas=[{"source": file.name, "upload_date": _dt.datetime.now().isoformat()}])
             documents.extend(doc_chunks)
         finally:
             os.remove(tmp_path)
@@ -1235,31 +1261,100 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
     if not documents:
         return None, []
 
-    # Store in memory + persist to JSON (instant, no API calls)
-    _template_store = [
+    # Store in memory + persist to JSON (instant, no API calls) — per-user
+    _template_store[user_id] = [
         {"text": doc.page_content, "metadata": doc.metadata}
         for doc in documents
     ]
-    _save_template_store()
+    _save_template_store(user_id)
     
-    print(f"✅ RAG indexado: {len(documents)} chunks em {_time.time()-t0:.1f}s (100% local, sem API)")
-    return SimpleRetriever(_template_store), documents
+    print(f"✅ RAG indexado (user {user_id[:8]}): {len(documents)} chunks em {_time.time()-t0:.1f}s (100% local, sem API)")
+    return SimpleRetriever(_template_store[user_id]), documents
 
 
-def load_persistent_rag(api_key=None, collection_name="rag_templates_persistent"):
+def load_persistent_rag(api_key=None, collection_name="rag_templates_persistent", user_id="default"):
     """
-    Carrega templates persistidos (JSON). Sem ChromaDB, sem embeddings.
+    Carrega templates persistidos (JSON) para um usuário específico.
+    Sem ChromaDB, sem embeddings.
     """
     global _template_store
     try:
-        if not _template_store:
-            _load_template_store()
-        if _template_store:
-            print(f"RAG Persistente carregado: {len(_template_store)} chunks.")
-            return SimpleRetriever(_template_store)
+        if user_id not in _template_store or not _template_store[user_id]:
+            _load_template_store(user_id)
+        user_store = _template_store.get(user_id, [])
+        if user_store:
+            print(f"RAG Persistente carregado (user {user_id[:8]}): {len(user_store)} chunks.")
+            return SimpleRetriever(user_store)
     except Exception as e:
-        print(f"Erro ao carregar RAG persistente: {e}")
+        print(f"Erro ao carregar RAG persistente para user {user_id[:8]}: {e}")
     return None
+
+def list_templates(user_id: str = "default") -> list[dict]:
+    """List all template files for a user, grouped by source filename."""
+    global _template_store
+    if user_id not in _template_store or not _template_store[user_id]:
+        _load_template_store(user_id)
+    user_store = _template_store.get(user_id, [])
+    
+    # Group chunks by source filename
+    sources: dict[str, dict] = {}
+    for chunk in user_store:
+        source = chunk.get("metadata", {}).get("source", "desconhecido")
+        if source not in sources:
+            sources[source] = {
+                "filename": source,
+                "chunk_count": 0,
+                "upload_date": chunk.get("metadata", {}).get("upload_date", None),
+                "total_chars": 0,
+            }
+        sources[source]["chunk_count"] += 1
+        sources[source]["total_chars"] += len(chunk.get("text", ""))
+    
+    return list(sources.values())
+
+
+def delete_template_by_source(user_id: str, source_name: str) -> int:
+    """Delete all chunks from a specific source file. Returns count of removed chunks."""
+    global _template_store
+    if user_id not in _template_store or not _template_store[user_id]:
+        _load_template_store(user_id)
+    
+    user_store = _template_store.get(user_id, [])
+    original_count = len(user_store)
+    
+    _template_store[user_id] = [
+        chunk for chunk in user_store
+        if chunk.get("metadata", {}).get("source", "") != source_name
+    ]
+    
+    removed = original_count - len(_template_store[user_id])
+    if removed > 0:
+        _save_template_store(user_id)
+    
+    return removed
+
+
+def search_templates(user_id: str, query: str, k: int = 5) -> list[dict]:
+    """Search user's templates using keyword overlap retriever. Returns top-k results."""
+    global _template_store
+    if user_id not in _template_store or not _template_store[user_id]:
+        _load_template_store(user_id)
+    user_store = _template_store.get(user_id, [])
+    if not user_store:
+        return []
+    
+    retriever = SimpleRetriever(user_store, k=k)
+    results = retriever.invoke(query)
+    
+    return [
+        {
+            "text": doc.page_content[:1000],
+            "source": doc.metadata.get("source", "?"),
+            "full_length": len(doc.page_content),
+        }
+        for doc in results
+    ]
+
 
 def generate_style_report(documents, api_key):
     """

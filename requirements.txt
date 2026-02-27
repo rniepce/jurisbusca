@@ -37,3 +37,7 @@ torch
 accelerate
 pillow
 einops
+
+# Auth
+python-jose[cryptography]
+python-multipart

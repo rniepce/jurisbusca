@@ -1098,3 +1098,43 @@
         transform: translateY(0);
     }
 }
+
+/* ===== V0.5 JURISPRUDENCE SEARCH BUTTON ===== */
+.juris-search-trigger {
+    display: flex;
+    justify-content: center;
+    padding: 4px 0;
+    animation: msgFadeIn 0.3s ease-out;
+}
+
+.juris-search-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 16px;
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    color: #92400e;
+    border: 1px solid #f59e0b;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 0.02em;
+    box-shadow: 0 1px 4px rgba(245, 158, 11, 0.18);
+}
+
+.juris-search-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #fde68a, #fbbf24);
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+    transform: translateY(-1px);
+}
+
+.juris-search-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.juris-search-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

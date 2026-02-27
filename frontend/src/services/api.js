@@ -1,17 +1,25 @@
 /**
  * API service module — communicates with the FastAPI backend.
  */
+import { supabase } from './supabase';
 
 const API_BASE = '/api';
 
 /**
  * Get headers for API requests.
- * Includes Azure OpenAI key if stored.
+ * Includes Azure OpenAI key if stored, and Supabase JWT.
  */
-function getAuthHeaders(existingHeaders = {}) {
+async function getAuthHeaders(existingHeaders = {}) {
     const azureKey = localStorage.getItem('azure_openai_key');
     const headers = { ...existingHeaders };
     if (azureKey) headers['X-Azure-Key'] = azureKey;
+
+    // Anexar JWT do Supabase
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+
     return headers;
 }
 
@@ -70,7 +78,7 @@ export async function uploadFile(file, ocrEngine = 'paddle', compress = true) {
     // 1. Start background upload task
     const startRes = await fetch(`${API_BASE}/upload`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: await getAuthHeaders(),
         body: form,
         redirect: 'error',
     }).catch((err) => {
@@ -95,7 +103,7 @@ export async function uploadFile(file, ocrEngine = 'paddle', compress = true) {
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
 
         const pollRes = await fetch(`${API_BASE}/upload/${task_id}`, {
-            headers: getAuthHeaders(),
+            headers: await getAuthHeaders(),
         }).catch(() => null);
 
         if (!pollRes || !pollRes.ok) continue;
@@ -127,7 +135,7 @@ export async function uploadFile(file, ocrEngine = 'paddle', compress = true) {
 export async function sendMessage({ message, model, llm, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false, jurisprudenceContext = null }) {
     const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
             message,
             model,
@@ -168,7 +176,7 @@ export async function uploadBatchXray(files) {
     // 1. Start background task
     const startRes = await fetch(`${API_BASE}/xray`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: await getAuthHeaders(),
         body: form,
         redirect: 'error',
     }).catch((err) => {
@@ -193,7 +201,7 @@ export async function uploadBatchXray(files) {
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
 
         const pollRes = await fetch(`${API_BASE}/xray/${task_id}`, {
-            headers: getAuthHeaders(),
+            headers: await getAuthHeaders(),
         }).catch(() => null);
 
         if (!pollRes || !pollRes.ok) continue; // Retry on network hiccup
@@ -224,7 +232,7 @@ export async function uploadBatchXray(files) {
 export async function analyzeCluster(processes, agentPrompt = '', model = 'claude', llm = null) {
     const res = await fetch(`${API_BASE}/cluster-analyze`, {
         method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ processes, agent_prompt: agentPrompt, model, llm }),
         redirect: 'error',
     });
@@ -249,7 +257,7 @@ export async function generateStyleReport(files) {
 
     const res = await fetch(`${API_BASE}/style-report`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: await getAuthHeaders(),
         body: form,
         redirect: 'error',
     }).catch((err) => {
@@ -278,7 +286,7 @@ export async function uploadTemplates(files) {
 
     const res = await fetch(`${API_BASE}/templates`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: await getAuthHeaders(),
         body: form,
     });
 
@@ -296,7 +304,7 @@ export async function uploadTemplates(files) {
  */
 export async function getTemplateStatus() {
     const res = await fetch(`${API_BASE}/templates/status`, {
-        headers: getAuthHeaders()
+        headers: await getAuthHeaders()
     });
     if (!res.ok) return { indexed_chunks: 0, has_dossier: false };
     return safeJson(res, 'Template Status');
@@ -309,13 +317,94 @@ export async function getTemplateStatus() {
 export async function clearTemplates() {
     const res = await fetch(`${API_BASE}/templates`, {
         method: 'DELETE',
-        headers: getAuthHeaders()
+        headers: await getAuthHeaders()
     });
     if (!res.ok) {
         const err = await safeJson(res, 'Clear Templates').catch(() => ({}));
         throw new Error(err.detail || `Erro ao limpar modelos (${res.status})`);
     }
     return safeJson(res, 'Clear Templates');
+}
+
+/**
+ * List all template files for the current user.
+ * @returns {Promise<{templates: Array, total: number}>}
+ */
+export async function listTemplates() {
+    const res = await fetch(`${API_BASE}/templates/list`, {
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) return { templates: [], total: 0 };
+    return safeJson(res, 'List Templates');
+}
+
+/**
+ * Delete a specific template file by filename.
+ * @param {string} filename - Source filename to delete
+ * @returns {Promise<{status: string, removed_chunks: number, remaining_templates: number}>}
+ */
+export async function deleteTemplate(filename) {
+    const res = await fetch(`${API_BASE}/templates/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Delete Template').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao remover modelo (${res.status})`);
+    }
+    return safeJson(res, 'Delete Template');
+}
+
+/**
+ * AI search over user's templates (RAG + LLM summary).
+ * @param {string} query - Natural language search query
+ * @returns {Promise<{summary: string, results: Array, total: number, query: string}>}
+ */
+export async function askTemplates(query) {
+    const res = await fetch(`${API_BASE}/templates/ask`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ query }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Ask Templates').catch(() => ({}));
+        throw new Error(err.detail || `Erro na pesquisa nos modelos (${res.status})`);
+    }
+    return safeJson(res, 'Ask Templates');
+}
+
+/**
+ * Extract main legal themes from user's templates.
+ * @returns {Promise<{themes: Array<{id: number, title: string, description: string}>, total: number}>}
+ */
+export async function extractThemes() {
+    const res = await fetch(`${API_BASE}/templates/extract-themes`, {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Extract Themes').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao extrair temas (${res.status})`);
+    }
+    return safeJson(res, 'Extract Themes');
+}
+
+/**
+ * Verify a theme: compare user's templates vs jurisprudence.
+ * @param {string} theme - Theme title to verify
+ * @returns {Promise<{status: string, theme: string, majority_understanding: string, model_approach: string, comparison: string, alert: object|null, acordaos: Array}>}
+ */
+export async function verifyTheme(theme) {
+    const res = await fetch(`${API_BASE}/templates/verify-theme`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ theme }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Verify Theme').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao verificar tema (${res.status})`);
+    }
+    return safeJson(res, 'Verify Theme');
 }
 
 
@@ -341,7 +430,7 @@ export async function searchJurisprudencia(query, filters = {}) {
     if (filters.pageSize) params.set('page_size', filters.pageSize);
 
     const res = await fetch(`${API_BASE}/jurisprudencia/search?${params}`, {
-        headers: getAuthHeaders(),
+        headers: await getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -359,7 +448,7 @@ export async function searchJurisprudencia(query, filters = {}) {
  */
 export async function getJurisprudenciaDoc(docId) {
     const res = await fetch(`${API_BASE}/jurisprudencia/doc/${docId}`, {
-        headers: getAuthHeaders(),
+        headers: await getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -376,7 +465,7 @@ export async function getJurisprudenciaDoc(docId) {
  */
 export async function getJurisprudenciaStats() {
     const res = await fetch(`${API_BASE}/jurisprudencia/stats`, {
-        headers: getAuthHeaders(),
+        headers: await getAuthHeaders(),
     });
 
     if (!res.ok) return { total: 0, por_ano: {}, por_tipo: {}, ano_min: 2020, ano_max: 2026 };
@@ -397,7 +486,7 @@ export async function askJurisprudencia(query, filters = {}) {
 
     const res = await fetch(`${API_BASE}/jurisprudencia/ask`, {
         method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
     });
 
@@ -410,13 +499,38 @@ export async function askJurisprudencia(query, filters = {}) {
 }
 
 /**
+ * Manually trigger jurisprudence research for a given process.
+ * @param {string} uploadedText - Full text of the uploaded process
+ * @param {string} analysisText - Latest assistant analysis text (for theme extraction)
+ * @returns {Promise<{task_id: string, status: string}>}
+ */
+export async function triggerJurisprudenciaResearch(uploadedText, analysisText = '') {
+    const res = await fetch(`${API_BASE}/jurisprudencia/research`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+            uploaded_text: uploadedText,
+            analysis_text: analysisText,
+        }),
+        redirect: 'error',
+    });
+
+    if (!res.ok) {
+        const err = await safeJson(res, 'Jurisprudência Research').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao iniciar pesquisa jurisprudencial (${res.status})`);
+    }
+
+    return safeJson(res, 'Jurisprudência Research');
+}
+
+/**
  * Poll for jurisprudence research results (V0.5 background task).
- * @param {string} taskId - Task ID returned from chat endpoint
+ * @param {string} taskId - Task ID returned from research trigger
  * @returns {Promise<{status: string, result?: object, error?: string, progress?: string}>}
  */
 export async function pollJurisprudenciaResearch(taskId) {
     const res = await fetch(`${API_BASE}/jurisprudencia/research/${taskId}`, {
-        headers: getAuthHeaders(),
+        headers: await getAuthHeaders(),
     }).catch(() => null);
 
     if (!res || !res.ok) return null;

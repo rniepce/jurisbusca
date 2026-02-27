@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
     FaUser,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
-    FaBookOpen, FaPenNib, FaClipboardCheck
+    FaBookOpen, FaPenNib, FaClipboardCheck, FaGavel
 } from 'react-icons/fa6';
 import OcrPreview from './OcrPreview';
 import JurisprudenciaInsightsCard from './JurisprudenciaInsightsCard';
@@ -137,7 +137,7 @@ function V2CollapsibleCard({ icon, title, content }) {
     );
 }
 
-const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, onAutoAction, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport }) => {
+const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, onAutoAction, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, selectedModel }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
@@ -320,6 +320,20 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                 {/* Style Analysis Processing Animation — Multi-step */}
                 {styleAnalyzing && (
                     <StyleAnalysisAnimation />
+                )}
+
+                {/* V0.5: Manual Jurisprudence Search Button */}
+                {onJurisSearch && selectedModel?.id === 'v0.5' && messages.length >= 2 && !jurisResearch && !jurisResearchLoading && (
+                    <div className="juris-search-trigger">
+                        <button
+                            className="juris-search-btn"
+                            onClick={onJurisSearch}
+                            disabled={isLoading}
+                        >
+                            <FaGavel size={12} />
+                            Pesquisar Jurisprudência
+                        </button>
+                    </div>
                 )}
 
                 {/* V0.5: Jurisprudence Research Insights Card */}
