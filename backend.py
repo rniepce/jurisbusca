@@ -464,9 +464,9 @@ def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key:
         
         # Map deployment names to Google model IDs
         gemini_model_map = {
-            "gemini-3.1-pro": "gemini-3.1-pro",
-            "gemini-2.5-pro": "gemini-2.5-pro-preview-06-05",
-            "gemini-2.5-flash": "gemini-2.5-flash-preview-05-20",
+            "gemini-3.1-pro": "gemini-3.1-pro-preview",
+            "gemini-2.5-pro": "gemini-2.5-pro",
+            "gemini-2.5-flash": "gemini-2.5-flash",
         }
         google_model = gemini_model_map.get(deployment, deployment)
         
