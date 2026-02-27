@@ -336,7 +336,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
             <div className="chat-input-box">
                 <textarea
                     className="chat-textarea"
-                    placeholder={isLoading ? 'Processando...' : ocrProcessing ? 'Executando OCR...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
+                    placeholder={isLoading || ocrProcessing ? 'Processando...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
