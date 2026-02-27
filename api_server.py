@@ -415,16 +415,24 @@ async def chat(req: ChatRequest, request: Request):
                 response = llm.invoke(messages)
                 response_text = be.safe_content(response)
             except Exception as invoke_err:
+                error_str = str(invoke_err)
+                is_rate_limit = "429" in error_str or "rate_limit" in error_str.lower()
+
                 # If model fails at invocation, retry with GPT-5.2
                 if original_model != "gpt-5.2-chat":
-                    print(f"⚠️ {original_model} invoke falhou: {invoke_err}. Retrying com GPT-5.2.")
+                    if is_rate_limit:
+                        print(f"⚠️ {original_model} rate limit (429). Retrying com GPT-5.2.")
+                        reason = f"Modelo {original_model} excedeu o limite de taxa (rate limit). Tente novamente em alguns minutos ou use um prompt menor."
+                    else:
+                        print(f"⚠️ {original_model} invoke falhou: {invoke_err}. Retrying com GPT-5.2.")
+                        reason = f"Modelo {original_model} indisponível ({error_str[:100]})."
                     try:
                         fallback_llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
                         response = fallback_llm.invoke(messages)
-                        response_text = f"{be.safe_content(response)}\n\n---\n⚠️ *Modelo {original_model} indisponível. Resultado gerado por GPT-5.2.*"
+                        response_text = f"{be.safe_content(response)}\n\n---\n⚠️ *{reason} Resultado gerado por GPT-5.2.*"
                         model_name = "gpt-5.2-chat"
                     except Exception as fb_err:
-                        response_text = f"⚠️ **Erro:** {original_model} falhou ({str(invoke_err)[:150]}). Fallback GPT-5.2 também falhou: {str(fb_err)[:150]}"
+                        response_text = f"⚠️ **Erro:** {reason} Fallback GPT-5.2 também falhou: {str(fb_err)[:150]}"
                 else:
                     raise invoke_err
 
