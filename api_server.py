@@ -1311,20 +1311,21 @@ async def verify_theme(req: VerifyThemeRequest, user_id: str = Depends(get_curre
             "Você receberá:\n"
             "- TRECHOS DOS MODELOS DE DECISÃO do magistrado\n"
             "- ACÓRDÃOS RECENTES do TJMG sobre o mesmo tema\n\n"
-            "Responda em JSON estrito (sem markdown):\n"
+            "Responda em JSON estrito (sem markdown, sem code fences):\n"
             "{\n"
             '  "status": "aligned" ou "divergent",\n'
-            '  "majority_understanding": "Resumo de 2-3 parágrafos do entendimento predominante do TJMG",\n'
-            '  "model_approach": "Resumo de 1-2 parágrafos de como os modelos do magistrado tratam o tema",\n'
-            '  "comparison": "Comparação detalhada (3-4 parágrafos). Se divergente, explique EXATAMENTE onde e por que diverge, citando os acórdãos pelo número do processo. Se alinhado, explique os pontos de concordância.",\n'
-            '  "alert_title": "Se divergent: título curto do alerta (1 frase). Se aligned: null",\n'
-            '  "alert_detail": "Se divergent: explicação detalhada da divergência com recomendação. Se aligned: null"\n'
+            '  "majority_understanding": "Resumo CONCISO (máx 150 palavras) do entendimento predominante do TJMG",\n'
+            '  "model_approach": "Resumo CONCISO (máx 100 palavras) de como os modelos tratam o tema",\n'
+            '  "comparison": "Comparação CONCISA (máx 200 palavras). Se divergente, explique onde diverge citando processos. Se alinhado, os pontos de concordância.",\n'
+            '  "alert_title": "Se divergent: título curto (1 frase). Se aligned: null",\n'
+            '  "alert_detail": "Se divergent: explicação breve da divergência (máx 150 palavras). Se aligned: null"\n'
             "}\n\n"
-            "REGRAS:\n"
+            "REGRAS CRÍTICAS:\n"
             "- Baseie-se APENAS nos textos fornecidos\n"
             "- NÃO invente informações\n"
-            "- Cite números de processo dos acórdãos quando relevante\n"
-            "- Seja objetivo e imparcial"
+            "- Cite números de processo quando relevante\n"
+            "- Seja CONCISO — respostas longas demais serão cortadas\n"
+            "- Retorne o JSON COMPLETO e válido, sem truncar"
         )
 
         user_prompt = (
@@ -1333,7 +1334,7 @@ async def verify_theme(req: VerifyThemeRequest, user_id: str = Depends(get_curre
             f"## ACÓRDÃOS RECENTES DO TJMG:\n\n{juris_context}"
         )
 
-        llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.2, max_tokens=3000)
+        llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.2, max_tokens=6000)
         response = llm.invoke([SM(content=system_prompt), HM(content=user_prompt)])
         raw = be.safe_content(response).strip()
 
@@ -1373,15 +1374,37 @@ async def verify_theme(req: VerifyThemeRequest, user_id: str = Depends(get_curre
         }
 
     except json.JSONDecodeError:
-        # LLM didn't return valid JSON — return raw as summary
+        # LLM returned truncated/invalid JSON — try to salvage partial fields
+        import re as _re
+        def _extract(field):
+            m = _re.search(rf'"{field}"\s*:\s*"((?:[^"\\]|\\.)*)"?', raw or "", _re.DOTALL)
+            return m.group(1).replace('\\n', '\n').replace('\\"', '"') if m else ""
+
+        status_m = _re.search(r'"status"\s*:\s*"(aligned|divergent)"', raw or "")
+        salvaged_status = status_m.group(1) if status_m else "no_data"
+
+        acordaos = []
+        for r in juris_results[:5]:
+            acordaos.append({
+                "id": r.get("id"),
+                "numero_processo": r.get("numero_processo", "?"),
+                "tipo_recurso": r.get("tipo_recurso", "Acórdão"),
+                "ementa": r.get("ementa", "")[:500],
+                "data_publicacao": r.get("data_publicacao", "?"),
+                "comarca": r.get("comarca", "?"),
+                "relator": r.get("relator", ""),
+                "similarity": r.get("similarity", 0),
+            })
+
+        alert_title = _extract("alert_title")
         return {
-            "status": "aligned",
+            "status": salvaged_status,
             "theme": req.theme,
-            "majority_understanding": raw[:1500] if raw else "Análise indisponível.",
-            "model_approach": "",
-            "comparison": "",
-            "alert": None,
-            "acordaos": [],
+            "majority_understanding": _extract("majority_understanding") or (raw[:1500] if raw else "Análise indisponível."),
+            "model_approach": _extract("model_approach"),
+            "comparison": _extract("comparison"),
+            "alert": {"title": alert_title, "detail": _extract("alert_detail")} if alert_title else None,
+            "acordaos": acordaos,
         }
     except Exception as e:
         traceback.print_exc()
