@@ -67,31 +67,95 @@ _process_rag_cache: dict[str, tuple] = {}
 
 security = HTTPBearer()
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "") or os.getenv("VITE_SUPABASE_URL", "")
+
+# Cache JWKS keys from Supabase
+_jwks_cache: dict = {"keys": None, "fetched_at": 0}
+
+def _get_jwks():
+    """Fetch and cache JWKS from Supabase (refresh every 1 hour)."""
+    import time, requests
+    now = time.time()
+    if _jwks_cache["keys"] and (now - _jwks_cache["fetched_at"]) < 3600:
+        return _jwks_cache["keys"]
+    
+    if not SUPABASE_URL:
+        return None
+    
+    try:
+        jwks_url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        resp = requests.get(jwks_url, timeout=5)
+        if resp.ok:
+            jwks = resp.json()
+            _jwks_cache["keys"] = jwks
+            _jwks_cache["fetched_at"] = now
+            print(f"✅ JWKS carregado: {len(jwks.get('keys', []))} chaves")
+            return jwks
+    except Exception as e:
+        print(f"⚠️ Erro ao buscar JWKS: {e}")
+    return None
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
     """Validate Supabase JWT token and return user ID."""
     token = credentials.credentials
-    if not SUPABASE_JWT_SECRET:
-        print("⚠️ AVISO: SUPABASE_JWT_SECRET não configurado no .env. Ignorando auth local.")
+    if not SUPABASE_JWT_SECRET and not SUPABASE_URL:
+        print("⚠️ AVISO: SUPABASE_JWT_SECRET e SUPABASE_URL não configurados. Ignorando auth.")
         return "development_user"
-        
-    try:
-        # Supabase uses HS256 by default for its JWTs
-        payload = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            options={"verify_aud": False}
-        )
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Token inválido (sem usuário)")
-        return user_id
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Sessão expirada. Faça login novamente.")
-    except jwt.JWTError as e:
-        print(f"⚠️ JWT Error: {str(e)}")
-        raise HTTPException(status_code=401, detail="Token de autenticação inválido.")
+    
+    # Strategy 1: Try JWKS verification (ES256 / ECC P-256 — new Supabase keys)
+    jwks = _get_jwks()
+    if jwks:
+        try:
+            # Get the signing key from JWKS
+            from jose import jwk
+            unverified_header = jwt.get_unverified_header(token)
+            kid = unverified_header.get("kid")
+            
+            matching_key = None
+            for key_data in jwks.get("keys", []):
+                if key_data.get("kid") == kid:
+                    matching_key = key_data
+                    break
+            
+            if matching_key:
+                public_key = jwk.construct(matching_key)
+                payload = jwt.decode(
+                    token,
+                    public_key,
+                    algorithms=[matching_key.get("alg", "ES256")],
+                    options={"verify_aud": False}
+                )
+                user_id = payload.get("sub")
+                if not user_id:
+                    raise HTTPException(status_code=401, detail="Token inválido (sem usuário)")
+                return user_id
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Sessão expirada. Faça login novamente.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"⚠️ JWKS verification failed, trying HS256 fallback: {e}")
+    
+    # Strategy 2: Fallback to HS256 with legacy JWT secret
+    if SUPABASE_JWT_SECRET:
+        try:
+            payload = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                options={"verify_aud": False}
+            )
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Token inválido (sem usuário)")
+            return user_id
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Sessão expirada. Faça login novamente.")
+        except jwt.JWTError as e:
+            print(f"⚠️ HS256 JWT Error: {str(e)}")
+            raise HTTPException(status_code=401, detail="Token de autenticação inválido.")
+    
+    raise HTTPException(status_code=401, detail="Não foi possível validar o token.")
         
 
 class ChatRequest(BaseModel):
