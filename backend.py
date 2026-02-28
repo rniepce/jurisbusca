@@ -471,7 +471,17 @@ def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key:
         }
         google_model = gemini_model_map.get(deployment, deployment)
         
-        print(f"🟢 Gemini: {google_model}")
+        # Gemini 2.5+ and 3.x support thinking — enable dynamic thinking
+        gemini_thinking_models = {"gemini-2.5-pro", "gemini-2.5-flash", "gemini-3.1-pro-preview"}
+        if google_model in gemini_thinking_models:
+            if 'thinking_budget' not in kwargs:
+                kwargs['thinking_budget'] = -1  # Dynamic thinking (model decides depth)
+            if 'max_output_tokens' not in kwargs:
+                kwargs['max_output_tokens'] = 16384
+            print(f"🟢🧠 Gemini Thinking: {google_model} | thinking_budget={kwargs['thinking_budget']} | max_output={kwargs['max_output_tokens']}")
+        else:
+            print(f"🟢 Gemini: {google_model}")
+        
         return ChatGoogleGenerativeAI(
             model=google_model,
             google_api_key=google_key,
@@ -492,10 +502,25 @@ def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key:
         
         # Map deployment names to Anthropic model IDs
         claude_model_map = {
-            "claude-sonnet-4-6": "claude-sonnet-4-20250514",
+            "claude-sonnet-4-6": "claude-4-6-sonnet-20260220",
             "claude-sonnet-4-5": "claude-sonnet-4-5-20250514",
         }
         anthropic_model = claude_model_map.get(deployment, deployment)
+        
+        # Enable extended thinking for Claude Sonnet 4+ models
+        # Extended thinking requires temperature=1 (Anthropic constraint)
+        claude_thinking_models = {"claude-4-6-sonnet-20260220", "claude-sonnet-4-5-20250514"}
+        if anthropic_model in claude_thinking_models:
+            if 'thinking' not in kwargs:
+                kwargs['thinking'] = {"type": "enabled", "budget_tokens": 10000}
+            print(f"🟠🧠 Claude Extended Thinking: {anthropic_model} | budget={kwargs['thinking'].get('budget_tokens', 'N/A')}")
+            return ChatAnthropic(
+                model=anthropic_model,
+                anthropic_api_key=anthropic_key,
+                temperature=1,  # Required by Anthropic when thinking is enabled
+                max_tokens=16384,
+                **kwargs,
+            )
         
         print(f"🟠 Claude: {anthropic_model}")
         return ChatAnthropic(
@@ -521,6 +546,17 @@ def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key:
     # Azure OpenAI uses max_completion_tokens instead of max_tokens
     if 'max_tokens' in kwargs:
         kwargs['max_completion_tokens'] = kwargs.pop('max_tokens')
+
+    # GPT-5.2 is a reasoning model — configure reasoning_effort and output budget
+    reasoning_models = {"gpt-5.2-chat"}
+    if deployment in reasoning_models:
+        # Enable full reasoning power
+        if 'reasoning_effort' not in kwargs:
+            kwargs['reasoning_effort'] = 'high'
+        # Default max_completion_tokens to 16384 (reasoning tokens + output tokens)
+        if 'max_completion_tokens' not in kwargs:
+            kwargs['max_completion_tokens'] = 16384
+        print(f"🧠 Reasoning model: {deployment} | effort={kwargs['reasoning_effort']} | max_tokens={kwargs['max_completion_tokens']}")
 
     # GPT-5.2 doesn't support custom temperature — only default (1)
     models_no_temp = {"gpt-5.2-chat"}
