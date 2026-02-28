@@ -80,7 +80,7 @@ export async function uploadFile(file, ocrEngine = 'paddle', compress = true) {
         method: 'POST',
         headers: await getAuthHeaders(),
         body: form,
-        redirect: 'error',
+        redirect: 'follow',
     }).catch((err) => {
         throw new Error(
             `Upload: requisição redirecionada ou bloqueada. (${err.message})`
