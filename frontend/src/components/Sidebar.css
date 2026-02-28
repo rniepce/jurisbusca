@@ -183,6 +183,125 @@
     text-overflow: ellipsis;
 }
 
+/* ===== CUSTOM AGENT WRAPPER ===== */
+.custom-agent-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.custom-agent-wrapper .agent-card {
+    flex: 1;
+    min-width: 0;
+}
+
+.agent-menu-btn {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: transparent;
+    font-size: 14px;
+    padding: 6px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    transition: color 0.15s, background 0.15s;
+}
+
+.custom-agent-wrapper:hover .agent-menu-btn {
+    color: #888;
+}
+
+.agent-menu-btn:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #333 !important;
+}
+
+/* ===== CONTEXT MENU ===== */
+.agent-context-menu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 100;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    padding: 4px;
+    min-width: 160px;
+    animation: menuFadeIn 0.15s ease;
+}
+
+@keyframes menuFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font-family);
+    color: #444;
+    border-radius: 6px;
+    transition: background 0.15s;
+    text-align: left;
+}
+
+.context-menu-item:hover {
+    background: #f5f5f5;
+}
+
+.context-menu-item.danger {
+    color: #EF4444;
+}
+
+.context-menu-item.danger:hover {
+    background: #FEF2F2;
+}
+
+/* ===== CREATE AGENT SIDEBAR BUTTON ===== */
+.create-agent-sidebar-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 9px 10px;
+    border: 1.5px dashed #d0d0d0;
+    background: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-family);
+    color: #888;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+    margin-top: 4px;
+}
+
+.create-agent-sidebar-btn:hover {
+    border-color: #8B5CF6;
+    color: #8B5CF6;
+    background: rgba(139, 92, 246, 0.04);
+}
+
 /* ===== DIVIDER ===== */
 .sidebar-divider {
     height: 1px;

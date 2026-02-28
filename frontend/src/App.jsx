@@ -8,10 +8,13 @@ import XRayDashboard from './components/XRayDashboard';
 import BatchPanel from './components/BatchPanel';
 import JurisprudenciaPanel from './components/JurisprudenciaPanel';
 import ModelManagerPanel from './components/ModelManagerPanel';
+import AgentBuilderChat from './components/AgentBuilderChat';
+import CreateAgentDialog from './components/CreateAgentDialog';
+import ShareAgentDialog from './components/ShareAgentDialog';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
 import { AuthProvider, useAuth } from './components/AuthContext';
-import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, uploadTemplates, triggerJurisprudenciaResearch, pollJurisprudenciaResearch } from './services/api';
+import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, uploadTemplates, triggerJurisprudenciaResearch, pollJurisprudenciaResearch, getCustomAgents, createCustomAgent, deleteCustomAgent, shareCustomAgent } from './services/api';
 import agentDefinitions from './config/agents';
 import './App.css';
 
@@ -43,10 +46,17 @@ function MainApp() {
   const [jurisResearchLoading, setJurisResearchLoading] = useState(false);
   const [jurisResearchProgress, setJurisResearchProgress] = useState('');
   const [jurisContext, setJurisContext] = useState(''); // accumulated imported jurisprudence for LLM
+  // Custom agents state
+  const [customAgents, setCustomAgents] = useState([]);
+  const [showAgentBuilder, setShowAgentBuilder] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [pendingPrompt, setPendingPrompt] = useState('');
+  const [shareAgent, setShareAgent] = useState(null); // agent being shared
 
-  // Fetch template/RAG status on mount
+  // Fetch template/RAG status and custom agents on mount
   useEffect(() => {
     getTemplateStatus().then(setRagStatus).catch(() => { });
+    getCustomAgents().then((data) => setCustomAgents(data.agents || [])).catch(() => { });
   }, []);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
@@ -101,7 +111,10 @@ function MainApp() {
       let agentPrompt = null;
       const engineId = selectedModel.id;
 
-      if (activeAgent?.promptModule) {
+      if (activeAgent?.prompt && !activeAgent?.promptModule) {
+        // Custom agent — use stored prompt directly
+        agentPrompt = activeAgent.prompt;
+      } else if (activeAgent?.promptModule) {
         // Agent explicitly selected from sidebar — load its prompt
         try {
           const mod = await activeAgent.promptModule();
@@ -388,23 +401,69 @@ function MainApp() {
   // ── Agent selection handler ─────────────────────────────────────────
   const handleAgentSelect = useCallback((agent) => {
     setActiveAgent(agent);
+    setShowAgentBuilder(false); // Close builder if open
     // Sync the global model with the agent's engine
     setGlobalSelectedModel((prev) => ({
       ...prev,
       id: agent.engineId || 'v0',
       name: agent.name,
-      color: agent.color,
+      color: agent.color || '#8B5CF6',
     }));
+    // For custom agents, use their prompt as the promptModule
+    const isCustom = !agent.engineId && agent.prompt;
     const activationMsg = {
       role: 'agent-activation',
       agentName: agent.name,
-      agentDesc: agent.desc,
-      agentColor: agent.color,
-      agentIcon: agent.icon,
+      agentDesc: agent.desc || (isCustom ? 'Agente personalizado' : ''),
+      agentColor: agent.color || '#8B5CF6',
+      agentIcon: agent.icon || 'FaRobot',
       autoAction: agent.autoAction || null,
     };
     setMessages((prev) => [...prev, activationMsg]);
   }, []);
+
+  // ── Custom Agent CRUD handlers ──────────────────────────────────────
+  const handleOpenAgentBuilder = useCallback(() => {
+    setShowAgentBuilder(true);
+  }, []);
+
+  const handlePromptReady = useCallback((prompt) => {
+    setPendingPrompt(prompt);
+    setShowCreateDialog(true);
+  }, []);
+
+  const handleCreateAgent = useCallback(async ({ name, prompt, color }) => {
+    try {
+      const created = await createCustomAgent({ name, prompt, color });
+      setCustomAgents((prev) => [created, ...prev]);
+      setShowCreateDialog(false);
+      setShowAgentBuilder(false);
+      setPendingPrompt('');
+    } catch (err) {
+      console.error('Failed to create agent:', err);
+    }
+  }, []);
+
+  const handleDeleteAgent = useCallback(async (agentId) => {
+    try {
+      await deleteCustomAgent(agentId);
+      setCustomAgents((prev) => prev.filter((a) => a.id !== agentId));
+      // If the deleted agent was active, deactivate it
+      if (activeAgent?.id === agentId) setActiveAgent(null);
+    } catch (err) {
+      console.error('Failed to delete agent:', err);
+    }
+  }, [activeAgent]);
+
+  const handleShareAgentOpen = useCallback((agent) => {
+    setShareAgent(agent);
+  }, []);
+
+  const handleShareAgentConfirm = useCallback(async (email) => {
+    if (!shareAgent) return;
+    await shareCustomAgent(shareAgent.id, email);
+    setShareAgent(null);
+  }, [shareAgent]);
 
   // ── Auto-review handler (Revisor QA) ────────────────────────────────
   const handleAutoReview = useCallback(async (activationMsg) => {
@@ -548,6 +607,14 @@ function MainApp() {
 
   // Determine what to show in main content
   const renderContent = () => {
+    if (showAgentBuilder) {
+      return (
+        <AgentBuilderChat
+          onClose={() => setShowAgentBuilder(false)}
+          onPromptReady={handlePromptReady}
+        />
+      );
+    }
     if (showModelManager) {
       return (
         <ModelManagerPanel
@@ -632,6 +699,10 @@ function MainApp() {
         onNewChat={handleNewChat}
         history={sidebarHistory}
         onLoadChat={handleLoadChat}
+        customAgents={customAgents}
+        onCreateAgent={handleOpenAgentBuilder}
+        onDeleteAgent={handleDeleteAgent}
+        onShareAgent={handleShareAgentOpen}
       />
 
       <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
@@ -649,23 +720,41 @@ function MainApp() {
           )}
         </div>
 
-        <ChatInput
-          onSend={handleSend}
-          onXray={handleXray}
-          onFilesUploaded={handleFilesUploaded}
-          onStyleReport={handleStyleReport}
-          onModelChange={setGlobalSelectedModel}
-          onOpenModelManager={() => setShowModelManager(true)}
-          onJurisprudenceToggle={setJurisEnabled}
-          isLoading={isLoading || xrayLoading || styleAnalyzing}
-          ocrProcessing={ocrProcessing}
-          hasContext={!!(uploadedText || activeAgent)}
-          ragStatus={ragStatus}
-          onRagStatusChange={setRagStatus}
-          activeAgent={activeAgent}
-          jurisEnabled={jurisEnabled}
-        />
+        {!showAgentBuilder && (
+          <ChatInput
+            onSend={handleSend}
+            onXray={handleXray}
+            onFilesUploaded={handleFilesUploaded}
+            onStyleReport={handleStyleReport}
+            onModelChange={setGlobalSelectedModel}
+            onOpenModelManager={() => setShowModelManager(true)}
+            onJurisprudenceToggle={setJurisEnabled}
+            isLoading={isLoading || xrayLoading || styleAnalyzing}
+            ocrProcessing={ocrProcessing}
+            hasContext={!!(uploadedText || activeAgent)}
+            ragStatus={ragStatus}
+            onRagStatusChange={setRagStatus}
+            activeAgent={activeAgent}
+            jurisEnabled={jurisEnabled}
+          />
+        )}
       </div>
+
+      {/* Create Agent Dialog */}
+      <CreateAgentDialog
+        isOpen={showCreateDialog}
+        onClose={() => { setShowCreateDialog(false); setPendingPrompt(''); }}
+        onConfirm={handleCreateAgent}
+        initialPrompt={pendingPrompt}
+      />
+
+      {/* Share Agent Dialog */}
+      <ShareAgentDialog
+        isOpen={!!shareAgent}
+        onClose={() => setShareAgent(null)}
+        onShare={handleShareAgentConfirm}
+        agentName={shareAgent?.name || ''}
+      />
     </div>
   );
 }

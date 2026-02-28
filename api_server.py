@@ -2006,7 +2006,195 @@ async def jurisprudencia_diagnostics(user_id: str = Depends(get_current_user)):
     return result
 
 
-# ── Serve React frontend (production) ────────────────────────────────────────
+# ── Custom Agents CRUD (Supabase REST API) ────────────────────────────────────
+
+import requests as _requests
+
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "") or os.getenv("VITE_SUPABASE_ANON_KEY", "")
+# In-memory fallback if Supabase REST fails (e.g. table not created yet)
+_custom_agents_fallback: dict[str, list[dict]] = {}  # user_id -> [agents]
+
+
+def _supabase_headers(user_token: str = ""):
+    """Build headers for Supabase REST API calls."""
+    h = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+    if user_token:
+        h["Authorization"] = f"Bearer {user_token}"
+    return h
+
+
+def _get_user_token(request: Request) -> str:
+    """Extract bearer token from request."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return ""
+
+
+class CreateAgentRequest(BaseModel):
+    name: str
+    prompt: str
+    color: str = "#8B5CF6"
+
+
+class ShareAgentRequest(BaseModel):
+    email: str
+
+
+@app.post("/api/custom-agents")
+async def create_custom_agent(req: CreateAgentRequest, request: Request, user_id: str = Depends(get_current_user)):
+    """Create a custom agent for the current user."""
+    agent_id = str(uuid.uuid4())
+    agent = {
+        "id": agent_id,
+        "user_id": user_id,
+        "name": req.name,
+        "prompt": req.prompt,
+        "color": req.color,
+        "icon": "FaRobot",
+    }
+
+    # Try Supabase REST
+    if SUPABASE_URL and SUPABASE_ANON_KEY:
+        try:
+            token = _get_user_token(request)
+            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/custom_agents"
+            payload = {**agent, "created_at": "now()"}
+            resp = _requests.post(url, json=payload, headers=_supabase_headers(token), timeout=5)
+            if resp.ok:
+                data = resp.json()
+                created = data[0] if isinstance(data, list) and data else agent
+                return created
+            else:
+                print(f"⚠️ Supabase create agent failed ({resp.status_code}): {resp.text[:200]}. Using fallback.")
+        except Exception as e:
+            print(f"⚠️ Supabase create agent error: {e}. Using fallback.")
+
+    # Fallback to in-memory
+    if user_id not in _custom_agents_fallback:
+        _custom_agents_fallback[user_id] = []
+    _custom_agents_fallback[user_id].append(agent)
+    return agent
+
+
+@app.get("/api/custom-agents")
+async def list_custom_agents(request: Request, user_id: str = Depends(get_current_user)):
+    """List custom agents for the current user."""
+    # Try Supabase REST
+    if SUPABASE_URL and SUPABASE_ANON_KEY:
+        try:
+            token = _get_user_token(request)
+            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/custom_agents?user_id=eq.{user_id}&order=created_at.desc"
+            resp = _requests.get(url, headers=_supabase_headers(token), timeout=5)
+            if resp.ok:
+                agents = resp.json()
+                return {"agents": agents}
+            else:
+                print(f"⚠️ Supabase list agents failed ({resp.status_code}): {resp.text[:200]}. Using fallback.")
+        except Exception as e:
+            print(f"⚠️ Supabase list agents error: {e}. Using fallback.")
+
+    # Fallback
+    agents = _custom_agents_fallback.get(user_id, [])
+    return {"agents": agents}
+
+
+@app.delete("/api/custom-agents/{agent_id}")
+async def delete_custom_agent(agent_id: str, request: Request, user_id: str = Depends(get_current_user)):
+    """Delete a custom agent (only owner)."""
+    # Try Supabase REST
+    if SUPABASE_URL and SUPABASE_ANON_KEY:
+        try:
+            token = _get_user_token(request)
+            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/custom_agents?id=eq.{agent_id}&user_id=eq.{user_id}"
+            resp = _requests.delete(url, headers=_supabase_headers(token), timeout=5)
+            if resp.ok:
+                return {"status": "deleted"}
+            else:
+                print(f"⚠️ Supabase delete agent failed ({resp.status_code}): {resp.text[:200]}. Using fallback.")
+        except Exception as e:
+            print(f"⚠️ Supabase delete agent error: {e}. Using fallback.")
+
+    # Fallback
+    if user_id in _custom_agents_fallback:
+        _custom_agents_fallback[user_id] = [a for a in _custom_agents_fallback[user_id] if a["id"] != agent_id]
+    return {"status": "deleted"}
+
+
+@app.post("/api/custom-agents/{agent_id}/share")
+async def share_custom_agent(agent_id: str, req: ShareAgentRequest, request: Request, user_id: str = Depends(get_current_user)):
+    """Share a custom agent with another user by email."""
+    # 1. Find the agent
+    agent_data = None
+
+    if SUPABASE_URL and SUPABASE_ANON_KEY:
+        try:
+            token = _get_user_token(request)
+            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/custom_agents?id=eq.{agent_id}&user_id=eq.{user_id}"
+            resp = _requests.get(url, headers=_supabase_headers(token), timeout=5)
+            if resp.ok:
+                data = resp.json()
+                if data:
+                    agent_data = data[0]
+        except Exception as e:
+            print(f"⚠️ Supabase get agent error: {e}")
+
+    # Fallback
+    if not agent_data and user_id in _custom_agents_fallback:
+        for a in _custom_agents_fallback[user_id]:
+            if a["id"] == agent_id:
+                agent_data = a
+                break
+
+    if not agent_data:
+        raise HTTPException(status_code=404, detail="Agente não encontrado.")
+
+    # 2. Find target user by email (Supabase admin API or fallback)
+    target_user_id = None
+    if SUPABASE_URL and SUPABASE_ANON_KEY:
+        try:
+            # Use Supabase admin/service role to lookup user by email
+            # Since we may not have service role key, we store the agent with email as target
+            # For now, create the agent with a special marker
+            new_agent = {
+                "id": str(uuid.uuid4()),
+                "user_id": req.email,  # Placeholder — will be resolved when user logs in
+                "name": agent_data.get("name", "Agente Compartilhado"),
+                "prompt": agent_data.get("prompt", ""),
+                "color": agent_data.get("color", "#8B5CF6"),
+                "icon": agent_data.get("icon", "FaRobot"),
+                "shared_from": user_id,
+            }
+            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/custom_agents"
+            token = _get_user_token(request)
+            resp = _requests.post(url, json=new_agent, headers=_supabase_headers(token), timeout=5)
+            if resp.ok:
+                return {"status": "shared", "target_email": req.email}
+            else:
+                print(f"⚠️ Supabase share failed ({resp.status_code}): {resp.text[:200]}")
+        except Exception as e:
+            print(f"⚠️ Supabase share error: {e}")
+
+    # Fallback: store in memory with email as key
+    if req.email not in _custom_agents_fallback:
+        _custom_agents_fallback[req.email] = []
+    _custom_agents_fallback[req.email].append({
+        "id": str(uuid.uuid4()),
+        "user_id": req.email,
+        "name": agent_data.get("name", "Agente Compartilhado"),
+        "prompt": agent_data.get("prompt", ""),
+        "color": agent_data.get("color", "#8B5CF6"),
+        "icon": "FaRobot",
+        "shared_from": user_id,
+    })
+    return {"status": "shared", "target_email": req.email}
+
+
+
 FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 if FRONTEND_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")

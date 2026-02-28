@@ -536,3 +536,74 @@ export async function pollJurisprudenciaResearch(taskId) {
     if (!res || !res.ok) return null;
     return safeJson(res, 'Jurisprudência Research Poll').catch(() => null);
 }
+
+
+// ── Custom Agents CRUD ──────────────────────────────────────────────────────
+
+/**
+ * Create a custom agent.
+ * @param {{ name: string, prompt: string, color: string }} agent
+ * @returns {Promise<{ id: string, name: string, prompt: string, color: string }>}
+ */
+export async function createCustomAgent(agent) {
+    const res = await fetch(`${API_BASE}/custom-agents`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(agent),
+        redirect: 'error',
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Create Agent').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao criar agente (${res.status})`);
+    }
+    return safeJson(res, 'Create Agent');
+}
+
+/**
+ * List custom agents for the current user.
+ * @returns {Promise<{ agents: Array }>}
+ */
+export async function getCustomAgents() {
+    const res = await fetch(`${API_BASE}/custom-agents`, {
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) return { agents: [] };
+    return safeJson(res, 'List Agents');
+}
+
+/**
+ * Delete a custom agent.
+ * @param {string} agentId
+ * @returns {Promise<{ status: string }>}
+ */
+export async function deleteCustomAgent(agentId) {
+    const res = await fetch(`${API_BASE}/custom-agents/${encodeURIComponent(agentId)}`, {
+        method: 'DELETE',
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Delete Agent').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao apagar agente (${res.status})`);
+    }
+    return safeJson(res, 'Delete Agent');
+}
+
+/**
+ * Share a custom agent with another user by email.
+ * @param {string} agentId
+ * @param {string} email
+ * @returns {Promise<{ status: string }>}
+ */
+export async function shareCustomAgent(agentId, email) {
+    const res = await fetch(`${API_BASE}/custom-agents/${encodeURIComponent(agentId)}/share`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ email }),
+        redirect: 'error',
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Share Agent').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao compartilhar agente (${res.status})`);
+    }
+    return safeJson(res, 'Share Agent');
+}
