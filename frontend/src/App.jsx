@@ -33,9 +33,11 @@ function MainApp() {
   const [ragStatus, setRagStatus] = useState(null);
   const [batchResults, setBatchResults] = useState([]);
   const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
-  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'v0', name: 'Gabinete V0', color: '#10B981', llm: 'gpt-5.2-chat' });
+  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: agentDefinitions[0]?.engineId || 'v0', name: agentDefinitions[0]?.name || 'Gabinete 1.0', color: agentDefinitions[0]?.color || '#10B981', llm: 'gpt-5.2-chat' });
   const [showJurisprudencia, setShowJurisprudencia] = useState(false);
   const [showModelManager, setShowModelManager] = useState(false);
+  // Jurisprudence toggle state (replaces V0.5 engine)
+  const [jurisEnabled, setJurisEnabled] = useState(false);
   // V0.5 jurisprudence research state
   const [jurisResearch, setJurisResearch] = useState(null);
   const [jurisResearchLoading, setJurisResearchLoading] = useState(false);
@@ -95,27 +97,22 @@ function MainApp() {
       // Files are already processed by handleFilesUploaded (auto-OCR),
       // so we just use the uploadedText that was populated earlier.
 
-      // 2. Load agent prompt — Gabinete engines auto-load their prompt
+      // 2. Load agent prompt — derive from activeAgent or fallback by engineId
       let agentPrompt = null;
       const engineId = selectedModel.id;
 
       if (activeAgent?.promptModule) {
-        // Agent explicitly selected from sidebar
+        // Agent explicitly selected from sidebar — load its prompt
         try {
-          if (engineId === 'v0' || engineId === 'v0.5') {
-            const mod = await import('./prompts/gabineteCivelV0.js');
-            agentPrompt = mod.default || null;
-          } else {
-            const mod = await activeAgent.promptModule();
-            agentPrompt = mod.default || null;
-          }
+          const mod = await activeAgent.promptModule();
+          agentPrompt = mod.default || null;
         } catch {
           console.warn('Could not load agent prompt');
         }
-      } else if (['v0', 'v0.5', 'v1', 'v2'].includes(engineId)) {
-        // No agent selected but engine is Gabinete — auto-load prompt
+      } else if (['v0', 'v1', 'v2'].includes(engineId)) {
+        // No agent selected but engine known — auto-load prompt
         try {
-          if (engineId === 'v0' || engineId === 'v0.5') {
+          if (engineId === 'v0') {
             const mod = await import('./prompts/gabineteCivelV0.js');
             agentPrompt = mod.default || null;
           } else {
@@ -156,8 +153,10 @@ function MainApp() {
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
-      // V0.5: jurisprudence research is now triggered manually via button
-      // (no longer auto-triggered on each chat response)
+      // Auto-trigger jurisprudence search when toggle is enabled
+      if (jurisEnabled && uploadedText) {
+        handleJurisSearch();
+      }
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
@@ -168,7 +167,7 @@ function MainApp() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext]);
+  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext, jurisEnabled]);
 
   // ── V0.5: Manually trigger jurisprudence research ─────────────────
   const handleJurisSearch = useCallback(async () => {
@@ -389,6 +388,13 @@ function MainApp() {
   // ── Agent selection handler ─────────────────────────────────────────
   const handleAgentSelect = useCallback((agent) => {
     setActiveAgent(agent);
+    // Sync the global model with the agent's engine
+    setGlobalSelectedModel((prev) => ({
+      ...prev,
+      id: agent.engineId || 'v0',
+      name: agent.name,
+      color: agent.color,
+    }));
     const activationMsg = {
       role: 'agent-activation',
       agentName: agent.name,
@@ -481,6 +487,7 @@ function MainApp() {
     setJurisResearch(null);
     setJurisResearchLoading(false);
     setJurisContext('');
+    setJurisEnabled(false);
   }, [messages, activeAgent, conversationId]);
 
   // ── Load chat from history ──────────────────────────────────────────
@@ -649,11 +656,14 @@ function MainApp() {
           onStyleReport={handleStyleReport}
           onModelChange={setGlobalSelectedModel}
           onOpenModelManager={() => setShowModelManager(true)}
+          onJurisprudenceToggle={setJurisEnabled}
           isLoading={isLoading || xrayLoading || styleAnalyzing}
           ocrProcessing={ocrProcessing}
           hasContext={!!(uploadedText || activeAgent)}
           ragStatus={ragStatus}
           onRagStatusChange={setRagStatus}
+          activeAgent={activeAgent}
+          jurisEnabled={jurisEnabled}
         />
       </div>
     </div>

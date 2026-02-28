@@ -3,18 +3,11 @@ import {
     FaPaperclip, FaBook, FaSlash,
     FaArrowRotateRight, FaChevronDown, FaCheck,
     FaXmark, FaFile, FaPalette, FaDatabase,
-    FaBullseye, FaMicrochip
+    FaBullseye, FaMicrochip, FaScaleBalanced
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
 import { uploadTemplates, clearTemplates } from '../services/api';
 import './ChatInput.css';
-
-const ENGINE_VERSIONS = [
-    { id: 'v0', name: 'Gabinete V0', color: '#10B981' },
-    { id: 'v0.5', name: 'V0.5 + Jurisprud.', color: '#8B5CF6' },
-    { id: 'v1', name: 'Gabinete V1', color: '#4285F4' },
-    { id: 'v2', name: 'Gabinete V2 (Agêntico)', color: '#D97706' },
-];
 
 const LLM_OPTIONS = [
     { id: 'gpt52', name: 'GPT-5.2', color: '#4285F4', deployment: 'gpt-5.2-chat' },
@@ -32,11 +25,9 @@ const OCR_ENGINES = [
     { id: 'mistral_doc_ai', label: 'Mistral DocAI' },
 ];
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange, activeAgent = null, jurisEnabled = false }) => {
     const [message, setMessage] = useState('');
-    const [selectedModel, setSelectedModel] = useState(ENGINE_VERSIONS[0]);
     const [selectedLlm, setSelectedLlm] = useState(LLM_OPTIONS[0]);
-    const [dropdownOpen, setDropdownOpen] = useState(false);
     const [llmDropdownOpen, setLlmDropdownOpen] = useState(false);
     const [files, setFiles] = useState([]);
     const [templateFiles, setTemplateFiles] = useState([]);
@@ -46,7 +37,6 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     const [ragAvailable, setRagAvailable] = useState(false);
     const [indexing, setIndexing] = useState(false);
     const [indexSuccess, setIndexSuccess] = useState(false);
-    const dropdownRef = useRef(null);
     const llmDropdownRef = useRef(null);
     const fileInputRef = useRef(null);
     const templateInputRef = useRef(null);
@@ -54,9 +44,6 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     // Close dropdowns when clicking outside
     useEffect(() => {
         const handleClickOutside = (e) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-                setDropdownOpen(false);
-            }
             if (llmDropdownRef.current && !llmDropdownRef.current.contains(e.target)) {
                 setLlmDropdownOpen(false);
             }
@@ -65,11 +52,30 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Notify parent when LLM changes (parent derives engine from activeAgent)
+    useEffect(() => {
+        if (onModelChange && activeAgent) {
+            const combinedModel = {
+                id: activeAgent.engineId || 'v0',
+                name: activeAgent.name,
+                color: activeAgent.color,
+                llm: selectedLlm.deployment,
+            };
+            onModelChange(combinedModel);
+        }
+    }, [selectedLlm, activeAgent]);
+
     const handleSend = () => {
         if (isLoading) return;
         if (message.trim() || files.length > 0 || hasContext) {
-            // Pass both engine version and LLM choice
-            const combinedModel = { ...selectedModel, llm: selectedLlm.deployment };
+            // Build model from active agent + selected LLM
+            const engineId = activeAgent?.engineId || 'v0';
+            const combinedModel = {
+                id: engineId,
+                name: activeAgent?.name || 'Gabinete 1.0',
+                color: activeAgent?.color || '#10B981',
+                llm: selectedLlm.deployment,
+            };
             if (onSend) onSend(message, combinedModel, files, ocrEngine, templateFiles, ragEnabled);
             setMessage('');
             setFiles([]);
@@ -89,21 +95,8 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         }
     };
 
-    const handleSelectModel = (model) => {
-        setSelectedModel(model);
-        const combinedModel = { ...model, llm: selectedLlm.deployment };
-        if (onModelChange) {
-            onModelChange(combinedModel);
-        }
-        setDropdownOpen(false);
-    };
-
     const handleSelectLlm = (llm) => {
         setSelectedLlm(llm);
-        const combinedModel = { ...selectedModel, llm: llm.deployment };
-        if (onModelChange) {
-            onModelChange(combinedModel);
-        }
         setLlmDropdownOpen(false);
     };
 
@@ -179,42 +172,19 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
             {/* Toolbar */}
             <div className="chat-toolbar">
                 <div className="toolbar-left">
-                    <div className="model-selector-wrapper" ref={dropdownRef}>
+                    {/* Jurisprudence Toggle (replaces engine dropdown) */}
+                    <div className="juris-toggle-wrapper">
                         <button
-                            className={`toolbar-btn model-selector ${dropdownOpen ? 'open' : ''}`}
-                            onClick={() => setDropdownOpen(!dropdownOpen)}
-                            aria-label="Selecionar modelo"
-                            aria-expanded={dropdownOpen}
+                            className={`toolbar-btn juris-toggle-btn ${jurisEnabled ? 'juris-active' : ''}`}
+                            onClick={() => onJurisprudenceToggle && onJurisprudenceToggle(!jurisEnabled)}
+                            title={jurisEnabled ? 'Jurisprudência ativa: cada prompt incluirá busca jurisprudencial' : 'Sem jurisprudência: prompts sem busca jurisprudencial'}
                         >
-                            <span
-                                className="model-dot"
-                                style={{ background: selectedModel.color }}
-                            />
-                            <span className="model-label">{selectedModel.name}</span>
-                            <FaChevronDown size={10} className={`chevron ${dropdownOpen ? 'rotated' : ''}`} />
+                            <FaScaleBalanced size={13} />
+                            <span className="juris-label">
+                                {jurisEnabled ? 'Com jurisprudência' : 'Sem jurisprudência'}
+                            </span>
+                            <span className={`juris-dot ${jurisEnabled ? 'active' : ''}`} />
                         </button>
-
-                        {dropdownOpen && (
-                            <div className="model-dropdown">
-                                <div className="dropdown-header">Selecionar Versão do Gabinete</div>
-                                {ENGINE_VERSIONS.map((model) => (
-                                    <button
-                                        key={model.id}
-                                        className={`dropdown-item ${selectedModel.id === model.id ? 'selected' : ''}`}
-                                        onClick={() => handleSelectModel(model)}
-                                    >
-                                        <span
-                                            className="model-dot"
-                                            style={{ background: model.color }}
-                                        />
-                                        <span className="dropdown-item-name">{model.name}</span>
-                                        {selectedModel.id === model.id && (
-                                            <FaCheck size={12} className="dropdown-check" />
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
                     </div>
 
                     <button className="toolbar-btn" aria-label="Anexar processo" onClick={handleFileClick}>
