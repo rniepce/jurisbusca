@@ -321,17 +321,10 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
         # V0.5: Inject imported jurisprudence into the LLM context
         if req.jurisprudence_context:
             system_parts.append(
-                f"\n\n---\n📚 **JURISPRUDÊNCIA SELECIONADA PELO MAGISTRADO (OBRIGATÓRIO NA FUNDAMENTAÇÃO):**\n"
-                f"⚠️ INSTRUÇÃO OBRIGATÓRIA: O magistrado selecionou a(s) jurisprudência(s) abaixo para INCLUSÃO NA FUNDAMENTAÇÃO da minuta.\n"
-                f"Para CADA jurisprudência incluída, você DEVE:\n"
-                f"1. Inserir na seção de FUNDAMENTAÇÃO da minuta/sentença\n"
-                f"2. Usar a seguinte formatação: primeiro contextualize o tema, depois escreva 'Nesse sentido, assim entende o TJMG:' \n"
-                f"3. Em seguida, transcreva a EMENTA COMPLETA do acórdão entre aspas, citando o número do processo e a data\n"
-                f"4. Após a ementa, faça a ponte entre o entendimento jurisprudencial e o caso concreto\n\n"
-                f"Exemplo de formatação esperada:\n"
-                f"'Nesse sentido, assim entende o Eg. TJMG:\n"
-                f"\"EMENTA: [texto da ementa]\" (TJMG, [tipo recurso], nº [processo], [data])\n'"
-                f"\n\nJURISPRUDÊNCIA SELECIONADA:\n"
+                f"\n\n---\n📚 **JURISPRUDÊNCIA SELECIONADA PELO MAGISTRADO:**\n"
+                f"O magistrado selecionou a(s) jurisprudência(s) abaixo para inclusão na fundamentação da minuta.\n"
+                f"Insira na seção de FUNDAMENTAÇÃO, contextualizando o tema e transcrevendo a ementa com a citação do processo.\n\n"
+                f"JURISPRUDÊNCIA SELECIONADA:\n"
                 f"{req.jurisprudence_context}\n---"
             )
 

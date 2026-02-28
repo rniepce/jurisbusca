@@ -137,7 +137,7 @@ function V2CollapsibleCard({ icon, title, content }) {
     );
 }
 
-const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, onAutoAction, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, selectedModel }) => {
+const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, onAutoAction, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, selectedModel, jurisEnabled = false }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
@@ -322,8 +322,8 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                     <StyleAnalysisAnimation />
                 )}
 
-                {/* V0.5: Manual Jurisprudence Search Button */}
-                {onJurisSearch && selectedModel?.id === 'v0.5' && messages.length >= 2 && !jurisResearch && !jurisResearchLoading && (
+                {/* Jurisprudence Search Button — visible when toggle is on */}
+                {onJurisSearch && jurisEnabled && messages.length >= 2 && !jurisResearch && !jurisResearchLoading && (
                     <div className="juris-search-trigger">
                         <button
                             className="juris-search-btn"

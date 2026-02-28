@@ -165,11 +165,6 @@ function MainApp() {
         v2Sections: result.v2_sections || null,
       };
       setMessages((prev) => [...prev, assistantMsg]);
-
-      // Auto-trigger jurisprudence search when toggle is enabled
-      if (jurisEnabled && uploadedText) {
-        handleJurisSearch();
-      }
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
@@ -180,7 +175,7 @@ function MainApp() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext, jurisEnabled]);
+  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext]);
 
   // ── V0.5: Manually trigger jurisprudence research ─────────────────
   const handleJurisSearch = useCallback(async () => {
@@ -681,6 +676,7 @@ function MainApp() {
           }}
           onJurisSearch={handleJurisSearch}
           selectedModel={globalSelectedModel}
+          jurisEnabled={jurisEnabled}
         />
       );
     }
