@@ -426,3 +426,46 @@
 .sidebar-history::-webkit-scrollbar-thumb:hover {
     background: #ccc;
 }
+
+/* ===== MOBILE — SIDEBAR AS OVERLAY ===== */
+@media (max-width: 768px) {
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 999;
+        width: 82vw;
+        max-width: 320px;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+        transform: translateX(0);
+        transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+            opacity 0.3s ease;
+    }
+
+    .sidebar.closed {
+        width: 82vw;
+        max-width: 320px;
+        transform: translateX(-100%);
+        opacity: 1;
+        pointer-events: none;
+        border-right: 1px solid #ebebeb;
+    }
+
+    /* Larger touch targets */
+    .agent-card {
+        padding: 12px 10px;
+    }
+
+    .history-item {
+        padding: 10px;
+    }
+
+    .new-chat-btn {
+        padding: 13px 16px;
+    }
+
+    .sidebar-bottom {
+        padding-bottom: calc(14px + var(--sab, 0px));
+    }
+}

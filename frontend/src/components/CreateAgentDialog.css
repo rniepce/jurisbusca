@@ -281,3 +281,40 @@
     gap: 6px;
     padding: 8px 0;
 }
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+
+    .create-agent-dialog,
+    .share-agent-dialog {
+        width: 95vw;
+        max-height: 90vh;
+        border-radius: 14px;
+    }
+
+    .create-agent-header,
+    .share-agent-header {
+        padding: 14px 16px 12px;
+    }
+
+    .create-agent-body,
+    .share-agent-body {
+        padding: 14px 16px;
+    }
+
+    .create-agent-field textarea {
+        min-height: 140px;
+        max-height: 280px;
+    }
+
+    .create-agent-footer,
+    .share-agent-footer {
+        padding: 10px 16px;
+    }
+
+    .btn-cancel,
+    .btn-confirm {
+        padding: 10px 16px;
+        font-size: 13px;
+    }
+}

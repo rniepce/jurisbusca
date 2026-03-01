@@ -596,10 +596,103 @@
 
 @media (max-width: 768px) {
     .chat-footer {
-        padding: 0 16px 16px;
+        padding: 0 12px 12px;
+        padding-bottom: calc(12px + var(--sab, 0px));
+    }
+
+    .chat-toolbar {
+        gap: 4px;
+        flex-wrap: wrap;
+    }
+
+    .toolbar-btn {
+        padding: 6px 8px;
+        font-size: 14px;
     }
 
     .juris-label {
         display: none;
+    }
+
+    .chat-textarea {
+        padding: 12px 44px 12px 14px;
+        font-size: 14px;
+    }
+
+    .send-btn {
+        bottom: 10px;
+        right: 10px;
+    }
+
+    .xray-btn {
+        right: 40px;
+        font-size: 0.65rem;
+        padding: 4px 8px;
+    }
+
+    /* File chips */
+    .file-chips {
+        gap: 4px;
+    }
+
+    .file-chip {
+        max-width: 100%;
+    }
+
+    .file-chip-name {
+        max-width: 120px;
+    }
+
+    /* OCR bar: wrap and compact */
+    .ocr-bar {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .ocr-label {
+        font-size: 9px;
+    }
+
+    .ocr-option {
+        font-size: 9px;
+        padding: 2px 6px;
+    }
+
+    .compress-label {
+        font-size: 9px;
+    }
+
+    /* LLM selector compact */
+    .llm-selector-btn {
+        font-size: 9px;
+        padding: 2px 8px 2px 6px;
+    }
+
+    .llm-name {
+        font-size: 9px;
+    }
+
+    .llm-dropdown {
+        min-width: 160px;
+    }
+
+    /* Template bar */
+    .template-bar {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        gap: 6px;
+        padding-bottom: 2px;
+    }
+
+    .template-pill {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .style-report-btn {
+        white-space: nowrap;
+        flex-shrink: 0;
+        font-size: 11px;
+        padding: 4px 10px;
     }
 }

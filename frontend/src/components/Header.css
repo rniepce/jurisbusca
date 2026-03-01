@@ -219,6 +219,7 @@
     color: #e65100;
     background: #fff3e0;
 }
+
 /* User Profile Options */
 .user-profile {
     display: flex;
@@ -263,4 +264,54 @@
 .logout-btn:hover {
     background: rgba(239, 68, 68, 0.1);
     border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+    .top-header {
+        padding: 10px 14px;
+        height: 50px;
+    }
+
+    .header-left {
+        gap: 10px;
+    }
+
+    .brand-title {
+        font-size: 14px;
+    }
+
+    .key-config {
+        margin-right: 8px;
+    }
+
+    .key-button span:not(.key-dot) {
+        display: none;
+    }
+
+    .key-button {
+        padding: 6px 8px;
+    }
+
+    .key-popover {
+        position: fixed;
+        top: 56px;
+        right: 8px;
+        left: 8px;
+        width: auto;
+    }
+
+    .user-profile {
+        gap: 0.5rem;
+        padding-left: 0.5rem;
+    }
+
+    .user-name {
+        display: none;
+    }
+
+    .logout-btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.7rem;
+    }
 }

@@ -19,7 +19,8 @@ import agentDefinitions from './config/agents';
 import './App.css';
 
 function MainApp() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [activeAgent, setActiveAgent] = useState(agentDefinitions[0]);
@@ -60,6 +61,7 @@ function MainApp() {
   }, []);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
+  const closeSidebarMobile = () => { if (window.innerWidth <= 768) setSidebarOpen(false); };
 
   // ── Send message handler ────────────────────────────────────────────
   const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles, useRag = false, { hideUserBubble = false } = {}) => {
@@ -687,9 +689,15 @@ function MainApp() {
 
   return (
     <div className="app-layout">
+      {/* Mobile backdrop */}
+      <div
+        className={`sidebar-backdrop ${sidebarOpen ? 'visible' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
       <Sidebar
         isOpen={sidebarOpen}
         onToggle={toggleSidebar}
+        onCloseMobile={closeSidebarMobile}
         activeAgent={activeAgent}
         onAgentSelect={handleAgentSelect}
         onNewChat={handleNewChat}

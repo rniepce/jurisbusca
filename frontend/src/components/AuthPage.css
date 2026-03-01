@@ -261,3 +261,35 @@
 .text-xs {
     font-size: 0.75rem;
 }
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+    .auth-container {
+        padding: 1rem 0.75rem;
+    }
+
+    .auth-card {
+        padding: 1.75rem 1.25rem;
+        max-width: 100%;
+        border-radius: 1rem;
+    }
+
+    .blob {
+        width: 18rem;
+        height: 18rem;
+    }
+
+    .auth-logo {
+        width: 48px;
+        height: 48px;
+    }
+
+    .auth-title {
+        font-size: 1.3rem;
+    }
+
+    .auth-btn {
+        height: 2.75rem;
+        font-size: 0.95rem;
+    }
+}

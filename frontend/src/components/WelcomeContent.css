@@ -75,3 +75,26 @@
     font-size: 0.8rem;
     color: #94a3b8;
 }
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+    .welcome-container {
+        padding: 30px 16px;
+    }
+
+    .welcome-title {
+        font-size: 1.2rem;
+    }
+
+    .welcome-actions {
+        flex-direction: column;
+        width: 100%;
+        margin-top: 20px;
+    }
+
+    .welcome-action-card {
+        min-width: auto;
+        width: 100%;
+        padding: 14px 18px;
+    }
+}

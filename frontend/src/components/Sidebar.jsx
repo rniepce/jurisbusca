@@ -26,6 +26,7 @@ const Sidebar = ({
     onAgentSelect,
     onNewChat,
     onLoadChat,
+    onCloseMobile,
     customAgents = [],
     onCreateAgent,
     onDeleteAgent,
@@ -37,10 +38,12 @@ const Sidebar = ({
 
     const handleAgentClick = (agent) => {
         if (onAgentSelect) onAgentSelect(agent);
+        if (onCloseMobile) onCloseMobile();
     };
 
     const handleNewChat = () => {
         if (onNewChat) onNewChat();
+        if (onCloseMobile) onCloseMobile();
     };
 
     const toggleMenu = (e, agentId) => {
@@ -194,7 +197,10 @@ const Sidebar = ({
                                     <button
                                         key={item.id}
                                         className="history-item"
-                                        onClick={() => onLoadChat && onLoadChat(item.id)}
+                                        onClick={() => {
+                                            if (onLoadChat) onLoadChat(item.id);
+                                            if (onCloseMobile) onCloseMobile();
+                                        }}
                                         title={item.title}
                                     >
                                         <FaComments size={12} className="history-item-icon" />

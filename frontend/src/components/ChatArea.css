@@ -373,37 +373,83 @@
 /* ── Responsive ── */
 @media (max-width: 768px) {
     .chat-area {
-        padding: 16px;
+        padding: 12px 14px;
     }
 
     .message-bubble {
-        max-width: 92%;
-        padding: 12px 14px;
+        max-width: 95%;
+        padding: 10px 14px;
+        font-size: 13.5px;
+    }
+
+    .message-avatar {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+    }
+
+    .message-row {
+        gap: 8px;
+    }
+
+    .messages-list {
+        gap: 14px;
     }
 
     .agent-activation-card {
         padding: 12px 14px;
-        gap: 12px;
+        gap: 10px;
     }
 
     .activation-icon-ring {
-        width: 40px;
-        height: 40px;
+        width: 36px;
+        height: 36px;
     }
 
-    .ocr-processing-card {
-        padding: 12px 14px;
-        gap: 10px;
+    .activation-title {
+        font-size: 13px;
     }
 
-    .style-processing-card {
-        padding: 12px 14px;
-        gap: 10px;
-    }
-
+    .ocr-processing-card,
+    .style-processing-card,
     .xray-processing-card {
         padding: 12px 14px;
         gap: 10px;
+    }
+
+    .style-phase-icon,
+    .xray-phase-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+    }
+
+    /* V2 Collapsible Cards */
+    .v2-cards-row {
+        margin-top: 12px;
+        padding-top: 10px;
+    }
+
+    .v2-card-body {
+        font-size: 12.5px;
+        padding: 0 10px 10px;
+        padding-top: 10px;
+    }
+
+    .v2-card-body table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .v2-card-header {
+        padding: 10px 12px;
+    }
+
+    /* Markdown inside bubbles */
+    .message-content.markdown pre {
+        font-size: 12px;
+        padding: 10px 12px;
     }
 }
 

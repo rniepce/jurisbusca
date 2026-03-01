@@ -242,3 +242,48 @@
     background: #ddd;
     border-radius: 4px;
 }
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+    .agent-builder-header {
+        padding: 12px 14px;
+    }
+
+    .agent-builder-header h3 {
+        font-size: 14px;
+    }
+
+    .agent-builder-header-icon {
+        width: 34px;
+        height: 34px;
+        font-size: 15px;
+    }
+
+    .agent-builder-messages {
+        padding: 14px 14px;
+        gap: 12px;
+    }
+
+    .builder-msg {
+        max-width: 92%;
+        padding: 12px 14px;
+        font-size: 13.5px;
+    }
+
+    .agent-builder-input-area {
+        padding: 12px 14px;
+        padding-bottom: calc(12px + var(--sab, 0px));
+        gap: 8px;
+    }
+
+    .agent-builder-input-area textarea {
+        padding: 10px 14px;
+        font-size: 14px;
+    }
+
+    .agent-builder-send-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+    }
+}

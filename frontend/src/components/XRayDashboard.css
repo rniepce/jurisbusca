@@ -350,9 +350,24 @@
 }
 
 /* ── Responsive ─────────────────────────────────────────────────── */
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+    .xray-dashboard {
+        padding: 20px 14px;
+    }
+
+    .xray-title {
+        font-size: 1.3rem;
+    }
+
     .xray-chart-section {
         flex-direction: column;
+        padding: 16px;
+        gap: 16px;
+    }
+
+    .xray-pie {
+        width: 140px;
+        height: 140px;
     }
 
     .xray-clusters-grid {
@@ -361,6 +376,10 @@
 
     .xray-stats-row {
         grid-template-columns: repeat(2, 1fr);
+    }
+
+    .xray-cluster-card {
+        padding: 16px;
     }
 }
 
