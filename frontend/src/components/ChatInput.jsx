@@ -3,7 +3,7 @@ import {
     FaPaperclip, FaBook, FaSlash,
     FaArrowRotateRight, FaChevronDown, FaCheck,
     FaXmark, FaFile, FaPalette, FaDatabase,
-    FaBullseye, FaMicrochip, FaScaleBalanced
+    FaBullseye, FaMicrochip
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
 import { uploadTemplates, clearTemplates } from '../services/api';
@@ -172,21 +172,6 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
             {/* Toolbar */}
             <div className="chat-toolbar">
                 <div className="toolbar-left">
-                    {/* Jurisprudence Toggle (replaces engine dropdown) */}
-                    <div className="juris-toggle-wrapper">
-                        <button
-                            className={`toolbar-btn juris-toggle-btn ${jurisEnabled ? 'juris-active' : ''}`}
-                            onClick={() => onJurisprudenceToggle && onJurisprudenceToggle(!jurisEnabled)}
-                            title={jurisEnabled ? 'Jurisprudência ativa: cada prompt incluirá busca jurisprudencial' : 'Sem jurisprudência: prompts sem busca jurisprudencial'}
-                        >
-                            <FaScaleBalanced size={13} />
-                            <span className="juris-label">
-                                {jurisEnabled ? 'Com jurisprudência' : 'Sem jurisprudência'}
-                            </span>
-                            <span className={`juris-dot ${jurisEnabled ? 'active' : ''}`} />
-                        </button>
-                    </div>
-
                     <button className="toolbar-btn" aria-label="Anexar processo" onClick={handleFileClick}>
                         <FaPaperclip />
                     </button>

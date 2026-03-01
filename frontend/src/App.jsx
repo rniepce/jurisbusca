@@ -40,8 +40,7 @@ function MainApp() {
   const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: agentDefinitions[0]?.engineId || 'v0', name: agentDefinitions[0]?.name || 'Gabinete 1.0', color: agentDefinitions[0]?.color || '#10B981', llm: 'gpt-5.2-chat' });
   const [showJurisprudencia, setShowJurisprudencia] = useState(false);
   const [showModelManager, setShowModelManager] = useState(false);
-  // Jurisprudence toggle state (replaces V0.5 engine)
-  const [jurisEnabled, setJurisEnabled] = useState(false);
+  // Jurisprudence toggle state — always enabled
   // V0.5 jurisprudence research state
   const [jurisResearch, setJurisResearch] = useState(null);
   const [jurisResearchLoading, setJurisResearchLoading] = useState(false);
@@ -543,7 +542,6 @@ function MainApp() {
     setJurisResearch(null);
     setJurisResearchLoading(false);
     setJurisContext('');
-    setJurisEnabled(false);
   }, [messages, activeAgent, conversationId]);
 
   // ── Load chat from history ──────────────────────────────────────────
@@ -678,7 +676,6 @@ function MainApp() {
           }}
           onJurisSearch={handleJurisSearch}
           selectedModel={globalSelectedModel}
-          jurisEnabled={jurisEnabled}
         />
       );
     }
@@ -732,14 +729,12 @@ function MainApp() {
             onStyleReport={handleStyleReport}
             onModelChange={setGlobalSelectedModel}
             onOpenModelManager={() => setShowModelManager(true)}
-            onJurisprudenceToggle={setJurisEnabled}
             isLoading={isLoading || xrayLoading || styleAnalyzing}
             ocrProcessing={ocrProcessing}
             hasContext={!!(uploadedText || activeAgent)}
             ragStatus={ragStatus}
             onRagStatusChange={setRagStatus}
             activeAgent={activeAgent}
-            jurisEnabled={jurisEnabled}
           />
         )}
       </div>
