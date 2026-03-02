@@ -37,6 +37,8 @@ torch
 accelerate
 pillow
 einops
+# OCR - Marker (PDF → Markdown)
+marker-pdf
 
 # Auth
 python-jose[cryptography]

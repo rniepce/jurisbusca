@@ -339,7 +339,7 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
                     # Normalize OCR engine choice
                     if ocr_choice in ["claude_vision", "gpt4o_mini"]:
                         ocr_choice = "paddle"
-                    # Valid OCR engines for hybrid_extract: paddle, deepseek, mistral_doc_ai
+                    # Valid OCR engines for hybrid_extract: paddle, deepseek, mistral_doc_ai, marker
                     docs, stats = hybrid_extract(tmp_path, ocr_choice, compress)
                     print(f"📊 {stats['text_pages']} págs texto | {stats['ocr_pages']} págs OCR | {stats['total_chars']} chars | {stats['elapsed_seconds']}s")
                 except ImportError:

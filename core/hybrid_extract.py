@@ -61,6 +61,40 @@ def hybrid_extract(
     ocr_engine_instance = None  # Lazy init — only loaded if needed
 
     try:
+        # ── Special path: Marker processes entire PDF at once (most efficient) ──
+        if ocr_engine_choice == "marker":
+            try:
+                from ocr_engine import get_marker_engine
+                engine = get_marker_engine()
+                if engine:
+                    full_md = engine.process_pdf(pdf_path)
+                    if full_md:
+                        doc = fitz.open(pdf_path)
+                        stats["total_pages"] = len(doc)
+                        stats["ocr_pages"] = len(doc)
+                        stats["total_chars"] = len(full_md)
+                        stats["elapsed_seconds"] = round(time.time() - t_start, 1)
+                        doc.close()
+                        docs.append(Document(
+                            page_content=full_md,
+                            metadata={
+                                "source": os.path.basename(pdf_path),
+                                "page": 0,
+                                "extraction": "marker_full_pdf",
+                            }
+                        ))
+                        print(
+                            f"📊 Marker Extract: {stats['total_pages']} págs | "
+                            f"{stats['total_chars']} chars | {stats['elapsed_seconds']}s"
+                        )
+                        return docs, stats
+                else:
+                    print("⚠️ Marker não disponível, fallback para PaddleOCR")
+                    ocr_engine_choice = "paddle"
+            except ImportError:
+                print("⚠️ Marker não instalado, fallback para PaddleOCR")
+                ocr_engine_choice = "paddle"
+
         doc = fitz.open(pdf_path)
         stats["total_pages"] = len(doc)
 
@@ -143,6 +177,8 @@ def _ocr_page(page, page_num: int, engine_choice: str, engine_instance=None) -> 
             return _ocr_page_deepseek(page, page_num)
         elif engine_choice == "mistral_doc_ai":
             return _ocr_page_mistral(page, page_num)
+        elif engine_choice == "marker":
+            return _ocr_page_marker(page, page_num)
         else:
             return _ocr_page_paddle(page, page_num)
     except Exception as e:
@@ -253,4 +289,32 @@ def _ocr_page_mistral(page, page_num: int) -> str:
         return page_text
     except Exception as e:
         print(f"  ❌ Mistral DocAI erro pág {page_num}: {e}")
+        return ""
+
+
+def _ocr_page_marker(page, page_num: int) -> str:
+    """OCR a single page with Marker (PDF→Markdown, local)."""
+    try:
+        from ocr_engine import get_marker_engine
+    except ImportError as e:
+        print(f"  ⚠️ Marker não disponível: {e}")
+        return ""
+
+    engine = get_marker_engine()
+    if not engine:
+        return ""
+
+    # Render at 2x zoom for quality
+    zoom = 2.0
+    mat = fitz.Matrix(zoom, zoom)
+    pix = page.get_pixmap(matrix=mat)
+
+    # Get PNG bytes
+    png_bytes = pix.tobytes("png")
+
+    try:
+        page_text = engine.process_page_image(png_bytes, page_num=page_num)
+        return page_text
+    except Exception as e:
+        print(f"  ❌ Marker erro pág {page_num}: {e}")
         return ""

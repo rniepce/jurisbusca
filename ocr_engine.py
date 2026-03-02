@@ -361,3 +361,75 @@ def get_mistral_doc_ai_engine():
             print(f"⚠️ Erro ao iniciar Mistral Document AI: {e}")
             MISTRAL_DOC_AI_ENGINE = None
     return MISTRAL_DOC_AI_ENGINE
+
+
+class MarkerEngine:
+    """
+    OCR engine using Marker (marker-pdf) for high-quality PDF → Markdown conversion.
+    Preserves document structure, tables, headers, and formatting.
+    Runs locally on CPU/GPU/MPS — no API costs.
+    """
+
+    def __init__(self):
+        try:
+            from marker.converters.pdf import PdfConverter
+            from marker.config.parser import ConfigParser
+        except ImportError:
+            raise ImportError(
+                "Marker requires 'marker-pdf'. Install with: pip install marker-pdf"
+            )
+
+        print("🚀 Initializing Marker PDF converter...")
+        config = ConfigParser({"output_format": "markdown"})
+        self.converter = PdfConverter(config=config)
+        print("✅ Marker engine ready")
+
+    def process_pdf(self, pdf_path: str) -> str:
+        """Convert an entire PDF to Markdown (most efficient mode)."""
+        rendered = self.converter(pdf_path)
+        return rendered.markdown
+
+    def process_page_image(self, png_bytes: bytes, page_num: int = 1) -> str:
+        """
+        Process a single page image through Marker.
+        Falls back to saving as temp PDF and converting — Marker works best with PDFs.
+        For single-page OCR, this creates a temp single-page PDF from the image.
+        """
+        try:
+            # Create a single-page PDF from the image bytes using fitz
+            single_doc = fitz.open()
+            img_doc = fitz.open(stream=png_bytes, filetype="png")
+            rect = img_doc[0].rect
+            page = single_doc.new_page(width=rect.width, height=rect.height)
+            page.insert_image(rect, stream=png_bytes)
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+                single_doc.save(tmp_pdf.name)
+                tmp_path = tmp_pdf.name
+
+            single_doc.close()
+            img_doc.close()
+
+            try:
+                result = self.process_pdf(tmp_path)
+                return result
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+        except Exception as e:
+            print(f"  ❌ Marker page {page_num} error: {e}")
+            return ""
+
+
+# Global singleton for Marker
+MARKER_ENGINE = None
+
+def get_marker_engine():
+    global MARKER_ENGINE
+    if MARKER_ENGINE is None:
+        try:
+            MARKER_ENGINE = MarkerEngine()
+        except Exception as e:
+            print(f"⚠️ Erro ao iniciar Marker engine: {e}")
+            MARKER_ENGINE = None
+    return MARKER_ENGINE

@@ -16,6 +16,8 @@ const OcrPreview = ({ filename, text, engine, charCount }) => {
         gpt4o_mini: 'GPT-4o mini',
         paddle: 'PaddleOCR',
         deepseek: 'DeepSeek-OCR',
+        mistral_doc_ai: 'Mistral DocAI',
+        marker: 'Marker (PDF→MD)',
     };
 
     return (

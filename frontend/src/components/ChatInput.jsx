@@ -23,6 +23,7 @@ const OCR_ENGINES = [
     { id: 'paddle', label: 'PaddleOCR' },
     { id: 'deepseek', label: 'DeepSeek-OCR' },
     { id: 'mistral_doc_ai', label: 'Mistral DocAI' },
+    { id: 'marker', label: 'Marker' },
 ];
 
 const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange, activeAgent = null, jurisEnabled = false }) => {
