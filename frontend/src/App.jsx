@@ -390,11 +390,13 @@ function MainApp() {
     }
   }, []);
 
-  // ── Agent selection handler ─────────────────────────────────────────
+   // ── Agent selection handler ─────────────────────────────────────────
   const handleAgentSelect = useCallback((agent) => {
     // Toggle: if the clicked agent is already active, deactivate it
     if (activeAgent?.id === agent.id) {
       setActiveAgent(null);
+      // Opcional: remover a mensagem de ativação ao desativar
+      setMessages((prev) => prev.filter((m) => m.role !== 'agent-activation'));
       return;
     }
 
@@ -417,7 +419,12 @@ function MainApp() {
       agentIcon: agent.icon || 'FaRobot',
       autoAction: agent.autoAction || null,
     };
-    setMessages((prev) => [...prev, activationMsg]);
+    
+    // Filtra qualquer mensagem de ativação anterior e adiciona a nova
+    setMessages((prev) => [
+      ...prev.filter((m) => m.role !== 'agent-activation'),
+      activationMsg,
+    ]);
   }, [activeAgent]);
 
   // ── Custom Agent CRUD handlers ──────────────────────────────────────
