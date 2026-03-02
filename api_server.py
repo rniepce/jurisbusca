@@ -323,9 +323,19 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
             system_parts.append(
                 f"\n\n---\n📚 **JURISPRUDÊNCIA SELECIONADA PELO MAGISTRADO:**\n"
                 f"O magistrado selecionou a(s) jurisprudência(s) abaixo para inclusão na fundamentação da minuta.\n"
-                f"Insira na seção de FUNDAMENTAÇÃO, contextualizando o tema e transcrevendo a ementa com a citação do processo.\n\n"
+                f"Insira na seção de FUNDAMENTAÇÃO, contextualizando o tema e transcrevendo a ementa com a citação do processo.\n"
+                f"⚠️ CITE **APENAS** a jurisprudência listada abaixo. NÃO adicione jurisprudência do seu treinamento.\n\n"
                 f"JURISPRUDÊNCIA SELECIONADA:\n"
                 f"{req.jurisprudence_context}\n---"
+            )
+        else:
+            # Explicit instruction: NO jurisprudence available
+            system_parts.append(
+                "\n\n---\n⚠️ **NENHUMA JURISPRUDÊNCIA FOI FORNECIDA PELA PLATAFORMA.**\n"
+                "O magistrado NÃO selecionou jurisprudência para esta minuta.\n"
+                "Portanto: NÃO cite números de processo, ementas, relatores ou datas de julgamento do seu treinamento.\n"
+                "Fundamente a decisão EXCLUSIVAMENTE com legislação (artigos de lei, CPC, CC, CDC, CF, etc.).\n"
+                "É PREFERÍVEL uma minuta sem jurisprudência a uma minuta com jurisprudência INVENTADA.\n---"
             )
 
         # ── Phase-aware RAG: inject model context only when needed ──────

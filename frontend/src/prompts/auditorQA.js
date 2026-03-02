@@ -98,13 +98,21 @@ Sua resposta deve seguir ESTRITAMENTE a estrutura de blocos visuais abaixo, sem 
 
 ---
 
-### ⚖️ RADAR DE JURISPRUDÊNCIA CITADA
-*(Se houver citações de julgados ou súmulas na minuta, liste-as abaixo para verificação de vigência externa pela assessoria. Se não houver, escreva "Nenhuma jurisprudência citada na minuta").*
+### ⚖️ RADAR DE JURISPRUDÊNCIA CITADA (AUDITORIA ANTI-ALUCINAÇÃO)
+*(Esta é uma das verificações mais importantes. Jurisprudência inventada pela IA é inaceitável.)*
+
+**PROTOCOLO DE VERIFICAÇÃO:**
+1. Para CADA citação de jurisprudência na minuta (número de processo, ementa, relator, data de julgamento):
+   - Verifique se está presente nos \`[DADOS DO PROCESSO]\` (peças processuais)
+   - Verifique se está na Base de Conhecimento (Arquivos A/B/C)
+   - Verifique se está na seção "📚 JURISPRUDÊNCIA SELECIONADA PELO MAGISTRADO"
+2. Se a jurisprudência citada **NÃO ESTÁ** em nenhuma dessas fontes: marque como **🔴 ALUCINAÇÃO DE JURISPRUDÊNCIA — FALHA CRÍTICA**
+3. Se não houver citações de jurisprudência na minuta, escreva "Nenhuma jurisprudência citada na minuta — ✅ Sem risco de alucinação"
 
 > **🤖 PROMPT PARA VERIFICAÇÃO HUMANA/EXTERNA:**
 > "Por favor, verificar a vigência e a correspondência fática dos seguintes julgados:"
-> 1. *[Colar citação 1]*
-> 2. *[Colar citação 2]*
+> 1. *[Colar citação 1 — indicar se VERIFICADA nas fontes ou ⚠️ SEM FONTE]*
+> 2. *[Colar citação 2 — indicar se VERIFICADA nas fontes ou ⚠️ SEM FONTE]*
 
 ---
 
