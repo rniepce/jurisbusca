@@ -392,6 +392,12 @@ function MainApp() {
 
   // ── Agent selection handler ─────────────────────────────────────────
   const handleAgentSelect = useCallback((agent) => {
+    // Toggle: if the clicked agent is already active, deactivate it
+    if (activeAgent?.id === agent.id) {
+      setActiveAgent(null);
+      return;
+    }
+
     setActiveAgent(agent);
     setShowAgentBuilder(false); // Close builder if open
     // Sync the global model with the agent's engine
@@ -412,7 +418,7 @@ function MainApp() {
       autoAction: agent.autoAction || null,
     };
     setMessages((prev) => [...prev, activationMsg]);
-  }, []);
+  }, [activeAgent]);
 
   // ── Custom Agent CRUD handlers ──────────────────────────────────────
   const handleOpenAgentBuilder = useCallback(() => {
