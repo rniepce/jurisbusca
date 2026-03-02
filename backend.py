@@ -1171,20 +1171,45 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
         "steps": logs
     }
 
-# ── Simple in-memory template store (NO ChromaDB, NO embeddings, NO API calls) ──
+# ── Template Store: Supabase-backed + in-memory cache ─────────────────────────
 # Per-user: {user_id: [{"text": str, "metadata": dict}, ...]}
+# Primary: Supabase REST API (persistent across deploys)
+# Fallback: Local JSON files (for local development without Supabase)
+# Cache: _template_store dict in memory (for fast TF-IDF queries)
+
+import requests as _requests_lib
+
 _template_store: dict[str, list[dict]] = {}
 _TEMPLATE_STORE_BASE = os.path.abspath(os.getenv("CHROMA_DB_PATH", "./chroma_db_rag"))
 
-# Ensure base directory exists at module init (prevents silent save failures)
+# Ensure base directory exists (for local fallback)
 os.makedirs(_TEMPLATE_STORE_BASE, exist_ok=True)
-print(f"📂 Template store base: {_TEMPLATE_STORE_BASE}")
+
+# Supabase config (reuse from environment)
+_SUPA_URL = os.getenv("SUPABASE_URL", "") or os.getenv("VITE_SUPABASE_URL", "")
+_SUPA_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "") or os.getenv("VITE_SUPABASE_ANON_KEY", "")
+_SUPA_TABLE = "user_templates"
+
+print(f"📂 Template store: {'Supabase (' + _SUPA_URL[:30] + '...)' if _SUPA_URL else 'Local JSON (' + _TEMPLATE_STORE_BASE + ')'}")
+
+
+def _supa_headers(token: str = "") -> dict:
+    """Build headers for Supabase REST API calls."""
+    h = {
+        "apikey": _SUPA_ANON_KEY,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+    return h
+
 
 def _get_template_store_path(user_id: str = "default") -> str:
-    """Returns user-specific template store path."""
+    """Returns user-specific template store path (local fallback)."""
     return os.path.join(_TEMPLATE_STORE_BASE, user_id, "templates.json")
 
-# Keep legacy path for backward compatibility (migration)
+# Legacy path for backward compatibility
 _TEMPLATE_STORE_PATH = os.path.join(_TEMPLATE_STORE_BASE, "templates.json")
 
 
@@ -1221,7 +1246,7 @@ class SimpleRetriever:
             self._vectorizer = TfidfVectorizer(
                 max_features=8000,
                 stop_words=list(self._STOP_WORDS_PT),
-                ngram_range=(1, 2),  # unigrams + bigrams for legal terms
+                ngram_range=(1, 2),
                 sublinear_tf=True,
             )
             corpus = [d["text"] for d in self.docs]
@@ -1236,10 +1261,8 @@ class SimpleRetriever:
         """Return top-k documents ranked by TF-IDF cosine similarity (or keyword fallback)."""
         if not self.docs:
             return []
-        
         from langchain_core.documents import Document
         scored_docs = self._score(query)
-        
         results = []
         for score, doc_dict in scored_docs[:self.k]:
             doc = Document(
@@ -1253,10 +1276,8 @@ class SimpleRetriever:
         """Return top-k as (score, Document) tuples for quality-aware injection."""
         if not self.docs:
             return []
-        
         from langchain_core.documents import Document
         scored_docs = self._score(query)
-        
         results = []
         for score, doc_dict in scored_docs[:self.k]:
             doc = Document(
@@ -1267,13 +1288,11 @@ class SimpleRetriever:
         return results
     
     def _score(self, query: str) -> list[tuple]:
-        """Score all docs against query. Returns sorted list of (score, doc_dict)."""
         if self._tfidf_matrix is not None and self._vectorizer is not None:
             return self._score_tfidf(query)
         return self._score_keyword(query)
     
     def _score_tfidf(self, query: str) -> list[tuple]:
-        """TF-IDF cosine similarity scoring."""
         from sklearn.metrics.pairwise import cosine_similarity
         query_vec = self._vectorizer.transform([query])
         scores = cosine_similarity(query_vec, self._tfidf_matrix).flatten()
@@ -1282,7 +1301,6 @@ class SimpleRetriever:
         return scored
     
     def _score_keyword(self, query: str) -> list[tuple]:
-        """Fallback: keyword overlap scoring."""
         query_words = set(query.lower().split()) - self._STOP_WORDS_PT
         scored = []
         for doc_dict in self.docs:
@@ -1291,7 +1309,6 @@ class SimpleRetriever:
                 scored.append((0.0, doc_dict))
                 continue
             overlap = len(query_words & doc_words)
-            # Normalize by query size for comparable scores
             score = overlap / max(len(query_words), 1)
             scored.append((score, doc_dict))
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -1315,7 +1332,7 @@ def extract_legal_themes(process_text: str) -> str:
                 "Exemplos de saída: 'dano moral, relação de consumo, atraso de voo, indenização'\n"
                 "'contrato de compra e venda, inadimplemento, rescisão contratual, restituição de valores'"
             )),
-            HumanMessage(content=process_text[:4000])  # Use first 4k chars
+            HumanMessage(content=process_text[:4000])
         ]
         response = llm.invoke(messages)
         themes = safe_content(response).strip()
@@ -1323,7 +1340,6 @@ def extract_legal_themes(process_text: str) -> str:
         return themes
     except Exception as e:
         print(f"⚠️ Erro na extração de temas: {e}")
-        # Fallback: use first 500 chars as query
         return process_text[:500]
 
 
@@ -1341,7 +1357,6 @@ def save_style_dossier(user_id: str, dossier: dict):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(dossier, f, ensure_ascii=False)
-        # Also keep in memory cache
         _style_dossier_cache[f"user:{user_id}"] = dossier
         print(f"💾 Dossiê de estilo salvo para user {user_id[:8]} ({len(dossier.get('dossier', ''))} chars)")
     except Exception as e:
@@ -1350,24 +1365,18 @@ def save_style_dossier(user_id: str, dossier: dict):
 
 def load_style_dossier(user_id: str) -> dict:
     """Load style dossier from memory cache or disk."""
-    # Check memory first
     cache_key = f"user:{user_id}"
     if cache_key in _style_dossier_cache:
-        print(f"✅ Dossiê de estilo carregado do cache (user {user_id[:8]})")
         return _style_dossier_cache[cache_key]
-    
-    # Try disk
     try:
         path = _get_dossier_path(user_id)
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 dossier = json.load(f)
             _style_dossier_cache[cache_key] = dossier
-            print(f"✅ Dossiê de estilo carregado do disco (user {user_id[:8]})")
             return dossier
     except Exception as e:
         print(f"⚠️ Erro ao carregar dossiê do disco: {e}")
-    
     return None
 
 
@@ -1409,55 +1418,130 @@ P.R.I.
 """
 
 
-def _save_template_store(user_id: str = "default"):
-    """Persist template store for a specific user to JSON file."""
+# ── Supabase-backed save/load (primary) with local JSON fallback ─────────
+
+def _save_template_store(user_id: str = "default", token: str = ""):
+    """Persist template store: try Supabase first, then local JSON fallback."""
+    user_data = _template_store.get(user_id, [])
+    
+    # Strategy 1: Supabase REST
+    if _SUPA_URL and _SUPA_ANON_KEY and token:
+        try:
+            # Delete existing chunks for this user, then insert new ones
+            del_url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_SUPA_TABLE}?user_id=eq.{user_id}"
+            _requests_lib.delete(del_url, headers=_supa_headers(token), timeout=10)
+            
+            if user_data:
+                # Batch insert (Supabase accepts array of objects)
+                rows = []
+                for chunk in user_data:
+                    rows.append({
+                        "user_id": user_id,
+                        "source": chunk.get("metadata", {}).get("source", "unknown"),
+                        "text": chunk["text"],
+                        "upload_date": chunk.get("metadata", {}).get("upload_date", None),
+                    })
+                
+                # Insert in batches of 100 to avoid payload limits
+                BATCH_SIZE = 100
+                for i in range(0, len(rows), BATCH_SIZE):
+                    batch = rows[i:i + BATCH_SIZE]
+                    ins_url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_SUPA_TABLE}"
+                    resp = _requests_lib.post(ins_url, json=batch, headers=_supa_headers(token), timeout=15)
+                    if not resp.ok:
+                        print(f"⚠️ Supabase insert batch {i//BATCH_SIZE+1} failed ({resp.status_code}): {resp.text[:200]}")
+                        raise Exception(f"Supabase insert failed: {resp.status_code}")
+                
+                print(f"💾 Templates salvos no Supabase: {len(user_data)} chunks (user {user_id[:8]})")
+                return
+            else:
+                print(f"💾 Templates limpos no Supabase (user {user_id[:8]})")
+                return
+        except Exception as e:
+            print(f"⚠️ Supabase save failed, falling back to local: {e}")
+    
+    # Strategy 2: Local JSON fallback
     try:
         path = _get_template_store_path(user_id)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        user_data = _template_store.get(user_id, [])
         with open(path, "w", encoding="utf-8") as f:
             json.dump(user_data, f, ensure_ascii=False)
-        print(f"💾 Template store salvo: {path} ({len(user_data)} chunks, {os.path.getsize(path)} bytes)")
+        print(f"💾 Templates salvos localmente: {path} ({len(user_data)} chunks)")
     except Exception as e:
-        print(f"❌ ERRO ao salvar template store para user {user_id[:8]}: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ ERRO ao salvar templates: {e}")
 
 
-def _load_template_store(user_id: str = "default"):
-    """Load template store for a specific user from JSON file."""
+def _load_template_store(user_id: str = "default", token: str = ""):
+    """Load template store: try Supabase first, then local JSON fallback."""
     global _template_store
+    
+    # Strategy 1: Supabase REST
+    if _SUPA_URL and _SUPA_ANON_KEY and token:
+        try:
+            url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_SUPA_TABLE}?user_id=eq.{user_id}&select=source,text,upload_date"
+            resp = _requests_lib.get(url, headers=_supa_headers(token), timeout=10)
+            if resp.ok:
+                rows = resp.json()
+                if rows:
+                    _template_store[user_id] = [
+                        {"text": r["text"], "metadata": {"source": r["source"], "upload_date": r.get("upload_date", "")}}
+                        for r in rows
+                    ]
+                    print(f"✅ Templates carregados do Supabase: {len(rows)} chunks (user {user_id[:8]})")
+                    return
+                else:
+                    print(f"📭 Nenhum template no Supabase para user {user_id[:8]}")
+                    _template_store[user_id] = []
+                    return
+            else:
+                print(f"⚠️ Supabase load failed ({resp.status_code}): {resp.text[:200]}")
+        except Exception as e:
+            print(f"⚠️ Supabase load failed, trying local: {e}")
+    
+    # Strategy 2: Local JSON fallback
     try:
         path = _get_template_store_path(user_id)
-        print(f"📂 Tentando carregar templates de: {path} (existe: {os.path.exists(path)})")
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 _template_store[user_id] = json.load(f)
             print(f"✅ Templates carregados do disco: {len(_template_store[user_id])} chunks (user {user_id[:8]})")
             return
-        # Migration: if user-specific file doesn't exist, try legacy global path
         if user_id != "default" and os.path.exists(_TEMPLATE_STORE_PATH):
             with open(_TEMPLATE_STORE_PATH, "r", encoding="utf-8") as f:
                 legacy_data = json.load(f)
             if legacy_data:
-                print(f"🔄 Migrando templates globais para user {user_id[:8]}...")
+                print(f"🔄 Migrando templates legados para user {user_id[:8]}...")
                 _template_store[user_id] = legacy_data
-                _save_template_store(user_id)
+                _save_template_store(user_id, token)
                 return
-        print(f"📭 Nenhum template encontrado no disco para user {user_id[:8]}")
         _template_store[user_id] = []
     except Exception as e:
-        print(f"❌ ERRO ao carregar template store para user {user_id[:8]}: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ ERRO ao carregar templates: {e}")
         _template_store[user_id] = []
 
 
-def process_templates(files, api_key, collection_name="rag_templates_persistent", user_id="default"):
+def _delete_templates_supabase(user_id: str, source: str = "", token: str = "") -> bool:
+    """Delete templates from Supabase. If source is given, deletes only that source. Returns True on success."""
+    if not (_SUPA_URL and _SUPA_ANON_KEY and token):
+        return False
+    try:
+        url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_SUPA_TABLE}?user_id=eq.{user_id}"
+        if source:
+            url += f"&source=eq.{source}"
+        resp = _requests_lib.delete(url, headers=_supa_headers(token), timeout=10)
+        if resp.ok:
+            print(f"🗑️ Templates deletados do Supabase (user {user_id[:8]}, source={source or 'ALL'})")
+            return True
+        print(f"⚠️ Supabase delete failed ({resp.status_code}): {resp.text[:200]}")
+    except Exception as e:
+        print(f"⚠️ Supabase delete error: {e}")
+    return False
+
+
+def process_templates(files, api_key, collection_name="rag_templates_persistent", user_id="default", token=""):
     """
     Processa arquivos de template (PDF/DOCX/TXT) e cria um retriever.
-    100% local — sem ChromaDB, sem embeddings, sem chamadas de API.
-    Indexação instantânea (~0.1s). Per-user storage.
+    100% local chunking. Persists to Supabase (or local JSON fallback).
     """
     import time as _time
     t0 = _time.time()
@@ -1497,28 +1581,24 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
     if not documents:
         return None, []
 
-    # Store in memory + persist to JSON (instant, no API calls) — per-user
+    # Store in memory cache
     _template_store[user_id] = [
         {"text": doc.page_content, "metadata": doc.metadata}
         for doc in documents
     ]
-    _save_template_store(user_id)
+    # Persist (Supabase or local JSON)
+    _save_template_store(user_id, token)
     
-    store_path = _get_template_store_path(user_id)
-    print(f"✅ RAG indexado (user {user_id[:8]}): {len(documents)} chunks em {_time.time()-t0:.1f}s (100% local, sem API)")
-    print(f"   📁 Salvo em: {store_path} (existe: {os.path.exists(store_path)})")
+    print(f"✅ RAG indexado (user {user_id[:8]}): {len(documents)} chunks em {_time.time()-t0:.1f}s")
     return SimpleRetriever(_template_store[user_id]), documents
 
 
-def load_persistent_rag(api_key=None, collection_name="rag_templates_persistent", user_id="default"):
-    """
-    Carrega templates persistidos (JSON) para um usuário específico.
-    Sem ChromaDB, sem embeddings.
-    """
+def load_persistent_rag(api_key=None, collection_name="rag_templates_persistent", user_id="default", token=""):
+    """Load persisted templates for RAG retrieval."""
     global _template_store
     try:
         if user_id not in _template_store or not _template_store[user_id]:
-            _load_template_store(user_id)
+            _load_template_store(user_id, token)
         user_store = _template_store.get(user_id, [])
         if user_store:
             print(f"RAG Persistente carregado (user {user_id[:8]}): {len(user_store)} chunks.")
@@ -1527,14 +1607,13 @@ def load_persistent_rag(api_key=None, collection_name="rag_templates_persistent"
         print(f"Erro ao carregar RAG persistente para user {user_id[:8]}: {e}")
     return None
 
-def list_templates(user_id: str = "default") -> list[dict]:
+def list_templates(user_id: str = "default", token: str = "") -> list[dict]:
     """List all template files for a user, grouped by source filename."""
     global _template_store
     if user_id not in _template_store or not _template_store[user_id]:
-        _load_template_store(user_id)
+        _load_template_store(user_id, token)
     user_store = _template_store.get(user_id, [])
     
-    # Group chunks by source filename
     sources: dict[str, dict] = {}
     for chunk in user_store:
         source = chunk.get("metadata", {}).get("source", "desconhecido")
@@ -1551,11 +1630,11 @@ def list_templates(user_id: str = "default") -> list[dict]:
     return list(sources.values())
 
 
-def delete_template_by_source(user_id: str, source_name: str) -> int:
+def delete_template_by_source(user_id: str, source_name: str, token: str = "") -> int:
     """Delete all chunks from a specific source file. Returns count of removed chunks."""
     global _template_store
     if user_id not in _template_store or not _template_store[user_id]:
-        _load_template_store(user_id)
+        _load_template_store(user_id, token)
     
     user_store = _template_store.get(user_id, [])
     original_count = len(user_store)
@@ -1567,16 +1646,19 @@ def delete_template_by_source(user_id: str, source_name: str) -> int:
     
     removed = original_count - len(_template_store[user_id])
     if removed > 0:
-        _save_template_store(user_id)
+        # Supabase: delete specific source
+        _delete_templates_supabase(user_id, source_name, token)
+        # Local fallback
+        _save_template_store(user_id, token)
     
     return removed
 
 
-def search_templates(user_id: str, query: str, k: int = 5) -> list[dict]:
-    """Search user's templates using keyword overlap retriever. Returns top-k results."""
+def search_templates(user_id: str, query: str, k: int = 5, token: str = "") -> list[dict]:
+    """Search user's templates using TF-IDF retriever. Returns top-k results."""
     global _template_store
     if user_id not in _template_store or not _template_store[user_id]:
-        _load_template_store(user_id)
+        _load_template_store(user_id, token)
     user_store = _template_store.get(user_id, [])
     if not user_store:
         return []

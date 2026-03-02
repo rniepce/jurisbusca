@@ -349,7 +349,8 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
             if has_history:
                 # ── FASE 3: User has responded — inject RAG models + dossiê ──
                 try:
-                    rag_retriever = be.load_persistent_rag(collection_name="rag_templates_persistent", user_id=user_id)
+                    token = _get_user_token(request)
+                    rag_retriever = be.load_persistent_rag(collection_name="rag_templates_persistent", user_id=user_id, token=token)
                     if rag_retriever:
                         # Extract legal themes for smart query (instead of raw text)
                         themes_query = be.extract_legal_themes(req.uploaded_text)
@@ -952,7 +953,7 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
             op_key = os.getenv("AZURE_OPENAI_API_KEY", "")
             if op_key:
                 try:
-                    rag_retriever = be.load_persistent_rag(collection_name=collection_name, user_id=user_id)
+                    rag_retriever = be.load_persistent_rag(collection_name=collection_name, user_id=user_id, token=_get_user_token(request))
                     if rag_retriever:
                         relevant_docs = rag_retriever.invoke(text[:6000])
                         if relevant_docs:
@@ -1069,11 +1070,12 @@ async def cluster_analyze(
 
 @app.post("/api/templates")
 async def upload_templates(
+    request: Request,
     files: list[UploadFile] = File(...),
     user_id: str = Depends(get_current_user)
 ):
     """
-    Upload and index template files in ChromaDB for persistent RAG.
+    Upload and index template files for persistent RAG (Supabase + local fallback).
     Also auto-generates the style dossier.
     """
     import io
@@ -1081,6 +1083,8 @@ async def upload_templates(
     try:
         import time as _time
         import asyncio
+
+        token = _get_user_token(request)
 
         # Convert UploadFiles into file-like objects
         file_objects = []
@@ -1091,11 +1095,11 @@ async def upload_templates(
             buf.seek(0)
             file_objects.append(buf)
 
-        # 1. Index templates (100% local — no ChromaDB, no embeddings)
+        # 1. Index templates (chunking is local; persistence via Supabase)
         t0 = _time.time()
         collection_name = "rag_templates_persistent"
         print(f"📥 Upload templates: user={user_id[:8]}, files={[f.name for f in file_objects]}")
-        retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name, user_id=user_id)
+        retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name, user_id=user_id, token=token)
         indexed_count = len(docs) if docs else 0
         print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks para user {user_id[:8]})")
 
@@ -1140,11 +1144,12 @@ async def upload_templates(
 
 
 @app.get("/api/templates/status")
-async def templates_status(user_id: str = Depends(get_current_user)):
+async def templates_status(request: Request, user_id: str = Depends(get_current_user)):
     """Check how many templates are indexed for the current user."""
     try:
+        token = _get_user_token(request)
         if user_id not in be._template_store or not be._template_store.get(user_id):
-            be._load_template_store(user_id)
+            be._load_template_store(user_id, token)
         count = len(be._template_store.get(user_id, []))
         has_dossier = len(be._style_dossier_cache) > 0
         return {"indexed_chunks": count, "has_dossier": has_dossier}
@@ -1153,12 +1158,15 @@ async def templates_status(user_id: str = Depends(get_current_user)):
 
 
 @app.delete("/api/templates")
-async def clear_templates(user_id: str = Depends(get_current_user)):
+async def clear_templates(request: Request, user_id: str = Depends(get_current_user)):
     """Clear all indexed templates for the current user."""
     try:
-        # Clear only this user's templates
+        token = _get_user_token(request)
+        # Clear from Supabase
+        be._delete_templates_supabase(user_id, token=token)
+        # Clear from memory
         be._template_store.pop(user_id, None)
-        # Remove persisted JSON for this user
+        # Remove persisted JSON for this user (local fallback)
         user_path = be._get_template_store_path(user_id)
         if os.path.exists(user_path):
             os.remove(user_path)
@@ -1171,10 +1179,11 @@ async def clear_templates(user_id: str = Depends(get_current_user)):
 
 
 @app.get("/api/templates/list")
-async def list_templates(user_id: str = Depends(get_current_user)):
+async def list_templates(request: Request, user_id: str = Depends(get_current_user)):
     """List all template files for the current user with metadata."""
     try:
-        templates = be.list_templates(user_id)
+        token = _get_user_token(request)
+        templates = be.list_templates(user_id, token)
         return {"templates": templates, "total": len(templates)}
     except Exception as e:
         traceback.print_exc()
@@ -1182,15 +1191,15 @@ async def list_templates(user_id: str = Depends(get_current_user)):
 
 
 @app.delete("/api/templates/{filename:path}")
-async def delete_single_template(filename: str, user_id: str = Depends(get_current_user)):
+async def delete_single_template(filename: str, request: Request, user_id: str = Depends(get_current_user)):
     """Delete a specific template file by source filename."""
     try:
-        removed = be.delete_template_by_source(user_id, filename)
+        token = _get_user_token(request)
+        removed = be.delete_template_by_source(user_id, filename, token)
         if removed == 0:
             raise HTTPException(status_code=404, detail=f"Modelo '{filename}' não encontrado.")
         
-        # Update remaining count
-        remaining = be.list_templates(user_id)
+        remaining = be.list_templates(user_id, token)
         return {
             "status": "ok",
             "removed_chunks": removed,
@@ -1208,7 +1217,7 @@ class TemplateAskRequest(BaseModel):
 
 
 @app.post("/api/templates/ask")
-async def templates_ask(req: TemplateAskRequest, user_id: str = Depends(get_current_user)):
+async def templates_ask(req: TemplateAskRequest, request: Request, user_id: str = Depends(get_current_user)):
     """
     RAG: busca nos templates do usuário + resumo por LLM.
     Similar ao /api/jurisprudencia/ask mas para os modelos de decisão do usuário.
@@ -1217,8 +1226,9 @@ async def templates_ask(req: TemplateAskRequest, user_id: str = Depends(get_curr
         raise HTTPException(status_code=400, detail="Parâmetro 'query' é obrigatório.")
 
     try:
+        token = _get_user_token(request)
         # 1. Search user's templates
-        results = be.search_templates(user_id, req.query, k=5)
+        results = be.search_templates(user_id, req.query, k=5, token=token)
         if not results:
             return {
                 "summary": f"Nenhum trecho relevante encontrado em seus modelos para: \"{req.query}\". Faça upload de modelos de decisão primeiro.",
@@ -1276,15 +1286,16 @@ async def templates_ask(req: TemplateAskRequest, user_id: str = Depends(get_curr
 # ── Template Jurisprudence Verification ───────────────────────────────────────
 
 @app.post("/api/templates/extract-themes")
-async def extract_themes(user_id: str = Depends(get_current_user)):
+async def extract_themes(request: Request, user_id: str = Depends(get_current_user)):
     """
     LLM reads user's templates and extracts the main legal themes.
     Returns a list of themes with titles and descriptions.
     """
     try:
+        token = _get_user_token(request)
         # Get user's template chunks
         if user_id not in be._template_store or not be._template_store.get(user_id):
-            be._load_template_store(user_id)
+            be._load_template_store(user_id, token)
         user_store = be._template_store.get(user_id, [])
 
         if not user_store:
@@ -1364,7 +1375,7 @@ class VerifyThemeRequest(BaseModel):
 
 
 @app.post("/api/templates/verify-theme")
-async def verify_theme(req: VerifyThemeRequest, user_id: str = Depends(get_current_user)):
+async def verify_theme(req: VerifyThemeRequest, request: Request, user_id: str = Depends(get_current_user)):
     """
     For a given theme:
     1. Search user's templates for relevant excerpts
@@ -1376,9 +1387,10 @@ async def verify_theme(req: VerifyThemeRequest, user_id: str = Depends(get_curre
 
     try:
         from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
+        token = _get_user_token(request)
 
         # 1. Get relevant template excerpts
-        template_results = be.search_templates(user_id, req.theme, k=3)
+        template_results = be.search_templates(user_id, req.theme, k=3, token=token)
         template_context = ""
         if template_results:
             parts = []
