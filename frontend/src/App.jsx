@@ -569,17 +569,15 @@ function MainApp() {
           console.warn('Could not load auditor QA prompt for auto-review');
         }
 
-        // Build the sandwich audit message
+        // Build audit message — process text is already injected by the backend
+        // via uploadedText, so we only send the minuta here to avoid redundancy
         const auditMessage = [
-          'Execute a auditoria de conformidade cruzando os textos abaixo.',
-          '',
-          '[DADOS DO PROCESSO]:',
-          uploadedText,
+          'Execute a auditoria de conformidade. Os dados do processo já estão no contexto (enviados anteriormente).',
           '',
           '[MINUTA PROPOSTA]:',
           content,
           '',
-          'Execute a auditoria de conformidade cruzando os textos acima. Gere o Dashboard de Conformidade completo.',
+          'Cruze a minuta acima com os dados do processo já carregados. Gere o Dashboard de Conformidade completo.',
         ].join('\n');
 
         // Send using the current model but with the QA prompt
