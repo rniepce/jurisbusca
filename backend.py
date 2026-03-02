@@ -1185,36 +1185,225 @@ _TEMPLATE_STORE_PATH = os.path.join(_TEMPLATE_STORE_BASE, "templates.json")
 
 
 class SimpleRetriever:
-    """Lightweight retriever using keyword overlap (BM25-style). No embeddings needed."""
+    """Retriever using TF-IDF cosine similarity. Falls back to keyword overlap if sklearn unavailable."""
+    
+    # Portuguese stopwords for legal text
+    _STOP_WORDS_PT = {
+        'a', 'o', 'e', 'de', 'do', 'da', 'dos', 'das', 'em', 'no', 'na', 'nos', 'nas',
+        'um', 'uma', 'uns', 'umas', 'ao', 'aos', 'à', 'às', 'por', 'para', 'com', 'sem',
+        'que', 'se', 'não', 'mais', 'como', 'mas', 'ou', 'quando', 'muito', 'já', 'também',
+        'só', 'seu', 'sua', 'seus', 'suas', 'esse', 'essa', 'esses', 'essas', 'este', 'esta',
+        'estes', 'estas', 'isso', 'isto', 'aquele', 'aquela', 'aqueles', 'aquelas', 'aquilo',
+        'ele', 'ela', 'eles', 'elas', 'meu', 'minha', 'nós', 'vós', 'ter', 'ser', 'estar',
+        'foi', 'são', 'será', 'seria', 'tem', 'tinha', 'entre', 'sobre', 'após', 'até',
+        'pelo', 'pela', 'pelos', 'pelas', 'qual', 'quais', 'onde', 'quem', 'porque',
+        'ainda', 'mesmo', 'pode', 'deve', 'assim', 'bem', 'todo', 'toda', 'todos', 'todas',
+        'cada', 'outro', 'outra', 'outros', 'outras', 'parte', 'forma', 'conforme',
+    }
     
     def __init__(self, docs: list[dict], k: int = 5):
         self.docs = docs
         self.k = k
+        self._tfidf_matrix = None
+        self._vectorizer = None
+        self._build_index()
+    
+    def _build_index(self):
+        """Pre-compute TF-IDF matrix if sklearn is available."""
+        if not self.docs:
+            return
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            self._vectorizer = TfidfVectorizer(
+                max_features=8000,
+                stop_words=list(self._STOP_WORDS_PT),
+                ngram_range=(1, 2),  # unigrams + bigrams for legal terms
+                sublinear_tf=True,
+            )
+            corpus = [d["text"] for d in self.docs]
+            self._tfidf_matrix = self._vectorizer.fit_transform(corpus)
+            print(f"📊 TF-IDF index built: {len(corpus)} docs, {self._tfidf_matrix.shape[1]} features")
+        except ImportError:
+            print("⚠️ sklearn não disponível. Usando fallback keyword overlap.")
+            self._vectorizer = None
+            self._tfidf_matrix = None
     
     def invoke(self, query: str) -> list:
-        """Return top-k documents ranked by keyword overlap with query."""
+        """Return top-k documents ranked by TF-IDF cosine similarity (or keyword fallback)."""
         if not self.docs:
             return []
         
-        # Simple keyword scoring: count shared words between query and doc
-        query_words = set(query.lower().split())
+        from langchain_core.documents import Document
+        scored_docs = self._score(query)
+        
+        results = []
+        for score, doc_dict in scored_docs[:self.k]:
+            doc = Document(
+                page_content=doc_dict["text"],
+                metadata={**doc_dict.get("metadata", {}), "relevance_score": round(score, 4)}
+            )
+            results.append(doc)
+        return results
+    
+    def invoke_scored(self, query: str) -> list[tuple]:
+        """Return top-k as (score, Document) tuples for quality-aware injection."""
+        if not self.docs:
+            return []
+        
+        from langchain_core.documents import Document
+        scored_docs = self._score(query)
+        
+        results = []
+        for score, doc_dict in scored_docs[:self.k]:
+            doc = Document(
+                page_content=doc_dict["text"],
+                metadata={**doc_dict.get("metadata", {}), "relevance_score": round(score, 4)}
+            )
+            results.append((round(score, 4), doc))
+        return results
+    
+    def _score(self, query: str) -> list[tuple]:
+        """Score all docs against query. Returns sorted list of (score, doc_dict)."""
+        if self._tfidf_matrix is not None and self._vectorizer is not None:
+            return self._score_tfidf(query)
+        return self._score_keyword(query)
+    
+    def _score_tfidf(self, query: str) -> list[tuple]:
+        """TF-IDF cosine similarity scoring."""
+        from sklearn.metrics.pairwise import cosine_similarity
+        query_vec = self._vectorizer.transform([query])
+        scores = cosine_similarity(query_vec, self._tfidf_matrix).flatten()
+        scored = [(scores[i], self.docs[i]) for i in range(len(self.docs))]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored
+    
+    def _score_keyword(self, query: str) -> list[tuple]:
+        """Fallback: keyword overlap scoring."""
+        query_words = set(query.lower().split()) - self._STOP_WORDS_PT
         scored = []
         for doc_dict in self.docs:
-            doc_words = set(doc_dict["text"].lower().split())
+            doc_words = set(doc_dict["text"].lower().split()) - self._STOP_WORDS_PT
+            if not query_words or not doc_words:
+                scored.append((0.0, doc_dict))
+                continue
             overlap = len(query_words & doc_words)
-            scored.append((overlap, doc_dict))
-        
+            # Normalize by query size for comparable scores
+            score = overlap / max(len(query_words), 1)
+            scored.append((score, doc_dict))
         scored.sort(key=lambda x: x[0], reverse=True)
-        
-        # Convert to LangChain Document format for compatibility
-        from langchain_core.documents import Document
-        results = []
-        for _, doc_dict in scored[:self.k]:
-            results.append(Document(
-                page_content=doc_dict["text"],
-                metadata=doc_dict.get("metadata", {})
-            ))
-        return results
+        return scored
+
+
+# ── Theme extraction for intelligent RAG queries ──────────────────────────
+
+def extract_legal_themes(process_text: str) -> str:
+    """
+    Extracts 3-5 core legal themes from a process text using a fast LLM.
+    Used as query for model search instead of raw text.
+    Returns a concise theme string for retriever queries.
+    """
+    try:
+        llm = get_llm("gpt-4.1-mini", temperature=0.0, max_tokens=200)
+        messages = [
+            SystemMessage(content=(
+                "Você é um classificador jurídico. Dado o texto de um processo, extraia os 3 a 5 temas jurídicos centrais "
+                "em palavras-chave objetivas, separadas por vírgula. Responda APENAS com as palavras-chave, sem explicação.\n"
+                "Exemplos de saída: 'dano moral, relação de consumo, atraso de voo, indenização'\n"
+                "'contrato de compra e venda, inadimplemento, rescisão contratual, restituição de valores'"
+            )),
+            HumanMessage(content=process_text[:4000])  # Use first 4k chars
+        ]
+        response = llm.invoke(messages)
+        themes = safe_content(response).strip()
+        print(f"🏷️ Temas jurídicos extraídos: {themes}")
+        return themes
+    except Exception as e:
+        print(f"⚠️ Erro na extração de temas: {e}")
+        # Fallback: use first 500 chars as query
+        return process_text[:500]
+
+
+# ── Per-user style dossier persistence ──────────────────────────────────
+
+def _get_dossier_path(user_id: str) -> str:
+    """Get path for user's style dossier JSON file."""
+    base = os.environ.get("CHROMA_DB_PATH", "./chroma_store")
+    return os.path.join(base, f"user_{user_id}", "style_dossier.json")
+
+
+def save_style_dossier(user_id: str, dossier: dict):
+    """Persist style dossier to disk for a user."""
+    try:
+        path = _get_dossier_path(user_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dossier, f, ensure_ascii=False)
+        # Also keep in memory cache
+        _style_dossier_cache[f"user:{user_id}"] = dossier
+        print(f"💾 Dossiê de estilo salvo para user {user_id[:8]} ({len(dossier.get('dossier', ''))} chars)")
+    except Exception as e:
+        print(f"⚠️ Erro ao salvar dossiê: {e}")
+
+
+def load_style_dossier(user_id: str) -> dict:
+    """Load style dossier from memory cache or disk."""
+    # Check memory first
+    cache_key = f"user:{user_id}"
+    if cache_key in _style_dossier_cache:
+        print(f"✅ Dossiê de estilo carregado do cache (user {user_id[:8]})")
+        return _style_dossier_cache[cache_key]
+    
+    # Try disk
+    try:
+        path = _get_dossier_path(user_id)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                dossier = json.load(f)
+            _style_dossier_cache[cache_key] = dossier
+            print(f"✅ Dossiê de estilo carregado do disco (user {user_id[:8]})")
+            return dossier
+    except Exception as e:
+        print(f"⚠️ Erro ao carregar dossiê do disco: {e}")
+    
+    return None
+
+
+# ── Sentence template for fallback (injected only when no RAG models) ──
+
+TEMPLATE_SENTENCA_PADRAO = """
+## TEMPLATE PADRÃO DE SENTENÇA (Art. 489 CPC)
+Use esta estrutura APENAS se não houver modelos do magistrado disponíveis.
+
+**RELATÓRIO**
+Trata-se de Ação [Natureza] ajuizada por [Autor] em face de [Réu].
+Narra a parte autora, em síntese, que [causa de pedir]. Requer [pedidos]. Juntou documentos (ID X).
+[Se liminar]: A tutela provisória foi [deferida/indeferida] em ID X.
+Citado(a) (ID X), o(a) réu apresentou contestação (ID Y), arguindo [preliminares]. No mérito, sustenta que [defesa].
+[Se réplica]: Houve réplica em ID Z.
+É o relatório. Decido.
+
+**FUNDAMENTAÇÃO**
+
+**I. Questões Processuais e Preliminares**
+[Análise de cada preliminar com acolhimento/rejeição fundamentada]
+
+**II. Prejudiciais de Mérito**
+[Se prescrição/decadência: análise cronológica]
+
+**III. Mérito**
+[Desenvolvimento analítico de cada ponto controvertido com fundamentação legal]
+
+**DISPOSITIVO**
+Ante o exposto, e por tudo mais que dos autos consta:
+**JULGO [PROCEDENTE/IMPROCEDENTE/PARCIALMENTE PROCEDENTE]** o(s) pedido(s), com resolução de mérito (art. 487, I, CPC), para:
+1. [Condenação/Obrigação/Rejeição]
+
+**Sucumbência:**
+Condeno a parte [vencida] ao pagamento das custas e honorários advocatícios, fixados em [%] sobre o valor [da condenação/da causa] (art. 85, §2º, CPC).
+[Se JG]: Suspendo a exigibilidade (art. 98, §3º, CPC).
+
+P.R.I.
+"""
 
 
 def _save_template_store(user_id: str = "default"):

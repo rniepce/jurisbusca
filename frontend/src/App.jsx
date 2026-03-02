@@ -37,7 +37,7 @@ function MainApp() {
   const [ragStatus, setRagStatus] = useState(null);
   const [batchResults, setBatchResults] = useState([]);
   const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
-  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: agentDefinitions[0]?.engineId || 'v0', name: agentDefinitions[0]?.name || 'Gabinete 1.0', color: agentDefinitions[0]?.color || '#10B981', llm: 'gpt-5.2-chat' });
+  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: agentDefinitions[0]?.engineId || 'v1', name: agentDefinitions[0]?.name || 'Gabinete 2.0', color: agentDefinitions[0]?.color || '#10B981', llm: 'gpt-5.2-chat' });
   const [showJurisprudencia, setShowJurisprudencia] = useState(false);
   const [showModelManager, setShowModelManager] = useState(false);
   // Jurisprudence toggle state — always enabled
@@ -124,15 +124,10 @@ function MainApp() {
           console.warn('Could not load agent prompt');
         }
       } else if (['v0', 'v1', 'v2'].includes(engineId)) {
-        // No agent selected but engine known — auto-load prompt
+        // No agent selected but engine known — auto-load unified prompt
         try {
-          if (engineId === 'v0') {
-            const mod = await import('./prompts/gabineteCivelV0.js');
-            agentPrompt = mod.default || null;
-          } else {
-            const mod = await import('./prompts/gabineteCivel.js');
-            agentPrompt = mod.default || null;
-          }
+          const mod = await import('./prompts/gabineteCivelV2.js');
+          agentPrompt = mod.default || null;
         } catch {
           console.warn('Could not auto-load Gabinete prompt');
         }
@@ -164,6 +159,7 @@ function MainApp() {
         content: typeof rawResponse === 'string' ? rawResponse : String(rawResponse),
         model: result.model,
         v2Sections: result.v2_sections || null,
+        modelContext: result.model_context || null,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {

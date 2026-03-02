@@ -328,36 +328,96 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
                 f"{req.jurisprudence_context}\n---"
             )
 
-        # ── Auto RAG: retrieve mirror context from persisted templates (per-user) ──
+        # ── Phase-aware RAG: inject model context only when needed ──────
+        # Phase 1 (Raio-X): No history → lightweight, just process text
+        # Phase 3 (Minuta): User responded to deliberation → inject RAG + dossiê
+        model_context_meta = {"mirror_used": False, "mirror_source": None, "match_quality": None, "dossier_used": False}
+        
         if req.uploaded_text:
-            try:
-                if True:  # Templates use local storage, no API key needed
-                    collection_name = "rag_templates_persistent"
-                    rag_retriever = be.load_persistent_rag(collection_name=collection_name, user_id=user_id)
+            has_history = len(past_messages) >= 2  # At least 1 assistant + 1 user response
+            
+            if has_history:
+                # ── FASE 3: User has responded — inject RAG models + dossiê ──
+                try:
+                    rag_retriever = be.load_persistent_rag(collection_name="rag_templates_persistent", user_id=user_id)
                     if rag_retriever:
-                        # Search for similar cases
-                        relevant_docs = rag_retriever.invoke(req.uploaded_text[:6000])
-                        if relevant_docs:
-                            mirror_doc = relevant_docs[0]
+                        # Extract legal themes for smart query (instead of raw text)
+                        themes_query = be.extract_legal_themes(req.uploaded_text)
+                        
+                        # Search with scores for quality-aware injection
+                        scored_results = rag_retriever.invoke_scored(themes_query)
+                        
+                        if scored_results and scored_results[0][0] > 0.05:
+                            top_score, mirror_doc = scored_results[0]
+                            mirror_source = mirror_doc.metadata.get('source', '?')
+                            
+                            # Determine match quality
+                            if top_score > 0.25:
+                                quality = "alta"
+                                quality_label = "GABARITO ESTRUTURAL E JURÍDICO"
+                            elif top_score > 0.12:
+                                quality = "media"
+                                quality_label = "REFERÊNCIA ESTRUTURAL E DE ESTILO"
+                            else:
+                                quality = "baixa"
+                                quality_label = "REFERÊNCIA DE ESTILO APENAS"
+                            
+                            model_context_meta = {
+                                "mirror_used": True,
+                                "mirror_source": mirror_source,
+                                "match_quality": quality,
+                                "match_score": top_score,
+                                "dossier_used": False
+                            }
+                            
                             rag_block = (
-                                f"\n\n---\n💎 **CASO ESPELHO (GOLDEN SAMPLE - MODELO MAIS SIMILAR):**\n"
-                                f"⚠️ O caso abaixo ({mirror_doc.metadata.get('source', '?')}) é o seu GABARITO ESTRUTURAL.\n"
-                                f"1. Copie a estrutura de tópicos (titulação, numeração).\n"
-                                f"2. Se for o mesmo assunto, adapte apenas os fatos e nomes, mantendo a fundamentação jurídica.\n\n"
-                                f"--- INÍCIO DO CASO ESPELHO ---\n{mirror_doc.page_content}\n--- FIM DO CASO ESPELHO ---\n"
+                                f"\n\n---\n💎 **CASO ESPELHO ({quality_label} — Relevância: {quality.upper()}, Score: {top_score:.2f}):**\n"
+                                f"⚠️ Modelo recuperado: `{mirror_source}`\n"
                             )
-                            # Add secondary references
-                            for i, doc in enumerate(relevant_docs[1:3]):
-                                rag_block += f"\n[MODELO SECUNDÁRIO {i+2} - {doc.metadata.get('source', '?')}]:\n{doc.page_content[:3000]}\n"
+                            if quality in ("alta", "media"):
+                                rag_block += (
+                                    "1. Copie a macroestrutura (titulação, numeração, divisões).\n"
+                                    "2. Clone o tom e vocabulário do magistrado.\n"
+                                    "3. Se for o mesmo assunto, adapte apenas fatos e nomes, mantendo a fundamentação jurídica.\n"
+                                )
+                            else:
+                                rag_block += (
+                                    "⚠️ Tema diferente — copie APENAS estilo e estrutura, construa fundamentação nova.\n"
+                                )
+                            rag_block += f"\n--- INÍCIO DO CASO ESPELHO ---\n{mirror_doc.page_content}\n--- FIM DO CASO ESPELHO ---\n"
+                            
+                            # Add secondary models
+                            for i, (sec_score, sec_doc) in enumerate(scored_results[1:3]):
+                                if sec_score > 0.05:
+                                    rag_block += f"\n[MODELO SECUNDÁRIO {i+2} — {sec_doc.metadata.get('source', '?')} (score: {sec_score:.2f})]:\n{sec_doc.page_content[:3000]}\n"
                             rag_block += "---"
                             system_parts.append(rag_block)
-
-                    # Also inject cached style dossier if not already provided
-                    if not req.style_dossier and be._style_dossier_cache:
-                        # Use the first (and usually only) cached dossier
-                        for cached in be._style_dossier_cache.values():
-                            cloning = cached.get('cloning_prompt', '')
-                            glossary = cached.get('glossary', '')
+                            print(f"💎 Modelo espelho injetado: {mirror_source} (score: {top_score:.2f}, quality: {quality})")
+                        else:
+                            # No relevant model found — inject fallback template
+                            system_parts.append(
+                                f"\n\n---\n📝 **NENHUM MODELO DO MAGISTRADO ENCONTRADO NO ACERVO.**\n"
+                                f"Use o template padrão abaixo como estrutura base:\n\n"
+                                f"{be.TEMPLATE_SENTENCA_PADRAO}\n---"
+                            )
+                            print("📝 Nenhum modelo relevante — injetando template padrão")
+                    else:
+                        # No templates at all — inject fallback template
+                        system_parts.append(
+                            f"\n\n---\n📝 **NENHUM MODELO DISPONÍVEL NO ACERVO.**\n"
+                            f"O magistrado não indexou modelos de decisão. Use o template padrão:\n\n"
+                            f"{be.TEMPLATE_SENTENCA_PADRAO}\n---"
+                        )
+                except Exception as e:
+                    print(f"⚠️ Phase 3 RAG retrieval failed (non-blocking): {e}")
+                
+                # ── Inject style dossier (from request, memory cache, or disk) ──
+                if not req.style_dossier:
+                    try:
+                        dossier = be.load_style_dossier(user_id)
+                        if dossier:
+                            cloning = dossier.get('cloning_prompt', '')
+                            glossary = dossier.get('glossary', '')
                             if cloning:
                                 style_block = (
                                     f"\n\n---\n🧬 **SYSTEM PROMPT DE CLONAGEM (ESTILO DO MAGISTRADO):**\n"
@@ -368,9 +428,13 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
                                     style_block += f"\n📝 **GLOSSÁRIO DO MAGISTRADO:**\n{glossary}\n"
                                 style_block += "---"
                                 system_parts.append(style_block)
-                            break
-            except Exception as e:
-                print(f"⚠️ RAG auto-retrieval failed (non-blocking): {e}")
+                                model_context_meta["dossier_used"] = True
+                                print(f"🧬 Dossiê de estilo injetado (user {user_id[:8]})")
+                    except Exception as e:
+                        print(f"⚠️ Style dossier loading failed: {e}")
+            else:
+                # ── FASE 1: First interaction — no RAG needed ──
+                print("🔍 Fase 1 (Raio-X): sem histórico, contexto leve (sem RAG)")
 
         # ── Claude rate-limit guard: truncate to stay under 30K input tokens ──
         # Anthropic Tier 1 allows 30K input tokens/min. ~4 chars ≈ 1 token.
@@ -566,6 +630,7 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
             "conversation_id": conv_id,
             "response": response_text,
             "model": model_name,
+            "model_context": model_context_meta,
         }
         
         # Include V2 structured sections if available
@@ -1032,14 +1097,19 @@ async def upload_templates(
             buf_copy.seek(0)
             dossier_buffers.append(buf_copy)
 
-        async def _gen_dossier_bg(fobjs):
+        async def _gen_dossier_bg(fobjs, uid):
             try:
                 result = await asyncio.to_thread(be.generate_style_dossier, fobjs, None)
-                print(f"✅ Dossiê de estilo gerado em background: {bool(result and not result.get('error'))}")
+                if result and not result.get('error'):
+                    # Persist dossier to disk per-user
+                    be.save_style_dossier(uid, result)
+                    print(f"✅ Dossiê de estilo gerado e salvo para user {uid[:8]}")
+                else:
+                    print(f"⚠️ Dossiê gerado com erro: {result.get('error', '?')}")
             except Exception as e:
                 print(f"⚠️ Erro ao gerar dossiê em background: {e}")
 
-        asyncio.create_task(_gen_dossier_bg(dossier_buffers))
+        asyncio.create_task(_gen_dossier_bg(dossier_buffers, user_id))
 
         return {
             "indexed_chunks": indexed_count,

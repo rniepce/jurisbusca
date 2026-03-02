@@ -259,6 +259,20 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                                     {msg.model && (
                                         <span className="message-model">{msg.model}</span>
                                     )}
+                                    {msg.modelContext?.mirror_used && (
+                                        <span className="model-context-badge" style={{
+                                            '--quality-color': msg.modelContext.match_quality === 'alta' ? '#10B981' : msg.modelContext.match_quality === 'media' ? '#F59E0B' : '#D97706'
+                                        }}>
+                                            📎 Modelo: {msg.modelContext.mirror_source}
+                                            <span className="quality-dot" />
+                                            {msg.modelContext.match_quality}
+                                        </span>
+                                    )}
+                                    {msg.modelContext?.dossier_used && (
+                                        <span className="model-context-badge" style={{ '--quality-color': '#8B5CF6' }}>
+                                            🧬 Estilo clonado do magistrado
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -284,6 +298,20 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                                 )}
                                 {msg.model && (
                                     <span className="message-model">{msg.model}</span>
+                                )}
+                                {msg.modelContext?.mirror_used && (
+                                    <span className="model-context-badge" style={{
+                                        '--quality-color': msg.modelContext.match_quality === 'alta' ? '#10B981' : msg.modelContext.match_quality === 'media' ? '#F59E0B' : '#D97706'
+                                    }}>
+                                        📎 Modelo: {msg.modelContext.mirror_source}
+                                        <span className="quality-dot" />
+                                        {msg.modelContext.match_quality}
+                                    </span>
+                                )}
+                                {msg.modelContext?.dossier_used && (
+                                    <span className="model-context-badge" style={{ '--quality-color': '#8B5CF6' }}>
+                                        🧬 Estilo clonado do magistrado
+                                    </span>
                                 )}
                             </div>
                         </div>
