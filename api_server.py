@@ -785,9 +785,11 @@ def _run_xray_background(task_id: str, file_data: list[tuple[str, bytes]]):
             buf.seek(0)
             file_objects.append(buf)
 
-        _bg_tasks[task_id]["progress"] = f"Analisando {len(file_objects)} processos (MAP-REDUCE)..."
+        # Progress callback — updates task dict so frontend can poll granular status
+        def _xray_progress(msg):
+            _bg_tasks[task_id]["progress"] = msg
 
-        report, text_cache = be.generate_batch_xray(file_objects, None)
+        report, text_cache = be.generate_batch_xray(file_objects, None, progress_callback=_xray_progress)
 
         if isinstance(report, dict) and "error" in report:
             _bg_tasks[task_id]["status"] = "error"

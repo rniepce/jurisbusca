@@ -1666,8 +1666,8 @@ def map_process_individual(text_content, filename, api_key=None):
     """
     import time as _time
 
-    MAX_RETRIES = 5
-    BASE_DELAY = 30  # seconds (Azure S0 asks for 60s, so 30→60→120 covers it)
+    MAX_RETRIES = 3
+    BASE_DELAY = 10  # seconds
 
     for attempt in range(MAX_RETRIES + 1):
         try:
@@ -1703,16 +1703,22 @@ def map_process_individual(text_content, filename, api_key=None):
                 "tags_juridicas": ["ERRO"]
             }
 
-def generate_batch_xray(files, api_key, template_files=None):
+def generate_batch_xray(files, api_key, template_files=None, progress_callback=None):
     """
     Gera o Raio-X da carteira usando estratégia MAP-REDUCE.
-    1. MAP: Extrai metadados de cada processo individualmente (Paralelo).
-    2. REDUCE: Envia lista de metadados para o Gemini agrupar.
+    1. MAP: Extrai metadados de cada processo individualmente (Paralelo via Gemini Flash).
+    2. REDUCE: Envia lista de metadados para o Gemini Flash agrupar.
+    progress_callback: optional callable(msg: str) to report progress.
     """
+    def _progress(msg):
+        if progress_callback:
+            progress_callback(msg)
+        print(f"📊 Raio-X: {msg}")
+
     try:
         # 1. PROCESSAMENTO DE TEXTO (Leitura)
+        _progress("Extraindo texto dos arquivos...")
         raw_texts = []
-        # Precisamos ler os arquivos primeiro. Reutilizando lógica simples do process_batch mas retornando tuplas (nome, texto)
         for file in files:
             suffix = os.path.splitext(file.name)[1].lower()
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
@@ -1749,25 +1755,34 @@ def generate_batch_xray(files, api_key, template_files=None):
         if not raw_texts:
             return {"error": "Nenhum texto extraído."}
 
-        # 2. ETAPA MAP (Execução com paralelismo limitado + stagger)
+        total_files = len(raw_texts)
+        _progress(f"Texto extraído de {total_files} arquivos. Iniciando análise MAP...")
+
+        # 2. ETAPA MAP (Execução com paralelismo otimizado para Azure S0)
         import time as _time
         mapped_data = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        completed_count = 0
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             futures = {}
             for i, (fname, text) in enumerate(raw_texts):
                 if i > 0:
-                    _time.sleep(5)  # Stagger para evitar rate limit (Azure S0)
+                    _time.sleep(2)  # Stagger para respeitar rate limit Azure S0
                 future = executor.submit(map_process_individual, text, fname, api_key)
                 futures[future] = fname
             for future in concurrent.futures.as_completed(futures):
                 try:
                     res = future.result()
                     mapped_data.append(res)
+                    completed_count += 1
+                    _progress(f"Analisando arquivo {completed_count} de {total_files} ({futures[future]})...")
                 except Exception as e:
+                    completed_count += 1
                     print(f"Erro no map thread: {e}")
 
+        _progress(f"MAP concluído ({len(mapped_data)} fichas). Consolidando clusters (REDUCE)...")
+
         # 3. ETAPA REDUCE (Clusterização)
-        # Prepara o JSON consolidado para o Gemini
         mapped_json_str = json.dumps(mapped_data, ensure_ascii=False, indent=2)
         
         # Cria dicionário de cache para retorno {filename: text}
@@ -1776,9 +1791,7 @@ def generate_batch_xray(files, api_key, template_files=None):
         # Prepara Contexto de Modelos (Templates)
         models_context = ""
         if template_files:
-            # Templates também poderiam passar pelo Map-Reduce se fossem muitos, 
-            # mas vamos assumir que são poucos e ler direto.
-            model_texts = process_batch(template_files, api_key) # Reusing legacy function just for text extraction
+            model_texts = process_batch(template_files, api_key)
             if model_texts:
                  models_context = "\n\n## MODELOS DE REFERÊNCIA DISPONÍVEIS:\n" + "\n".join(model_texts)
         
@@ -1792,19 +1805,14 @@ def generate_batch_xray(files, api_key, template_files=None):
         {models_context}
         """
         
-        messages = [
-            SystemMessage(content=PROMPT_XRAY_BATCH),
-            HumanMessage(content=human_msg)
-        ]
-        
-        # Usa GPT-5.2 para agregação de altíssima qualidade (com retry)
+        # Usa GPT-4.1-mini para agregação rápida (com retry)
         MAX_REDUCE_RETRIES = 3
-        REDUCE_BASE_DELAY = 15
+        REDUCE_BASE_DELAY = 10
         content = None
 
         for reduce_attempt in range(MAX_REDUCE_RETRIES + 1):
             try:
-                llm_reduce = get_llm("gpt-5.2-chat", temperature=0.1)
+                llm_reduce = get_llm("gpt-4.1-mini", temperature=0.1)
                 
                 # Força JSON
                 reduce_prompt = PROMPT_XRAY_BATCH + "\n\nCRÍTICO: Retorne APENAS UM JSON VÁLIDO. Sem Markdown, sem formatação extra, inicie com { e termine com }."
@@ -1825,8 +1833,10 @@ def generate_batch_xray(files, api_key, template_files=None):
                     print(f"⚠️ Rate limit (429) no Reduce, retry {reduce_attempt + 1}/{MAX_REDUCE_RETRIES} após {delay}s...")
                     _time.sleep(delay)
                     continue
-                print(f"Erro Crítico no Reduce (GPT-5.2): {e}")
+                print(f"Erro Crítico no Reduce (GPT-4.1-mini): {e}")
                 return {"error": f"Erro na consolidação de dados. Detalhe: {str(e)}", "raw_content": ""}, text_cache
+
+        _progress("Finalizando relatório...")
 
         
         # Garante que content é string (algumas versões retornam lista)

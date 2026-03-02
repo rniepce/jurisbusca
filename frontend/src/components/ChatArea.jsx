@@ -66,7 +66,7 @@ function StyleAnalysisAnimation() {
 }
 
 /** Multi-step animation shown during Raio-X batch processing */
-function XRayProcessingAnimation() {
+function XRayProcessingAnimation({ progress = '' }) {
     const [phase, setPhase] = useState(0);
 
     useEffect(() => {
@@ -77,7 +77,11 @@ function XRayProcessingAnimation() {
     }, []);
 
     const current = XRAY_PHASES[phase];
-    const progress = ((phase + 1) / XRAY_PHASES.length) * 100;
+    const progressPct = ((phase + 1) / XRAY_PHASES.length) * 100;
+
+    // Use live server progress if available, otherwise fall back to static phase text
+    const displayTitle = progress || current.title;
+    const displaySub = progress ? 'Processamento em andamento...' : current.sub;
 
     return (
         <div className="xray-processing-card">
@@ -94,10 +98,10 @@ function XRayProcessingAnimation() {
                     ))}
                     <span className="xray-step-label">Etapa {phase + 1}/{XRAY_PHASES.length}</span>
                 </div>
-                <span className="xray-processing-title" key={`t-${phase}`}>{current.title}</span>
-                <span className="xray-processing-sub" key={`s-${phase}`}>{current.sub}</span>
+                <span className="xray-processing-title" key={`t-${progress || phase}`}>{displayTitle}</span>
+                <span className="xray-processing-sub" key={`s-${progress || phase}`}>{displaySub}</span>
                 <div className="xray-progress-track">
-                    <div className="xray-progress-fill" style={{ width: `${progress}%` }} />
+                    <div className="xray-progress-fill" style={{ width: `${progressPct}%` }} />
                 </div>
             </div>
         </div>
@@ -137,7 +141,7 @@ function V2CollapsibleCard({ icon, title, content }) {
     );
 }
 
-const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, onAutoAction, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, selectedModel }) => {
+const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, selectedModel }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
@@ -340,9 +344,9 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                     </div>
                 )}
 
-                {/* Raio-X Processing Animation — Multi-step */}
+                {/* Raio-X Processing Animation — Multi-step with live progress */}
                 {xrayLoading && (
-                    <XRayProcessingAnimation />
+                    <XRayProcessingAnimation progress={xrayProgress} />
                 )}
 
                 {/* Style Analysis Processing Animation — Multi-step */}

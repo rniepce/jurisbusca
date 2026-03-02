@@ -167,9 +167,10 @@ export async function sendMessage({ message, model, llm, agentPrompt, conversati
 /**
  * Upload multiple files for batch X-Ray clustering analysis.
  * @param {File[]} files
+ * @param {function} [onProgress] - Optional callback for progress updates (receives progress string)
  * @returns {Promise<{report: object, file_count: number}>}
  */
-export async function uploadBatchXray(files) {
+export async function uploadBatchXray(files, onProgress = null) {
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
 
@@ -193,9 +194,9 @@ export async function uploadBatchXray(files) {
     const { task_id } = await safeJson(startRes, 'Raio-X');
     if (!task_id) throw new Error('Raio-X: servidor não retornou task_id.');
 
-    // 2. Poll for results every 3 seconds (max ~10 minutes)
-    const POLL_INTERVAL = 3000;
-    const MAX_POLLS = 200;
+    // 2. Poll for results every 2 seconds (max ~10 minutes)
+    const POLL_INTERVAL = 2000;
+    const MAX_POLLS = 300;
 
     for (let i = 0; i < MAX_POLLS; i++) {
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
@@ -208,6 +209,11 @@ export async function uploadBatchXray(files) {
 
         const data = await safeJson(pollRes, 'Raio-X Poll').catch(() => null);
         if (!data) continue;
+
+        // Propagate progress to caller
+        if (data.progress && onProgress) {
+            onProgress(data.progress);
+        }
 
         if (data.status === 'done') {
             return data.result;

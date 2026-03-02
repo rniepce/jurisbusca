@@ -28,6 +28,7 @@ function MainApp() {
   const [uploadedText, setUploadedText] = useState(null);
   const [xrayReport, setXrayReport] = useState(null);
   const [xrayLoading, setXrayLoading] = useState(false);
+  const [xrayProgress, setXrayProgress] = useState('');
   const [xrayTextCache, setXrayTextCache] = useState({});
   const [ocrProcessing, setOcrProcessing] = useState(false);
   const [ocrEngineName, setOcrEngineName] = useState('none');
@@ -232,9 +233,12 @@ function MainApp() {
     if (files.length < 2) return;
     setXrayLoading(true);
     setXrayReport(null);
+    setXrayProgress('Enviando processos...');
 
     try {
-      const result = await uploadBatchXray(files);
+      const result = await uploadBatchXray(files, (progress) => {
+        setXrayProgress(progress);
+      });
       setXrayReport(result.report);
       setXrayTextCache(result.text_cache || {});
     } catch (err) {
@@ -244,6 +248,7 @@ function MainApp() {
       ]);
     } finally {
       setXrayLoading(false);
+      setXrayProgress('');
     }
   }, []);
 
@@ -390,7 +395,7 @@ function MainApp() {
     }
   }, []);
 
-   // ── Agent selection handler ─────────────────────────────────────────
+  // ── Agent selection handler ─────────────────────────────────────────
   const handleAgentSelect = useCallback((agent) => {
     // Toggle: if the clicked agent is already active, deactivate it
     if (activeAgent?.id === agent.id) {
@@ -419,7 +424,7 @@ function MainApp() {
       agentIcon: agent.icon || 'FaRobot',
       autoAction: agent.autoAction || null,
     };
-    
+
     // Filtra qualquer mensagem de ativação anterior e adiciona a nova
     setMessages((prev) => [
       ...prev.filter((m) => m.role !== 'agent-activation'),
@@ -653,6 +658,7 @@ function MainApp() {
           ocrEngineName={ocrEngineName}
           styleAnalyzing={styleAnalyzing}
           xrayLoading={xrayLoading}
+          xrayProgress={xrayProgress}
           onAutoAction={handleAutoReview}
           jurisResearch={jurisResearch}
           jurisResearchLoading={jurisResearchLoading}
