@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import WelcomeContent from './components/WelcomeContent';
@@ -54,6 +54,10 @@ function MainApp() {
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [shareAgent, setShareAgent] = useState(null); // agent being shared
 
+  // Ref to prevent auto-review from triggering more than once per minuta
+  const autoReviewTriggeredRef = useRef(false);
+  const autoReviewInProgressRef = useRef(false);
+
   // Fetch template/RAG status and custom agents on mount
   useEffect(() => {
     getTemplateStatus().then(setRagStatus).catch(() => { });
@@ -64,7 +68,7 @@ function MainApp() {
   const closeSidebarMobile = () => { if (window.innerWidth <= 768) setSidebarOpen(false); };
 
   // ── Send message handler ────────────────────────────────────────────
-  const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles, useRag = false, { hideUserBubble = false } = {}) => {
+  const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles, useRag = false, { hideUserBubble = false, overridePrompt = null } = {}) => {
     // Use a default prompt if user sends empty message but has context
     const userTyped = message.trim();
     const effectiveMessage = userTyped ||
@@ -109,11 +113,11 @@ function MainApp() {
       // Files are already processed by handleFilesUploaded (auto-OCR),
       // so we just use the uploadedText that was populated earlier.
 
-      // 2. Load agent prompt — derive from activeAgent or fallback by engineId
-      let agentPrompt = null;
+      // 2. Load agent prompt — use overridePrompt if provided (e.g. auto-review QA)
+      let agentPrompt = overridePrompt || null;
       const engineId = selectedModel.id;
 
-      if (activeAgent?.prompt && !activeAgent?.promptModule) {
+      if (!agentPrompt && activeAgent?.prompt && !activeAgent?.promptModule) {
         // Custom agent — use stored prompt directly
         agentPrompt = activeAgent.prompt;
       } else if (activeAgent?.promptModule) {
@@ -525,6 +529,67 @@ function MainApp() {
     await handleSend(auditMessage, globalSelectedModel, [], 'paddle', [], false, { hideUserBubble: true });
   }, [messages, uploadedText, handleSend, globalSelectedModel]);
 
+  // ── Auto-trigger QA review after Gabinete 2.0 generates a minuta ────
+  useEffect(() => {
+    // Guard: only trigger for Gabinete 2.0 agent
+    if (activeAgent?.id !== 'gabinete-2.0') return;
+    // Guard: don't trigger if no uploaded process text
+    if (!uploadedText) return;
+    // Guard: don't trigger while loading or if already triggered
+    if (isLoading || autoReviewTriggeredRef.current || autoReviewInProgressRef.current) return;
+
+    // Find the last assistant message
+    const lastMsg = [...messages].reverse().find(m => m.role === 'assistant');
+    if (!lastMsg || !lastMsg.content) return;
+
+    // Heuristic: a minuta is a long response (> 500 chars) that looks like
+    // a draft (Phase 3 output), not a triagem or deliberation follow-up.
+    // Phase 1 (triagem) ends with "MESA DE DELIBERAÇÃO" — skip those.
+    // Phase 2 (deliberation) responses are typically short Q&A.
+    const content = lastMsg.content;
+    if (content.length < 500) return;
+    if (content.includes('MESA DE DELIBERAÇÃO') || content.includes('AGUARDANDO DIRETRIZES')) return;
+
+    // Check that at least 2 user messages exist (upload + at least one deliberation answer)
+    const userMsgCount = messages.filter(m => m.role === 'user').length;
+    if (userMsgCount < 2) return;
+
+    // Trigger auto-review
+    autoReviewTriggeredRef.current = true;
+    autoReviewInProgressRef.current = true;
+
+    (async () => {
+      try {
+        // Load the QA prompt
+        let qaPrompt = null;
+        try {
+          const mod = await import('./prompts/auditorQA.js');
+          qaPrompt = mod.default || null;
+        } catch {
+          console.warn('Could not load auditor QA prompt for auto-review');
+        }
+
+        // Build the sandwich audit message
+        const auditMessage = [
+          'Execute a auditoria de conformidade cruzando os textos abaixo.',
+          '',
+          '[DADOS DO PROCESSO]:',
+          uploadedText,
+          '',
+          '[MINUTA PROPOSTA]:',
+          content,
+          '',
+          'Execute a auditoria de conformidade cruzando os textos acima. Gere o Dashboard de Conformidade completo.',
+        ].join('\n');
+
+        // Send using the current model but with the QA prompt
+        await handleSend(auditMessage, globalSelectedModel, [], 'paddle', [], false, { hideUserBubble: true, overridePrompt: qaPrompt });
+      } finally {
+        autoReviewInProgressRef.current = false;
+      }
+    })();
+  }, [messages, activeAgent, uploadedText, isLoading, handleSend, globalSelectedModel]);
+
   // ── New chat handler — saves current conversation to history ────────
   const handleNewChat = useCallback(() => {
     // Save current conversation to history (only if it has real messages)
@@ -546,6 +611,10 @@ function MainApp() {
         ...prev,
       ]);
     }
+
+    // Reset auto-review tracking
+    autoReviewTriggeredRef.current = false;
+    autoReviewInProgressRef.current = false;
 
     // Reset everything for new chat
     setMessages([]);
