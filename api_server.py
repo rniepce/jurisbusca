@@ -1094,9 +1094,10 @@ async def upload_templates(
         # 1. Index templates (100% local — no ChromaDB, no embeddings)
         t0 = _time.time()
         collection_name = "rag_templates_persistent"
+        print(f"📥 Upload templates: user={user_id[:8]}, files={[f.name for f in file_objects]}")
         retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name, user_id=user_id)
         indexed_count = len(docs) if docs else 0
-        print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks)")
+        print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks para user {user_id[:8]})")
 
         # 2. Auto-generate style dossier in BACKGROUND (don't block response)
         # The dossier calls GPT-5.2 which adds 10-30s; run it async instead.

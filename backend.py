@@ -1174,7 +1174,11 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
 # ── Simple in-memory template store (NO ChromaDB, NO embeddings, NO API calls) ──
 # Per-user: {user_id: [{"text": str, "metadata": dict}, ...]}
 _template_store: dict[str, list[dict]] = {}
-_TEMPLATE_STORE_BASE = os.getenv("CHROMA_DB_PATH", "./chroma_db_rag")
+_TEMPLATE_STORE_BASE = os.path.abspath(os.getenv("CHROMA_DB_PATH", "./chroma_db_rag"))
+
+# Ensure base directory exists at module init (prevents silent save failures)
+os.makedirs(_TEMPLATE_STORE_BASE, exist_ok=True)
+print(f"📂 Template store base: {_TEMPLATE_STORE_BASE}")
 
 def _get_template_store_path(user_id: str = "default") -> str:
     """Returns user-specific template store path."""
@@ -1327,8 +1331,7 @@ def extract_legal_themes(process_text: str) -> str:
 
 def _get_dossier_path(user_id: str) -> str:
     """Get path for user's style dossier JSON file."""
-    base = os.environ.get("CHROMA_DB_PATH", "./chroma_store")
-    return os.path.join(base, f"user_{user_id}", "style_dossier.json")
+    return os.path.join(_TEMPLATE_STORE_BASE, f"user_{user_id}", "style_dossier.json")
 
 
 def save_style_dossier(user_id: str, dossier: dict):
@@ -1414,8 +1417,11 @@ def _save_template_store(user_id: str = "default"):
         user_data = _template_store.get(user_id, [])
         with open(path, "w", encoding="utf-8") as f:
             json.dump(user_data, f, ensure_ascii=False)
+        print(f"💾 Template store salvo: {path} ({len(user_data)} chunks, {os.path.getsize(path)} bytes)")
     except Exception as e:
-        print(f"⚠️ Erro ao salvar template store para user {user_id[:8]}: {e}")
+        print(f"❌ ERRO ao salvar template store para user {user_id[:8]}: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def _load_template_store(user_id: str = "default"):
@@ -1423,9 +1429,11 @@ def _load_template_store(user_id: str = "default"):
     global _template_store
     try:
         path = _get_template_store_path(user_id)
+        print(f"📂 Tentando carregar templates de: {path} (existe: {os.path.exists(path)})")
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 _template_store[user_id] = json.load(f)
+            print(f"✅ Templates carregados do disco: {len(_template_store[user_id])} chunks (user {user_id[:8]})")
             return
         # Migration: if user-specific file doesn't exist, try legacy global path
         if user_id != "default" and os.path.exists(_TEMPLATE_STORE_PATH):
@@ -1436,9 +1444,12 @@ def _load_template_store(user_id: str = "default"):
                 _template_store[user_id] = legacy_data
                 _save_template_store(user_id)
                 return
+        print(f"📭 Nenhum template encontrado no disco para user {user_id[:8]}")
         _template_store[user_id] = []
     except Exception as e:
-        print(f"⚠️ Erro ao carregar template store para user {user_id[:8]}: {e}")
+        print(f"❌ ERRO ao carregar template store para user {user_id[:8]}: {e}")
+        import traceback
+        traceback.print_exc()
         _template_store[user_id] = []
 
 
@@ -1493,7 +1504,9 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
     ]
     _save_template_store(user_id)
     
+    store_path = _get_template_store_path(user_id)
     print(f"✅ RAG indexado (user {user_id[:8]}): {len(documents)} chunks em {_time.time()-t0:.1f}s (100% local, sem API)")
+    print(f"   📁 Salvo em: {store_path} (existe: {os.path.exists(store_path)})")
     return SimpleRetriever(_template_store[user_id]), documents
 
 
