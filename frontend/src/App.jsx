@@ -480,6 +480,8 @@ function MainApp() {
   }, [shareAgent]);
 
   // ── Auto-review handler (Revisor QA) ────────────────────────────────
+  // Makes an ISOLATED API call (no conversation history) to avoid token limit overflow.
+  // Only sends: QA prompt + OCR process text + minuta extracted from chat.
   const handleAutoReview = useCallback(async (activationMsg) => {
     // 1. Find the last substantial assistant message (the minuta)
     const assistantMsgs = messages.filter(
@@ -511,25 +513,65 @@ function MainApp() {
       return;
     }
 
-    // 2. Build the "sandwich" audit message
+    // 2. Load the QA prompt
+    let qaPrompt = null;
+    try {
+      const mod = await import('./prompts/auditorQA.js');
+      qaPrompt = mod.default || null;
+    } catch {
+      console.warn('Could not load auditor QA prompt');
+    }
+
+    // 3. Build the audit message with ONLY process data + minuta (sandwich format)
     const auditMessage = [
       'Execute a auditoria de conformidade cruzando os textos abaixo.',
-      '',
-      '[DADOS DO PROCESSO]:',
-      uploadedText,
       '',
       '[MINUTA PROPOSTA]:',
       lastMinuta.content,
       '',
-      'Execute a auditoria de conformidade cruzando os textos acima. Gere o Dashboard de Conformidade completo.',
+      'Execute a auditoria de conformidade cruzando a minuta acima com os dados do processo. Gere o Dashboard de Conformidade completo.',
     ].join('\n');
 
-    // 3. Send using the current active agent (QA) and selected model
-    // Hide the user bubble — the audit message is auto-generated, not user-typed
-    await handleSend(auditMessage, globalSelectedModel, [], 'paddle', [], false, { hideUserBubble: true });
-  }, [messages, uploadedText, handleSend, globalSelectedModel]);
+    // 4. Make an ISOLATED API call — no conversationId (fresh conversation, no history)
+    // The uploadedText goes via uploaded_text param (backend injects it as system prompt context)
+    // The minuta goes in the message body
+    setIsLoading(true);
+    try {
+      const result = await sendMessage({
+        message: auditMessage,
+        model: globalSelectedModel.id,
+        llm: globalSelectedModel.llm || null,
+        agentPrompt: qaPrompt,
+        conversationId: null, // ← ISOLATED: no history, fresh call
+        uploadedText: uploadedText,
+        styleDossier: null,
+        useRag: false,
+        jurisprudenceContext: null,
+      });
+
+      // 5. Add the QA result to chat
+      let rawResponse = result.response;
+      if (typeof rawResponse === 'object' && rawResponse !== null) {
+        rawResponse = rawResponse.text || rawResponse.content || rawResponse.output || JSON.stringify(rawResponse);
+      }
+      const assistantMsg = {
+        role: 'assistant',
+        content: typeof rawResponse === 'string' ? rawResponse : String(rawResponse),
+        model: result.model,
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `⚠️ **Erro na auditoria QA:** ${err.message}`, model: 'erro' },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [messages, uploadedText, globalSelectedModel]);
 
   // ── Auto-trigger QA review after Gabinete 2.0 generates a minuta ────
+  // Uses ISOLATED API call (same as handleAutoReview) to avoid token limit overflow.
   useEffect(() => {
     // Guard: only trigger for Gabinete 2.0 agent
     if (activeAgent?.id !== 'gabinete-2.0') return;
@@ -569,24 +611,51 @@ function MainApp() {
           console.warn('Could not load auditor QA prompt for auto-review');
         }
 
-        // Build audit message — process text is already injected by the backend
-        // via uploadedText, so we only send the minuta here to avoid redundancy
+        // Build audit message with ONLY the minuta (process text goes via uploaded_text param)
         const auditMessage = [
-          'Execute a auditoria de conformidade. Os dados do processo já estão no contexto (enviados anteriormente).',
+          'Execute a auditoria de conformidade cruzando os textos abaixo.',
           '',
           '[MINUTA PROPOSTA]:',
           content,
           '',
-          'Cruze a minuta acima com os dados do processo já carregados. Gere o Dashboard de Conformidade completo.',
+          'Execute a auditoria de conformidade cruzando a minuta acima com os dados do processo. Gere o Dashboard de Conformidade completo.',
         ].join('\n');
 
-        // Send using the current model but with the QA prompt
-        await handleSend(auditMessage, globalSelectedModel, [], 'paddle', [], false, { hideUserBubble: true, overridePrompt: qaPrompt });
+        // ISOLATED API call — no conversationId, no history
+        setIsLoading(true);
+        const result = await sendMessage({
+          message: auditMessage,
+          model: globalSelectedModel.id,
+          llm: globalSelectedModel.llm || null,
+          agentPrompt: qaPrompt,
+          conversationId: null, // ← ISOLATED: fresh call, no history
+          uploadedText: uploadedText,
+          styleDossier: null,
+          useRag: false,
+          jurisprudenceContext: null,
+        });
+
+        let rawResponse = result.response;
+        if (typeof rawResponse === 'object' && rawResponse !== null) {
+          rawResponse = rawResponse.text || rawResponse.content || rawResponse.output || JSON.stringify(rawResponse);
+        }
+        const assistantMsg = {
+          role: 'assistant',
+          content: typeof rawResponse === 'string' ? rawResponse : String(rawResponse),
+          model: result.model,
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: `⚠️ **Erro na auditoria QA automática:** ${err.message}`, model: 'erro' },
+        ]);
       } finally {
+        setIsLoading(false);
         autoReviewInProgressRef.current = false;
       }
     })();
-  }, [messages, activeAgent, uploadedText, isLoading, handleSend, globalSelectedModel]);
+  }, [messages, activeAgent, uploadedText, isLoading, globalSelectedModel]);
 
   // ── New chat handler — saves current conversation to history ────────
   const handleNewChat = useCallback(() => {
