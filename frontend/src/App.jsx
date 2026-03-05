@@ -54,9 +54,7 @@ function MainApp() {
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [shareAgent, setShareAgent] = useState(null); // agent being shared
 
-  // Ref to prevent auto-review from triggering more than once per minuta
-  const autoReviewTriggeredRef = useRef(false);
-  const autoReviewInProgressRef = useRef(false);
+
 
   // Fetch template/RAG status and custom agents on mount
   useEffect(() => {
@@ -570,92 +568,7 @@ function MainApp() {
     }
   }, [messages, uploadedText, globalSelectedModel]);
 
-  // ── Auto-trigger QA review after Gabinete 2.0 generates a minuta ────
-  // Uses ISOLATED API call (same as handleAutoReview) to avoid token limit overflow.
-  useEffect(() => {
-    // Guard: only trigger for Gabinete 2.0 agent
-    if (activeAgent?.id !== 'gabinete-2.0') return;
-    // Guard: don't trigger if no uploaded process text
-    if (!uploadedText) return;
-    // Guard: don't trigger while loading or if already triggered
-    if (isLoading || autoReviewTriggeredRef.current || autoReviewInProgressRef.current) return;
 
-    // Find the last assistant message
-    const lastMsg = [...messages].reverse().find(m => m.role === 'assistant');
-    if (!lastMsg || !lastMsg.content) return;
-
-    // Heuristic: a minuta is a long response (> 500 chars) that looks like
-    // a draft (Phase 3 output), not a triagem or deliberation follow-up.
-    // Phase 1 (triagem) ends with "MESA DE DELIBERAÇÃO" — skip those.
-    // Phase 2 (deliberation) responses are typically short Q&A.
-    const content = lastMsg.content;
-    if (content.length < 500) return;
-    if (content.includes('MESA DE DELIBERAÇÃO') || content.includes('AGUARDANDO DIRETRIZES')) return;
-
-    // Check that at least 2 user messages exist (upload + at least one deliberation answer)
-    const userMsgCount = messages.filter(m => m.role === 'user').length;
-    if (userMsgCount < 2) return;
-
-    // Trigger auto-review
-    autoReviewTriggeredRef.current = true;
-    autoReviewInProgressRef.current = true;
-
-    (async () => {
-      try {
-        // Load the QA prompt
-        let qaPrompt = null;
-        try {
-          const mod = await import('./prompts/auditorQA.js');
-          qaPrompt = mod.default || null;
-        } catch {
-          console.warn('Could not load auditor QA prompt for auto-review');
-        }
-
-        // Build audit message with ONLY the minuta (process text goes via uploaded_text param)
-        const auditMessage = [
-          'Execute a auditoria de conformidade cruzando os textos abaixo.',
-          '',
-          '[MINUTA PROPOSTA]:',
-          content,
-          '',
-          'Execute a auditoria de conformidade cruzando a minuta acima com os dados do processo. Gere o Dashboard de Conformidade completo.',
-        ].join('\n');
-
-        // ISOLATED API call — no conversationId, no history
-        setIsLoading(true);
-        const result = await sendMessage({
-          message: auditMessage,
-          model: globalSelectedModel.id,
-          llm: globalSelectedModel.llm || null,
-          agentPrompt: qaPrompt,
-          conversationId: null, // ← ISOLATED: fresh call, no history
-          uploadedText: uploadedText,
-          styleDossier: null,
-          useRag: false,
-          jurisprudenceContext: null,
-        });
-
-        let rawResponse = result.response;
-        if (typeof rawResponse === 'object' && rawResponse !== null) {
-          rawResponse = rawResponse.text || rawResponse.content || rawResponse.output || JSON.stringify(rawResponse);
-        }
-        const assistantMsg = {
-          role: 'assistant',
-          content: typeof rawResponse === 'string' ? rawResponse : String(rawResponse),
-          model: result.model,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-      } catch (err) {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: `⚠️ **Erro na auditoria QA automática:** ${err.message}`, model: 'erro' },
-        ]);
-      } finally {
-        setIsLoading(false);
-        autoReviewInProgressRef.current = false;
-      }
-    })();
-  }, [messages, activeAgent, uploadedText, isLoading, globalSelectedModel]);
 
   // ── New chat handler — saves current conversation to history ────────
   const handleNewChat = useCallback(() => {
@@ -679,9 +592,6 @@ function MainApp() {
       ]);
     }
 
-    // Reset auto-review tracking
-    autoReviewTriggeredRef.current = false;
-    autoReviewInProgressRef.current = false;
 
     // Reset everything for new chat
     setMessages([]);
@@ -796,6 +706,8 @@ function MainApp() {
           xrayLoading={xrayLoading}
           xrayProgress={xrayProgress}
           onAutoAction={handleAutoReview}
+          onQAReview={handleAutoReview}
+          hasUploadedText={!!uploadedText}
           jurisResearch={jurisResearch}
           jurisResearchLoading={jurisResearchLoading}
           jurisResearchProgress={jurisResearchProgress}

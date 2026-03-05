@@ -1221,3 +1221,54 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* ===== QA REVISOR BUTTON ===== */
+.qa-review-trigger {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0;
+    animation: msgFadeIn 0.4s ease-out;
+}
+
+.qa-review-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 22px;
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+    color: #065f46;
+    border: 1.5px solid #34d399;
+    border-radius: 22px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 6px rgba(52, 211, 153, 0.2);
+    font-family: var(--font-family);
+}
+
+.qa-review-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border-color: #10b981;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+    transform: translateY(-2px);
+}
+
+.qa-review-btn:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(16, 185, 129, 0.15);
+}
+
+.qa-review-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.qa-review-hint {
+    font-size: 11px;
+    color: #9ca3af;
+    font-style: italic;
+}
