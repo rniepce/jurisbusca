@@ -264,4 +264,229 @@
     line-height: 1.5;
     color: #666;
     margin: 0;
+    white-space: pre-wrap;
+}
+
+/* ── Ementa toggle (Ver mais / Ver menos) ── */
+.juris-ementa-toggle {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #1a73e8;
+    font-size: 10.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.juris-ementa-toggle:hover {
+    color: #0d47a1;
+    text-decoration: underline;
+}
+
+/* ── Ver voto completo button ── */
+.juris-voto-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+    padding: 4px 12px;
+    border: 1px solid #d0d5dd;
+    border-radius: 5px;
+    background: #fff;
+    color: #1a73e8;
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.juris-voto-btn:hover {
+    background: #e8f0fe;
+    border-color: #1a73e8;
+}
+
+/* ── Voto Modal Overlay ── */
+.juris-voto-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: jOverlayIn 0.2s ease-out;
+}
+
+@keyframes jOverlayIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* ── Voto Modal Dialog ── */
+.juris-voto-dialog {
+    width: 90vw;
+    max-width: 780px;
+    max-height: 85vh;
+    background: #ffffff;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: jDialogIn 0.25s ease-out;
+    font-family: 'Inter', -apple-system, sans-serif;
+}
+
+@keyframes jDialogIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.97);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.juris-voto-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #eee;
+    background: #fafafa;
+    flex-shrink: 0;
+}
+
+.juris-voto-header-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.juris-voto-tipo {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #fff;
+    background: #1a73e8;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.juris-voto-proc {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a1a1a;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.juris-voto-date {
+    font-size: 11px;
+    color: #888;
+}
+
+.juris-voto-relator {
+    font-size: 11px;
+    color: #666;
+    font-style: italic;
+}
+
+.juris-voto-comarca {
+    font-size: 10px;
+    color: #999;
+    background: #f0f0f0;
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+
+.juris-voto-close {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: #666;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.juris-voto-close:hover {
+    background: #eee;
+    color: #333;
+}
+
+.juris-voto-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.juris-voto-loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+    padding: 40px 0;
+    font-size: 13px;
+    color: #888;
+}
+
+.juris-voto-section {
+    margin-bottom: 24px;
+}
+
+.juris-voto-section:last-child {
+    margin-bottom: 0;
+}
+
+.juris-voto-section h4 {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin: 0 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #eee;
+}
+
+.juris-voto-ementa-text {
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #444;
+    background: #f8f9fa;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border-left: 3px solid #1a73e8;
+    white-space: pre-wrap;
+}
+
+.juris-voto-full-text {
+    font-size: 12.5px;
+    line-height: 1.8;
+    color: #333;
+}
+
+.juris-voto-full-text p {
+    margin: 0 0 4px;
 }

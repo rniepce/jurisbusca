@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { FaMagnifyingGlass, FaChevronLeft, FaChevronRight, FaXmark, FaScaleBalanced, FaCalendarDays, FaLocationDot, FaArrowLeft, FaCopy, FaCheck, FaBrain, FaChevronDown, FaChevronUp } from 'react-icons/fa6';
+import { FaMagnifyingGlass, FaChevronLeft, FaChevronRight, FaXmark, FaScaleBalanced, FaCalendarDays, FaLocationDot, FaArrowLeft, FaCopy, FaCheck, FaBrain, FaChevronDown, FaChevronUp, FaFileLines } from 'react-icons/fa6';
 import { askJurisprudencia, getJurisprudenciaDoc, getJurisprudenciaStats } from '../services/api';
 import './JurisprudenciaPanel.css';
 
@@ -18,6 +18,7 @@ const JurisprudenciaPanel = ({ onClose }) => {
     const [selectedDoc, setSelectedDoc] = useState(null);
     const [loadingDoc, setLoadingDoc] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [expandedSnippets, setExpandedSnippets] = useState(new Set());
     const searchInputRef = useRef(null);
 
     // Load stats on mount
@@ -283,49 +284,79 @@ const JurisprudenciaPanel = ({ onClose }) => {
 
                         {showResults && (
                             <div className="jurisprudencia-list">
-                                {results.results.map((item) => (
-                                    <button
-                                        key={item.id}
-                                        className="jurisprudencia-card"
-                                        onClick={() => handleDocClick(item.id)}
-                                        id={`juris-result-${item.id}`}
-                                    >
-                                        <div className="jurisprudencia-card-top">
-                                            <span className="jurisprudencia-card-tipo">
-                                                {item.tipo_recurso || 'Acórdão'}
-                                            </span>
-                                            <div className="jurisprudencia-card-top-right">
-                                                {item.similarity != null && item.similarity > 0 && (
-                                                    <span className={`jurisprudencia-card-similarity ${item.similarity >= 0.6 ? 'high' : item.similarity >= 0.4 ? 'mid' : 'low'}`}>
-                                                        {Math.round(item.similarity * 100)}% relevante
+                                {results.results.map((item) => {
+                                    const snippetKey = `panel-${item.id}`;
+                                    const isSnippetExpanded = expandedSnippets.has(snippetKey);
+                                    const ementaText = item.ementa || '';
+                                    const isLong = ementaText.length > 300;
+                                    return (
+                                        <div
+                                            key={item.id}
+                                            className="jurisprudencia-card"
+                                            id={`juris-result-${item.id}`}
+                                        >
+                                            <div className="jurisprudencia-card-top">
+                                                <span className="jurisprudencia-card-tipo">
+                                                    {item.tipo_recurso || 'Acórdão'}
+                                                </span>
+                                                <div className="jurisprudencia-card-top-right">
+                                                    {item.similarity != null && item.similarity > 0 && (
+                                                        <span className={`jurisprudencia-card-similarity ${item.similarity >= 0.6 ? 'high' : item.similarity >= 0.4 ? 'mid' : 'low'}`}>
+                                                            {Math.round(item.similarity * 100)}% relevante
+                                                        </span>
+                                                    )}
+                                                    <span className="jurisprudencia-card-date">
+                                                        {item.data_publicacao}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="jurisprudencia-card-processo">
+                                                {formatProcesso(item.numero_processo)}
+                                            </div>
+                                            <div className={`jurisprudencia-card-snippet ${isSnippetExpanded ? 'expanded' : ''}`}>
+                                                {item.snippet && !isSnippetExpanded
+                                                    ? <span dangerouslySetInnerHTML={{ __html: item.snippet }} />
+                                                    : isSnippetExpanded
+                                                        ? ementaText
+                                                        : ementaText.slice(0, 300) + (isLong ? '…' : '')}
+                                            </div>
+                                            {isLong && (
+                                                <button
+                                                    className="jurisprudencia-ementa-toggle"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setExpandedSnippets(prev => {
+                                                            const next = new Set(prev);
+                                                            if (next.has(snippetKey)) next.delete(snippetKey);
+                                                            else next.add(snippetKey);
+                                                            return next;
+                                                        });
+                                                    }}
+                                                >
+                                                    {isSnippetExpanded ? 'Ver menos ▲' : 'Ver ementa completa ▼'}
+                                                </button>
+                                            )}
+                                            <div className="jurisprudencia-card-bottom">
+                                                {item.comarca && (
+                                                    <span className="jurisprudencia-card-comarca">
+                                                        <FaLocationDot size={10} /> {item.comarca}
                                                     </span>
                                                 )}
-                                                <span className="jurisprudencia-card-date">
-                                                    {item.data_publicacao}
-                                                </span>
+                                                {item.relator && (
+                                                    <span className="jurisprudencia-card-relator">
+                                                        Rel. {item.relator}
+                                                    </span>
+                                                )}
+                                                <button
+                                                    className="jurisprudencia-voto-btn"
+                                                    onClick={(e) => { e.stopPropagation(); handleDocClick(item.id); }}
+                                                >
+                                                    <FaFileLines size={11} /> Ver voto completo
+                                                </button>
                                             </div>
                                         </div>
-                                        <div className="jurisprudencia-card-processo">
-                                            {formatProcesso(item.numero_processo)}
-                                        </div>
-                                        <div
-                                            className="jurisprudencia-card-snippet"
-                                            dangerouslySetInnerHTML={{ __html: item.snippet || item.ementa?.slice(0, 300) }}
-                                        />
-                                        <div className="jurisprudencia-card-bottom">
-                                            {item.comarca && (
-                                                <span className="jurisprudencia-card-comarca">
-                                                    <FaLocationDot size={10} /> {item.comarca}
-                                                </span>
-                                            )}
-                                            {item.relator && (
-                                                <span className="jurisprudencia-card-relator">
-                                                    Rel. {item.relator}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </button>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </>
