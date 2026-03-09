@@ -69,7 +69,7 @@ async function safeJson(res, context) {
  * @param {string} ocrEngine
  * @returns {Promise<{filename: string, text: string, char_count: number}>}
  */
-export async function uploadFile(file, ocrEngine = 'paddle', compress = true) {
+export async function uploadFile(file, ocrEngine = 'mistral_doc_ai', compress = true) {
     const form = new FormData();
     form.append('file', file);
     form.append('ocr_engine', ocrEngine);
@@ -142,7 +142,7 @@ export async function sendMessage({ message, model, llm, agentPrompt, conversati
             llm: llm || null,
             conversation_id: conversationId,
             agent_prompt: agentPrompt || null,
-            ocr_engine: 'paddle',
+            ocr_engine: 'marker',
             uploaded_text: uploadedText || null,
             style_dossier: styleDossier || null,
             use_rag: useRag,

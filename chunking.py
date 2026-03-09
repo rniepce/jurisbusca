@@ -5,12 +5,6 @@ from langchain_core.documents import Document
 from langchain_experimental.text_splitter import SemanticChunker
 import os
 
-# Import centralized embedding function
-try:
-    from backend import get_embedding_function as _get_backend_embeddings
-except ImportError:
-    _get_backend_embeddings = None
-
 class HybridSemanticChunker:
     """
     Estratégia Híbrida de Chunking:
@@ -43,12 +37,16 @@ class HybridSemanticChunker:
 
     def _get_embeddings(self, api_key=None):
         try:
-            if _get_backend_embeddings:
+            # Lazy import to avoid circular dependency (backend imports chunking)
+            try:
+                from backend import get_embedding_function as _get_backend_embeddings
                 return _get_backend_embeddings(api_key=api_key)
-            # Fallback: try direct Azure OpenAI
+            except ImportError:
+                pass
+            # Fallback: Azure OpenAI direct
             from langchain_openai import AzureOpenAIEmbeddings
             return AzureOpenAIEmbeddings(
-                azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
+                azure_deployment=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"),
                 azure_endpoint=os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT", os.getenv("AZURE_OPENAI_ENDPOINT", "")),
                 api_key=api_key or os.getenv("AZURE_OPENAI_API_KEY", ""),
                 api_version="2024-12-01-preview",
@@ -66,21 +64,7 @@ class HybridSemanticChunker:
             
         final_docs = []
         
-        # 1. MACRO SPLIT (Regex)
-        # Dividimos o texto em blocos baseados em cabeçalhos
-        # A regex tenta encontrar os headers e fazer split mantendo o delimitador
-        # Mas para simplificar e não perder o header, vamos iterar ou usar split com group capture.
-        
-        # Split mantendo o delimitador
-        parts = re.split(f"({self.LEGAL_HEADERS_REGEX}.*)", text)
-        
-        current_section = "GERAL"
-        buffer_text = ""
-        
-        # A lista parts terá: [plaint_text, header_match, content, header_match, content...]
-        # Ou [content_before_first_match, header_match, content...]
-        
-        # Reconstrução mais segura:
+        # 1. MACRO SPLIT (Regex) — localiza seções jurídicas por cabeçalho
         sections = []
         
         # Usando finditer para localizar as seções e seus índices

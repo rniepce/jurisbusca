@@ -287,7 +287,7 @@ def clean_text(text: str) -> str:
 
 def get_embedding_function(api_key=None):
     """
-    Factory centralizada de embeddings — usa Azure OpenAI.
+    Factory centralizada de embeddings — usa Azure OpenAI (text-embedding-3-small).
     api_key: se fornecida, tem prioridade sobre a variável de ambiente.
     """
     from langchain_openai import AzureOpenAIEmbeddings
@@ -299,7 +299,7 @@ def get_embedding_function(api_key=None):
     if not azure_key or not azure_endpoint:
         raise ValueError(
             "AZURE_OPENAI_API_KEY e AZURE_OPENAI_EMBEDDING_ENDPOINT devem estar configurados "
-            "no .env ou variáveis de ambiente para usar embeddings."
+            "no .env para usar embeddings."
         )
     
     return AzureOpenAIEmbeddings(
@@ -309,7 +309,7 @@ def get_embedding_function(api_key=None):
         api_version="2024-12-01-preview",
     )
 
-def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="gpt4o_mini", compress=True):
+def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="mistral_doc_ai", compress=True):
     """
     Salva arquivo temp, faz OCR se necessário, vetoriza e retorna (full_text, retriever).
     """
@@ -336,10 +336,9 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
                 try:
                     from core.hybrid_extract import hybrid_extract
                     ocr_choice = ocr_engine_choice
-                    # Normalize OCR engine choice
-                    if ocr_choice in ["claude_vision", "gpt4o_mini"]:
-                        ocr_choice = "paddle"
-                    # Valid OCR engines for hybrid_extract: paddle, deepseek, mistral_doc_ai, marker
+                    # Normalize: any invalid engine defaults to mistral_doc_ai
+                    if ocr_choice not in ("marker", "mistral_doc_ai"):
+                        ocr_choice = "mistral_doc_ai"
                     docs, stats = hybrid_extract(tmp_path, ocr_choice, compress)
                     print(f"📊 {stats['text_pages']} págs texto | {stats['ocr_pages']} págs OCR | {stats['total_chars']} chars | {stats['elapsed_seconds']}s")
                 except ImportError:
@@ -350,12 +349,18 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
                     docs = loader.load()
                     total_chars = sum(len(d.page_content) for d in docs)
                     if total_chars < 500:
-                        print(f"📉 Texto insuficiente ({total_chars} chars). Acionando OCR ({ocr_engine_choice})...")
+                        print(f"📉 Texto insuficiente ({total_chars} chars). Acionando OCR Marker...")
                         if HAS_OCR:
-                            ocr_text = ocr_engine.extract_text_from_pdf(tmp_path, engine="paddle")
-                            if ocr_text and "[ERRO]" not in ocr_text:
-                                from langchain_core.documents import Document
-                                docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "paddle"})]
+                            try:
+                                from ocr_engine import get_marker_engine
+                                marker = get_marker_engine()
+                                if marker:
+                                    ocr_text = marker.process_pdf(tmp_path)
+                                    if ocr_text:
+                                        from langchain_core.documents import Document
+                                        docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "marker"})]
+                            except Exception as ocr_err:
+                                print(f"⚠️ OCR Marker fallback falhou: {ocr_err}")
         
         elif suffix == ".docx":
             from langchain_community.document_loaders import Docx2txtLoader
@@ -384,16 +389,36 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
         print(f"Texto extraído: {len(full_text)} caracteres.")
 
         # Vetorização (RAG)
-        # Divide em chunks
+        # Divide em chunks semânticos (seções jurídicas + embeddings)
         if not docs:
              return "Nenhum texto extraído.", None
 
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=4000,
-            chunk_overlap=200,
-            separators=["\n\n", "\n", " ", ""]
-        )
-        splits = text_splitter.split_documents(docs)
+        try:
+            from chunking import HybridSemanticChunker
+            print("🧠 Usando chunking semântico (seções jurídicas + embeddings)...")
+            semantic_chunker = HybridSemanticChunker(api_key=api_key)
+            splits = semantic_chunker.split_text(
+                full_text,
+                source_metadata={"source": filename}
+            )
+            if splits:
+                print(f"✅ Chunking semântico: {len(splits)} chunks gerados")
+                # Log section distribution
+                sections = {}
+                for s in splits:
+                    sec = s.metadata.get("section", "GERAL")
+                    sections[sec] = sections.get(sec, 0) + 1
+                print(f"   📋 Seções: {sections}")
+            else:
+                raise ValueError("Chunker retornou lista vazia")
+        except Exception as chunk_err:
+            print(f"⚠️ Chunking semântico falhou ({chunk_err}). Usando fallback por caracteres...")
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=4000,
+                chunk_overlap=200,
+                separators=["\n\n", "\n", " ", ""]
+            )
+            splits = text_splitter.split_documents(docs)
         
         # Cria Vector Store em memória (ephemeral)
         # Usando Chroma com timeout para evitar hang
@@ -421,7 +446,7 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
                     embedding=embedding_function,
                     collection_name="temp_process_analysis"
                 )
-                retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+                retriever = vectorstore.as_retriever(search_kwargs={"k": 15})
             finally:
                 signal.alarm(0)  # Cancela o alarm
                 signal.signal(signal.SIGALRM, old_handler)  # Restaura handler
@@ -653,73 +678,8 @@ def run_reflexion_loop(draft_text, source_text, api_key):
         print(f"Erro no Reflexion Loop: {e}")
         return draft_text, str(e)
 
-def extract_text_with_gpt4o_mini(file_path, api_key):
-    """
-    SEMANTIC OCR (Vision API via GPT-4o-mini).
-    Lê o PDF renderizando páginas como imagem e extrai texto limpo e barato.
-    """
-    if not HAS_OPENAI:
-        return "Erro: Biblioteca langchain-openai não encontrada."
 
-    try:
-        t_start = time.time()
-        import fitz
-        import base64
-        
-        doc = fitz.open(file_path)
-        base64_images = []
-        
-        # Limita a 25 páginas para não estourar o limite da API (4o-mini)
-        for i, page in enumerate(doc):
-            if i >= 25:
-                print("⚠️ OCR GPT-4o-mini truncado em 25 páginas para evitar limite de Tokens.")
-                break
-                
-            # Renderiza página com qualidade média-alta para leitura
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-            img_bytes = pix.tobytes("jpeg")
-            encoded = base64.b64encode(img_bytes).decode("utf-8")
-            base64_images.append(encoded)
 
-        # Inicializa o modelo GPT-4o-mini (Vision)
-        from langchain_core.messages import HumanMessage
-        
-        llm = get_llm("gpt-5.2-chat", temperature=0.1)
-        
-        prompt_text = """
-        Aja como um transcritor jurídico de elite. 
-        Você está recebendo imagens de páginas de um processo.
-        Extraia o texto integral deste documento nas imagens, preservando a formatação e tabelas. 
-        
-        ⚠️ REGRAS DE LIMPEZA JURÍDICA:
-        1. Ignore cabeçalhos repetitivos de paginação.
-        2. Ignore rodapés (ex: "PJe - Assinado eletronicamente").
-        3. Ignore Carimbos, QR Codes, Assinaturas (hash).
-        
-        Retorne APENAS o texto limpo, linear e perfeitamente estruturado das páginas."
-        """
-        
-        # Monta a estrutura da mensagem multimodal
-        content_parts = [{"type": "text", "text": prompt_text}]
-        for b64 in base64_images:
-            content_parts.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64}", "detail": "high"}
-            })
-            
-        print(f"📤 Enviando {len(base64_images)} imagens de alta qualidade para rotina GPT-4o-mini OCR...")
-        t_gen = time.time()
-        
-        msg = HumanMessage(content=content_parts)
-        response = llm.invoke([msg])
-        
-        print(f"⏱️ OCR GPT-4o-mini concluído em {time.time() - t_gen:.1f}s")
-        return safe_content(response)
-        
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return f"Erro no Semantic OCR GPT-4o-mini: {str(e)}"
 
 def _extract_template_texts(template_files):
     """
@@ -1987,7 +1947,7 @@ def generate_batch_xray(files, api_key, template_files=None, progress_callback=N
 
 
 
-def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None, mode="v1", keys=None, ocr_engine_choice="paddle"):
+def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None, mode="v1", keys=None, ocr_engine_choice="marker"):
     """
     Função Worker para processar um único caso completo.
     Suporta V1 (Gemini Only) e V2 (Hybrid Agents).
@@ -2015,10 +1975,12 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
                     # Tentativa 2: OCR Avançado (se texto vazio e OCR habilitado)
                     # Se tiver menos de 100 caracteres
                     if len(text_content.strip()) < 100 and HAS_OCR:
-                        print(f"⚠️ Texto insuficiente ({len(text_content)} chars) em {filename}. Iniciando OCR Avançado (OpenCV + Paddle)...")
+                        print(f"⚠️ Texto insuficiente ({len(text_content)} chars) em {filename}. Iniciando OCR Marker...")
                         try:
-                            # Chama o motor escolhido
-                            ocr_text = ocr_engine.extract_text_from_pdf(tmp_path, engine=ocr_engine_choice)
+                            # Chama o Marker engine
+                            from ocr_engine import get_marker_engine
+                            marker_eng = get_marker_engine()
+                            ocr_text = marker_eng.process_pdf(tmp_path) if marker_eng else ""
                             
                             # Se OCR retornou algo razoável, usa
                             if len(ocr_text) > len(text_content):
@@ -2221,7 +2183,7 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
     except Exception as e:
         return {"error": str(e), "filename": filename}
 
-def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None, mode="v1", keys=None, ocr_engine_choice="gpt4o_mini"):
+def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None, mode="v1", keys=None, ocr_engine_choice="marker"):
     """
     Processa lista de arquivos EM SÉRIE (para evitar Rate Limit).
     Suporta V1/V2/V3 via worker.

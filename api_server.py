@@ -164,7 +164,7 @@ class ChatRequest(BaseModel):
     llm: Optional[str] = None  # LLM deployment name (e.g. 'gpt-5.2-chat', 'DeepSeek-V3.2-Speciale')
     conversation_id: Optional[str] = None
     agent_prompt: Optional[str] = None
-    ocr_engine: str = "paddle"
+    ocr_engine: str = "mistral_doc_ai"
     uploaded_text: Optional[str] = None  # pre-extracted text from uploaded file
     style_dossier: Optional[str] = None  # cloning prompt from style report
     use_rag: bool = False  # if True, use RAG retrieval instead of full text
@@ -279,11 +279,16 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
                     relevant_chunks = retriever.invoke(req.message)
                     if relevant_chunks:
                         chunks_text = "\n\n".join([
-                            f"[Pág. {doc.metadata.get('page', '?')} — {doc.metadata.get('extraction', 'text')}]\n{doc.page_content}"
+                            f"[Seção: {doc.metadata.get('section', 'GERAL')} | "
+                            f"Pág. {doc.metadata.get('page', '?')} | "
+                            f"{doc.metadata.get('chunk_strategy', doc.metadata.get('extraction', 'text'))}]\n"
+                            f"{doc.page_content}"
                             for doc in relevant_chunks
                         ])
                         system_parts.append(
-                            f"\n\n---\n🎯 **TRECHOS RELEVANTES DO PROCESSO (RAG — {len(relevant_chunks)} chunks):**\n\n"
+                            f"\n\n---\n🎯 **TRECHOS RELEVANTES DO PROCESSO (RAG Semântico — {len(relevant_chunks)} chunks recuperados):**\n"
+                            f"Os trechos abaixo foram selecionados automaticamente por similaridade semântica com a pergunta do usuário. "
+                            f"Cada trecho indica a seção jurídica de origem (ex: FUNDAMENTAÇÃO, DOS FATOS, DISPOSITIVO).\n\n"
                             f"{chunks_text}\n---"
                         )
                         total_tokens_approx = sum(len(d.page_content) for d in relevant_chunks) // 4
@@ -717,7 +722,7 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
 @app.post("/api/upload")
 async def upload_file(
     file: UploadFile = File(...),
-    ocr_engine: str = Form("paddle"),
+    ocr_engine: str = Form("mistral_doc_ai"),
     compress: bool = Form(True),
     user_id: str = Depends(get_current_user)
 ):

@@ -13,11 +13,8 @@ const OcrPreview = ({ filename, text, engine, charCount }) => {
     const displayCharCount = charCount || (text ? text.length : 0);
 
     const engineLabels = {
-        gpt4o_mini: 'GPT-4o mini',
-        paddle: 'PaddleOCR',
-        deepseek: 'DeepSeek-OCR',
-        mistral_doc_ai: 'Mistral DocAI',
         marker: 'Marker (PDF→MD)',
+        mistral_doc_ai: 'Mistral DocAI',
     };
 
     return (

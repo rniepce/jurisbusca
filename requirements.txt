@@ -27,20 +27,10 @@ langchain-chroma
 tiktoken
 
 scikit-learn
-paddlepaddle
-paddleocr
 pymupdf
-opencv-contrib-python-headless
-# OCR - DeepSeek
-transformers
-torch
-accelerate
 pillow
-einops
-# OCR - Marker (PDF → Markdown)
-marker-pdf
+pytesseract
 
 # Auth
 python-jose[cryptography]
-python-multipart
 requests

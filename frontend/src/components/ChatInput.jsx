@@ -18,12 +18,9 @@ const LLM_OPTIONS = [
 const ACCEPTED_TYPES = '.pdf,.docx,.txt';
 
 const OCR_ENGINES = [
-    { id: 'none', label: 'Sem OCR' },
-    { id: 'gpt4o_mini', label: 'GPT-4o mini' },
-    { id: 'paddle', label: 'PaddleOCR' },
-    { id: 'deepseek', label: 'DeepSeek-OCR' },
     { id: 'mistral_doc_ai', label: 'Mistral DocAI' },
-    { id: 'marker', label: 'Marker' },
+    { id: 'marker', label: 'Marker (PDF→MD)' },
+    { id: 'none', label: 'Sem OCR' },
 ];
 
 const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange, activeAgent = null, jurisEnabled = false }) => {
@@ -67,7 +64,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     }, [selectedLlm, activeAgent]);
 
     const handleSend = () => {
-        if (isLoading) return;
+        if (isLoading || ocrProcessing) return;
         if (message.trim() || files.length > 0 || hasContext) {
             // Build model from active agent + selected LLM
             const engineId = activeAgent?.engineId || 'v0';
@@ -287,7 +284,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
             <div className="chat-input-box">
                 <textarea
                     className="chat-textarea"
-                    placeholder={isLoading || ocrProcessing ? 'Processando...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
+                    placeholder={ocrProcessing ? '⏳ Aguardando OCR finalizar...' : isLoading ? 'Processando...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
@@ -306,10 +303,11 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                     </button>
                 )}
                 <button
-                    className={`send-btn ${(message.trim() || files.length > 0 || hasContext) && !isLoading ? 'active' : ''}`}
+                    className={`send-btn ${(message.trim() || files.length > 0 || hasContext) && !isLoading && !ocrProcessing ? 'active' : ''}`}
                     onClick={handleSend}
-                    disabled={isLoading}
-                    aria-label="Enviar"
+                    disabled={isLoading || ocrProcessing}
+                    aria-label={ocrProcessing ? 'Aguardando OCR...' : 'Enviar'}
+                    title={ocrProcessing ? 'Aguarde o OCR finalizar antes de enviar' : 'Enviar mensagem'}
                 >
                     <IoSend size={14} />
                 </button>

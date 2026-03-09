@@ -520,15 +520,15 @@ with st.sidebar:
     
     ocr_option = st.radio(
         "Motor de Leitura:",
-        ["Gemini 2.0 Flash (Nuvem/Rápido)", "PaddleOCR (Local/CPU)", "DeepSeek-OCR-2 (Local/GPU)"],
-        index=1,
-        help="Gemini: Usa API Vision (Melhor Geral). Paddle: Leve. DeepSeek: Requer GPU (Ótimo para tabelas)."
+        ["Mistral DocAI (Azure API)", "Marker (PDF→Markdown)", "Sem OCR"],
+        index=0,
+        help="Mistral DocAI: API Azure, alta qualidade (Padrão). Marker: Local, preserva estrutura. Sem OCR: apenas texto nativo."
     )
     
     ocr_map = {
-        "Gemini 2.0 Flash (Nuvem/Rápido)": "gpt4o_mini",
-        "PaddleOCR (Local/CPU)": "paddle", 
-        "DeepSeek-OCR-2 (Local/GPU)": "deepseek"
+        "Mistral DocAI (Azure API)": "mistral_doc_ai",
+        "Marker (PDF→Markdown)": "marker",
+        "Sem OCR": "none"
     }
     st.session_state.ocr_engine_choice = ocr_map[ocr_option]
     

@@ -1,16 +1,15 @@
 FROM python:3.11-slim
 
-# Install Node.js + system deps for PaddleOCR/OpenCV
+# Install Node.js + system deps for PyMuPDF, Ghostscript, and Tesseract OCR
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     curl \
     ghostscript \
+    tesseract-ocr \
+    tesseract-ocr-por \
     libgl1 \
     libglib2.0-0 \
-    libgomp1 \
-    libsm6 \
-    libxext6 \
-    libxrender1 && \
+    libgomp1 && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
