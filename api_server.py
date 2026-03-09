@@ -266,7 +266,16 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
             system_parts.append(req.agent_prompt)
 
         # ── Process RAG: retrieve relevant chunks instead of full text ──
-        if req.use_rag and req.uploaded_text and _process_rag_cache:
+        # Max chars to send as full text (~50k tokens). Above this, use RAG or truncate.
+        MAX_TEXT_CHARS = 200_000
+
+        # Auto-activate RAG for large documents even if user didn't toggle it
+        use_rag = req.use_rag
+        if req.uploaded_text and len(req.uploaded_text) > MAX_TEXT_CHARS and _process_rag_cache and not use_rag:
+            print(f"⚡ Auto-ativando RAG: texto tem {len(req.uploaded_text)} chars (>{MAX_TEXT_CHARS}). Usando chunks semânticos.")
+            use_rag = True
+
+        if use_rag and req.uploaded_text and _process_rag_cache:
             try:
                 # Find the cached retriever (use first available)
                 retriever = None
@@ -309,12 +318,27 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
                     f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
                 )
         elif req.uploaded_text:
+            text_to_send = req.uploaded_text
+            truncated = False
+            if len(text_to_send) > MAX_TEXT_CHARS:
+                text_to_send = text_to_send[:MAX_TEXT_CHARS]
+                truncated = True
+                print(f"✂️ Texto truncado: {len(req.uploaded_text)} → {MAX_TEXT_CHARS} chars (sem RAG disponível)")
+
+            truncation_warning = ""
+            if truncated:
+                truncation_warning = (
+                    f"\n⚠️ ATENÇÃO: Este texto foi TRUNCADO de {len(req.uploaded_text):,} para {MAX_TEXT_CHARS:,} caracteres "
+                    f"por limite de contexto. Para análise completa, ative a Vetorização e o RAG.\n"
+                )
+
             system_parts.append(
-                f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL — TEXTO INTEGRAL EXTRAÍDO VIA OCR):**\n"
+                f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL — TEXTO EXTRAÍDO VIA OCR):**\n"
                 f"⚠️ ATENÇÃO: O texto abaixo foi extraído automaticamente de um PDF via OCR. "
-                f"Este É o conteúdo completo do documento/processo judicial. NÃO solicite o envio do arquivo — "
-                f"ele já está aqui em formato texto. Analise este conteúdo diretamente.\n\n"
-                f"{req.uploaded_text}\n---"
+                f"Este É o conteúdo do documento/processo judicial. NÃO solicite o envio do arquivo — "
+                f"ele já está aqui em formato texto. Analise este conteúdo diretamente."
+                f"{truncation_warning}\n\n"
+                f"{text_to_send}\n---"
             )
         if req.style_dossier:
             system_parts.append(
@@ -671,16 +695,22 @@ async def get_history(user_id: str = Depends(get_current_user)):
     return {"conversations": []}
 
 
-def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_engine: str, compress: bool):
+def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_engine: str, compress: bool, vectorize: bool = True):
     """Background worker: extracts text from uploaded file and stores result."""
+    def _update_progress(msg: str, percent: int):
+        _bg_tasks[task_id]["progress"] = msg
+        _bg_tasks[task_id]["percent"] = percent
+
     try:
         _bg_tasks[task_id]["status"] = "running"
-        _bg_tasks[task_id]["progress"] = f"Extraindo texto de {filename}..."
+        _update_progress(f"📤 Recebendo arquivo {filename}...", 10)
 
         suffix = os.path.splitext(filename)[1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(file_data)
             tmp_path = tmp.name
+
+        _update_progress("🔍 Iniciando extração de texto (OCR)...", 20)
 
         try:
             full_text, retriever = be.process_uploaded_file(
@@ -688,6 +718,8 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
                 filename,
                 ocr_engine_choice=ocr_engine,
                 compress=compress,
+                vectorize=vectorize,
+                progress_callback=lambda msg, pct: _update_progress(msg, pct),
             )
         finally:
             os.unlink(tmp_path)
@@ -704,6 +736,8 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
             _process_rag_cache[cache_key] = (retriever, full_text, len(full_text))
             rag_available = True
             print(f"🎯 Process RAG cached: key={cache_key[:8]}")
+
+        _update_progress("✅ Processamento concluído!", 100)
 
         _bg_tasks[task_id]["status"] = "done"
         _bg_tasks[task_id]["result"] = {
@@ -724,6 +758,7 @@ async def upload_file(
     file: UploadFile = File(...),
     ocr_engine: str = Form("mistral_doc_ai"),
     compress: bool = Form(True),
+    vectorize: bool = Form(True),
     user_id: str = Depends(get_current_user)
 ):
     """Upload and extract text from a file. Returns task_id for polling."""
@@ -741,7 +776,7 @@ async def upload_file(
 
         thread = threading.Thread(
             target=_run_upload_background,
-            args=(task_id, content, filename, ocr_engine, compress),
+            args=(task_id, content, filename, ocr_engine, compress, vectorize),
             daemon=True,
         )
         thread.start()
@@ -764,6 +799,7 @@ async def upload_status(task_id: str, user_id: str = Depends(get_current_user)):
         "task_id": task_id,
         "status": task["status"],
         "progress": task.get("progress", ""),
+        "percent": task.get("percent", 0),
     }
 
     if task["status"] == "done":

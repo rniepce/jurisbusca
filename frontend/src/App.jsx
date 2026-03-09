@@ -32,6 +32,7 @@ function MainApp() {
   const [xrayTextCache, setXrayTextCache] = useState({});
   const [ocrProcessing, setOcrProcessing] = useState(false);
   const [ocrEngineName, setOcrEngineName] = useState('none');
+  const [ocrProgress, setOcrProgress] = useState({ progress: '', percent: 0 });
   const [styleAnalyzing, setStyleAnalyzing] = useState(false);
   const [styleDossier, setStyleDossier] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
@@ -362,12 +363,13 @@ function MainApp() {
     // Show processing animation for all uploads (OCR or plain reading)
     setOcrProcessing(true);
     setOcrEngineName(ocrEngine);
+    setOcrProgress({ progress: '📤 Enviando arquivo...', percent: 5 });
 
     try {
       // Upload files sequentially (not parallel) to avoid overwhelming backend
       const results = [];
       for (const f of files) {
-        const result = await uploadFile(f, ocrEngine, compress);
+        const result = await uploadFile(f, ocrEngine, compress, true, (p) => setOcrProgress(p));
         results.push(result);
       }
 
@@ -702,6 +704,7 @@ function MainApp() {
           activeAgent={activeAgent}
           ocrProcessing={ocrProcessing}
           ocrEngineName={ocrEngineName}
+          ocrProgress={ocrProgress}
           styleAnalyzing={styleAnalyzing}
           xrayLoading={xrayLoading}
           xrayProgress={xrayProgress}

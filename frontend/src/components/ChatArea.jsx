@@ -142,7 +142,7 @@ function V2CollapsibleCard({ icon, title, content }) {
     );
 }
 
-const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, onQAReview, hasUploadedText = false, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, selectedModel }) => {
+const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', ocrProgress = { progress: '', percent: 0 }, styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, onQAReview, hasUploadedText = false, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, selectedModel }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
@@ -323,7 +323,7 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                     );
                 })}
 
-                {/* OCR Processing Animation */}
+                {/* OCR + Vectorization Progress Animation */}
                 {ocrProcessing && (
                     <div className="ocr-processing-card">
                         <div className="ocr-processing-icon">
@@ -331,16 +331,24 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                         </div>
                         <div className="ocr-processing-info">
                             <span className="ocr-processing-title">
-                                {ocrEngineName === 'none' ? 'Fazendo a leitura do processo...' : 'Processando OCR...'}
+                                {ocrProgress.progress || (ocrEngineName === 'none' ? 'Fazendo a leitura do processo...' : 'Processando documento...')}
                             </span>
-                            <span className="ocr-processing-sub">
-                                {ocrEngineName === 'none' ? 'Extraindo texto nativo do documento' : 'Extraindo texto do documento via OCR'}
-                            </span>
-                        </div>
-                        <div className="ocr-processing-dots">
-                            <span className="dot" />
-                            <span className="dot" />
-                            <span className="dot" />
+                            <div className="ocr-progress-bar-container">
+                                <div
+                                    className="ocr-progress-bar-fill"
+                                    style={{ width: `${Math.max(ocrProgress.percent || 0, 3)}%` }}
+                                />
+                            </div>
+                            <div className="ocr-progress-meta">
+                                <span className="ocr-progress-step">
+                                    {ocrProgress.percent <= 20 && '📄 Etapa 1/4 — Upload'}
+                                    {ocrProgress.percent > 20 && ocrProgress.percent <= 55 && '🔍 Etapa 2/4 — OCR'}
+                                    {ocrProgress.percent > 55 && ocrProgress.percent <= 75 && '🧠 Etapa 3/4 — Chunking Semântico'}
+                                    {ocrProgress.percent > 75 && ocrProgress.percent < 100 && '🔗 Etapa 4/4 — Vetorização'}
+                                    {ocrProgress.percent >= 100 && '✅ Concluído'}
+                                </span>
+                                <span className="ocr-progress-percent">{ocrProgress.percent || 0}%</span>
+                            </div>
                         </div>
                     </div>
                 )}

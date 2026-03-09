@@ -69,11 +69,12 @@ async function safeJson(res, context) {
  * @param {string} ocrEngine
  * @returns {Promise<{filename: string, text: string, char_count: number}>}
  */
-export async function uploadFile(file, ocrEngine = 'mistral_doc_ai', compress = true) {
+export async function uploadFile(file, ocrEngine = 'mistral_doc_ai', compress = true, vectorize = true, onProgress = null) {
     const form = new FormData();
     form.append('file', file);
     form.append('ocr_engine', ocrEngine);
     form.append('compress', compress.toString());
+    form.append('vectorize', vectorize.toString());
 
     // 1. Start background upload task
     const startRes = await fetch(`${API_BASE}/upload`, {
@@ -95,6 +96,9 @@ export async function uploadFile(file, ocrEngine = 'mistral_doc_ai', compress = 
     const { task_id } = await safeJson(startRes, 'Upload');
     if (!task_id) throw new Error('Upload: servidor não retornou task_id.');
 
+    // Report initial progress
+    if (onProgress) onProgress({ progress: '📤 Enviando arquivo...', percent: 5 });
+
     // 2. Poll for results every 2 seconds (max ~5 minutes)
     const POLL_INTERVAL = 2000;
     const MAX_POLLS = 150;
@@ -111,7 +115,13 @@ export async function uploadFile(file, ocrEngine = 'mistral_doc_ai', compress = 
         const data = await safeJson(pollRes, 'Upload Poll').catch(() => null);
         if (!data) continue;
 
+        // Report progress to UI
+        if (onProgress && data.progress) {
+            onProgress({ progress: data.progress, percent: data.percent || 0 });
+        }
+
         if (data.status === 'done') {
+            if (onProgress) onProgress({ progress: '✅ Processamento concluído!', percent: 100 });
             return data.result;
         }
         if (data.status === 'error') {

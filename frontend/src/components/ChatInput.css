@@ -467,6 +467,16 @@
     accent-color: #059669;
 }
 
+/* ── Vectorize Toggle (blue-teal accent when active) ── */
+.vectorize-toggle.vectorize-active .compress-label {
+    color: #0891B2;
+    font-weight: 600;
+}
+
+.vectorize-toggle.vectorize-active input[type="checkbox"] {
+    accent-color: #0891B2;
+}
+
 /* ── Template files — compact pill ── */
 .template-bar {
     display: flex;

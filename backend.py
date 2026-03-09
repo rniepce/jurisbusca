@@ -309,10 +309,16 @@ def get_embedding_function(api_key=None):
         api_version="2024-12-01-preview",
     )
 
-def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="mistral_doc_ai", compress=True):
+def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="mistral_doc_ai", compress=True, vectorize=True, progress_callback=None):
     """
     Salva arquivo temp, faz OCR se necessário, vetoriza e retorna (full_text, retriever).
+    progress_callback(msg, percent) is called at each stage for UI progress bar.
     """
+    def _progress(msg, pct):
+        if progress_callback:
+            progress_callback(msg, pct)
+        print(msg)
+
     text = ""
     docs = []
     
@@ -326,30 +332,35 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
         if suffix == ".pdf":
             if ocr_engine_choice == "none":
                 # ── No OCR: direct text extraction only (PyPDFLoader) ──
+                _progress("📄 Extraindo texto nativo do PDF...", 30)
                 from langchain_community.document_loaders import PyPDFLoader
                 loader = PyPDFLoader(tmp_path)
                 docs = loader.load()
                 total_chars = sum(len(d.page_content) for d in docs)
-                print(f"📄 Extração direta (sem OCR): {len(docs)} págs | {total_chars} chars")
+                _progress(f"📄 Texto nativo extraído: {len(docs)} páginas, {total_chars:,} caracteres", 50)
             else:
                 # ── Hybrid Extract: page-level triage (text vs OCR) ──
                 try:
                     from core.hybrid_extract import hybrid_extract
                     ocr_choice = ocr_engine_choice
                     # Normalize: any invalid engine defaults to mistral_doc_ai
-                    if ocr_choice not in ("marker", "mistral_doc_ai"):
+                    if ocr_choice not in ("marker", "mistral_doc_ai", "tesseract"):
                         ocr_choice = "mistral_doc_ai"
+                    _progress(f"🔍 Analisando páginas com OCR ({ocr_choice})...", 30)
                     docs, stats = hybrid_extract(tmp_path, ocr_choice, compress)
-                    print(f"📊 {stats['text_pages']} págs texto | {stats['ocr_pages']} págs OCR | {stats['total_chars']} chars | {stats['elapsed_seconds']}s")
+                    _progress(
+                        f"📊 OCR concluído: {stats['text_pages']} págs texto + {stats['ocr_pages']} págs OCR ({stats['total_chars']:,} chars)",
+                        55
+                    )
                 except ImportError:
-                    print("⚠️ core.hybrid_extract não disponível. Usando extração legada.")
+                    _progress("⚠️ hybrid_extract não disponível. Usando extração legada...", 30)
                     # ── Fallback: extração legada (PyPDFLoader) ──
                     from langchain_community.document_loaders import PyPDFLoader
                     loader = PyPDFLoader(tmp_path)
                     docs = loader.load()
                     total_chars = sum(len(d.page_content) for d in docs)
                     if total_chars < 500:
-                        print(f"📉 Texto insuficiente ({total_chars} chars). Acionando OCR Marker...")
+                        _progress(f"📉 Texto insuficiente ({total_chars} chars). Acionando OCR...", 40)
                         if HAS_OCR:
                             try:
                                 from ocr_engine import get_marker_engine
@@ -361,13 +372,17 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
                                         docs = [Document(page_content=ocr_text, metadata={"source": filename, "ocr": "marker"})]
                             except Exception as ocr_err:
                                 print(f"⚠️ OCR Marker fallback falhou: {ocr_err}")
+                    _progress(f"📄 Extração concluída: {len(docs)} documentos", 50)
         
         elif suffix == ".docx":
+            _progress("📝 Extraindo texto do DOCX...", 30)
             from langchain_community.document_loaders import Docx2txtLoader
             loader = Docx2txtLoader(tmp_path)
             docs = loader.load()
+            _progress(f"📝 DOCX extraído: {len(docs)} seções", 50)
             
         elif suffix == ".txt":
+            _progress("📝 Lendo arquivo de texto...", 30)
             from langchain_community.document_loaders import TextLoader
             try:
                 loader = TextLoader(tmp_path, encoding='utf-8')
@@ -375,18 +390,25 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
             except Exception:
                 loader = TextLoader(tmp_path, encoding='latin-1')
                 docs = loader.load()
+            _progress(f"📝 TXT lido: {len(docs)} bloco(s)", 50)
             
         else:
             return f"Formato não suportado: {filename}", None
 
         # Limpeza e Consolidação
+        _progress("🧹 Limpando e consolidando texto...", 55)
         full_text = ""
         for doc in docs:
             cleaned = clean_text(doc.page_content)
             doc.page_content = cleaned
             full_text += cleaned + "\n\n"
             
-        print(f"Texto extraído: {len(full_text)} caracteres.")
+        _progress(f"📏 Texto extraído: {len(full_text):,} caracteres", 60)
+
+        # Skip vectorization if not requested
+        if not vectorize:
+            _progress("⏭️ Vetorização desativada. Retornando texto sem RAG.", 95)
+            return full_text, None
 
         # Vetorização (RAG)
         # Divide em chunks semânticos (seções jurídicas + embeddings)
@@ -395,38 +417,35 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
 
         try:
             from chunking import HybridSemanticChunker
-            print("🧠 Usando chunking semântico (seções jurídicas + embeddings)...")
+            _progress("🧠 Criando chunks semânticos (seções jurídicas)...", 65)
             semantic_chunker = HybridSemanticChunker(api_key=api_key)
             splits = semantic_chunker.split_text(
                 full_text,
                 source_metadata={"source": filename}
             )
             if splits:
-                print(f"✅ Chunking semântico: {len(splits)} chunks gerados")
                 # Log section distribution
                 sections = {}
                 for s in splits:
                     sec = s.metadata.get("section", "GERAL")
                     sections[sec] = sections.get(sec, 0) + 1
-                print(f"   📋 Seções: {sections}")
+                _progress(f"🧠 {len(splits)} chunks semânticos gerados ({len(sections)} seções)", 75)
             else:
                 raise ValueError("Chunker retornou lista vazia")
         except Exception as chunk_err:
-            print(f"⚠️ Chunking semântico falhou ({chunk_err}). Usando fallback por caracteres...")
+            _progress(f"⚠️ Chunking semântico falhou. Usando fallback por caracteres...", 70)
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=4000,
                 chunk_overlap=200,
                 separators=["\n\n", "\n", " ", ""]
             )
             splits = text_splitter.split_documents(docs)
+            _progress(f"📦 {len(splits)} chunks por caracteres criados", 75)
         
         # Cria Vector Store em memória (ephemeral)
-        # Usando Chroma com timeout para evitar hang
         try:
+            _progress(f"🔗 Vetorizando {len(splits)} chunks com embeddings...", 80)
             embedding_function = get_embedding_function(api_key=api_key)
-            
-            # Processa em batches menores para evitar rate limit e timeout
-            print(f"📊 Vetorizando {len(splits)} chunks...")
             
             import signal
             
@@ -451,14 +470,14 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
                 signal.alarm(0)  # Cancela o alarm
                 signal.signal(signal.SIGALRM, old_handler)  # Restaura handler
             
-            print(f"✅ RAG indexado: {len(splits)} chunks vetorizados.")
+            _progress(f"✅ RAG indexado: {len(splits)} chunks vetorizados", 95)
             return full_text, retriever
             
         except TimeoutError as e:
-            print(f"⚠️ RAG Timeout: {e}. Retornando texto sem vetorização.")
+            _progress(f"⚠️ RAG Timeout. Retornando texto sem vetorização.", 95)
             return full_text, None
         except Exception as e:
-            print(f"⚠️ Erro na vetorização RAG: {e}. Retornando texto sem retriever.")
+            _progress(f"⚠️ Erro na vetorização. Retornando texto sem retriever.", 95)
             return full_text, None
         
     except Exception as e:
