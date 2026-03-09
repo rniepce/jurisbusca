@@ -18,16 +18,84 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends, Security
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from jose import jwt
 
 import backend as be
 import history_db
+
+# ── Local SLM Engine (Apple Silicon only) ─────────────────────────────────────
+try:
+    import slm_engine
+    HAS_SLM = slm_engine.is_available()
+    if HAS_SLM:
+        print("🧠 SLM Engine disponível (MLX). Opção 'SLMs Locais' ativa.")
+    else:
+        print("⚠️ MLX não instalado. SLM Engine desabilitado.")
+except ImportError:
+    HAS_SLM = False
+    slm_engine = None
+    print("⚠️ slm_engine.py não encontrado. SLM Engine desabilitado.")
+
+# ── SLM Orchestrator (Pipeline multi-modelo) ───────────────────────────────
+try:
+    from slm_orchestrator import SLMOrchestrator
+    HAS_SLM_ORCHESTRATOR = HAS_SLM  # só funciona se MLX estiver disponível
+    _slm_orchestrator = None  # lazy init
+    if HAS_SLM_ORCHESTRATOR:
+        print("📦 SLM Orchestrator disponível. Engine 'V3 Local' ativa.")
+except ImportError:
+    HAS_SLM_ORCHESTRATOR = False
+    _slm_orchestrator = None
+    print("⚠️ slm_orchestrator.py não encontrado.")
+
+# ── Remote SLM Server (Hybrid: Railway → MacBook via Tunnel) ───────────────
+import httpx
+
+SLM_SERVER_URL = os.environ.get("SLM_SERVER_URL", "").rstrip("/")  # ex: https://slm.meudominio.com
+SLM_SERVER_KEY = os.environ.get("SLM_SERVER_KEY", "")
+HAS_REMOTE_SLM = bool(SLM_SERVER_URL)
+if HAS_REMOTE_SLM:
+    print(f"🌐 SLM Server remoto configurado: {SLM_SERVER_URL}")
+
+
+def _call_remote_slm(processo_text: str, estilo: str = "") -> dict:
+    """Proxy: envia requisição para o SLM server remoto (MacBook via tunnel)."""
+    headers = {"Content-Type": "application/json"}
+    if SLM_SERVER_KEY:
+        headers["X-SLM-Key"] = SLM_SERVER_KEY
+
+    resp = httpx.post(
+        f"{SLM_SERVER_URL}/slm/pipeline",
+        json={"processo_text": processo_text, "estilo": estilo},
+        headers=headers,
+        timeout=300.0,  # 5 min timeout (pipeline pode demorar)
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _check_remote_slm_health() -> dict:
+    """Checa se o SLM server remoto está online."""
+    try:
+        headers = {}
+        if SLM_SERVER_KEY:
+            headers["X-SLM-Key"] = SLM_SERVER_KEY
+        resp = httpx.get(
+            f"{SLM_SERVER_URL}/slm/health",
+            headers=headers,
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        data["remote"] = True
+        data["url"] = SLM_SERVER_URL
+        return data
+    except Exception as e:
+        return {"status": "offline", "remote": True, "url": SLM_SERVER_URL, "error": str(e)[:200]}
 
 
 @asynccontextmanager
@@ -63,100 +131,8 @@ conversations_fallback: dict[str, list[dict]] = {}
 _bg_tasks: dict[str, dict] = {}
 _process_rag_cache: dict[str, tuple] = {}
 
-# ── Auth (Supabase JWT Verification) ──────────────────────────────────────────
+# ── Auth (disabled — open access) ─────────────────────────────────────────
 
-security = HTTPBearer()
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
-SUPABASE_URL = os.getenv("SUPABASE_URL", "") or os.getenv("VITE_SUPABASE_URL", "")
-
-# Cache JWKS keys from Supabase
-_jwks_cache: dict = {"keys": None, "fetched_at": 0}
-
-def _get_jwks():
-    """Fetch and cache JWKS from Supabase (refresh every 1 hour)."""
-    import time, requests
-    now = time.time()
-    if _jwks_cache["keys"] and (now - _jwks_cache["fetched_at"]) < 3600:
-        return _jwks_cache["keys"]
-    
-    if not SUPABASE_URL:
-        return None
-    
-    try:
-        jwks_url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
-        resp = requests.get(jwks_url, timeout=5)
-        if resp.ok:
-            jwks = resp.json()
-            _jwks_cache["keys"] = jwks
-            _jwks_cache["fetched_at"] = now
-            print(f"✅ JWKS carregado: {len(jwks.get('keys', []))} chaves")
-            return jwks
-    except Exception as e:
-        print(f"⚠️ Erro ao buscar JWKS: {e}")
-    return None
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
-    """Validate Supabase JWT token and return user ID."""
-    token = credentials.credentials
-    if not SUPABASE_JWT_SECRET and not SUPABASE_URL:
-        print("⚠️ AVISO: SUPABASE_JWT_SECRET e SUPABASE_URL não configurados. Ignorando auth.")
-        return "development_user"
-    
-    # Strategy 1: Try JWKS verification (ES256 / ECC P-256 — new Supabase keys)
-    jwks = _get_jwks()
-    if jwks:
-        try:
-            # Get the signing key from JWKS
-            from jose import jwk
-            unverified_header = jwt.get_unverified_header(token)
-            kid = unverified_header.get("kid")
-            
-            matching_key = None
-            for key_data in jwks.get("keys", []):
-                if key_data.get("kid") == kid:
-                    matching_key = key_data
-                    break
-            
-            if matching_key:
-                public_key = jwk.construct(matching_key)
-                payload = jwt.decode(
-                    token,
-                    public_key,
-                    algorithms=[matching_key.get("alg", "ES256")],
-                    options={"verify_aud": False}
-                )
-                user_id = payload.get("sub")
-                if not user_id:
-                    raise HTTPException(status_code=401, detail="Token inválido (sem usuário)")
-                return user_id
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail="Sessão expirada. Faça login novamente.")
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"⚠️ JWKS verification failed, trying HS256 fallback: {e}")
-    
-    # Strategy 2: Fallback to HS256 with legacy JWT secret
-    if SUPABASE_JWT_SECRET:
-        try:
-            payload = jwt.decode(
-                token,
-                SUPABASE_JWT_SECRET,
-                algorithms=["HS256"],
-                options={"verify_aud": False}
-            )
-            user_id = payload.get("sub")
-            if not user_id:
-                raise HTTPException(status_code=401, detail="Token inválido (sem usuário)")
-            return user_id
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail="Sessão expirada. Faça login novamente.")
-        except jwt.JWTError as e:
-            print(f"⚠️ HS256 JWT Error: {str(e)}")
-            raise HTTPException(status_code=401, detail="Token de autenticação inválido.")
-    
-    raise HTTPException(status_code=401, detail="Não foi possível validar o token.")
-        
 
 class ChatRequest(BaseModel):
     message: str
@@ -164,7 +140,7 @@ class ChatRequest(BaseModel):
     llm: Optional[str] = None  # LLM deployment name (e.g. 'gpt-5.2-chat', 'DeepSeek-V3.2-Speciale')
     conversation_id: Optional[str] = None
     agent_prompt: Optional[str] = None
-    ocr_engine: str = "mistral_doc_ai"
+    ocr_engine: str = "paddle"
     uploaded_text: Optional[str] = None  # pre-extracted text from uploaded file
     style_dossier: Optional[str] = None  # cloning prompt from style report
     use_rag: bool = False  # if True, use RAG retrieval instead of full text
@@ -180,6 +156,8 @@ MODEL_MAP = {
     "v0.5":   "gpt-5.2-chat",
     "v1":     "gpt-5.2-chat",
     "v2":     "gpt-5.2-chat",
+    "v3-local": "local-slm",
+    "local-slm": "local-slm",
 }
 
 
@@ -230,7 +208,7 @@ async def debug_routes():
 
 
 @app.post("/api/chat")
-async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_current_user)):
+async def chat(req: ChatRequest, request: Request):
     """Process a chat message and return LLM response."""
     try:
         # Resolve LLM deployment: prefer explicit llm field, fallback to MODEL_MAP
@@ -239,15 +217,17 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
         # Read Azure key from header (frontend sends it), fallback to env var
         azure_key = request.headers.get("X-Azure-Key", "").strip() or None
 
-        # Build the LLM instance
+        # Build the LLM instance (skip for local SLM — handled separately below)
         original_model = model_name
-        try:
-            llm = be.get_llm(model_name=model_name, temperature=0.3, api_key=azure_key)
-            print(f"✅ LLM instanciado: {model_name}")
-        except Exception as llm_err:
-            print(f"⚠️ Falha ao instanciar {model_name}: {llm_err}. Fallback para gpt-5.2-chat.")
-            model_name = "gpt-5.2-chat"
-            llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
+        llm = None
+        if model_name != "local-slm":
+            try:
+                llm = be.get_llm(model_name=model_name, temperature=0.3, api_key=azure_key)
+                print(f"✅ LLM instanciado: {model_name}")
+            except Exception as llm_err:
+                print(f"⚠️ Falha ao instanciar {model_name}: {llm_err}. Fallback para gpt-5.2-chat.")
+                model_name = "gpt-5.2-chat"
+                llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
 
         conv_id = req.conversation_id or str(uuid.uuid4())
 
@@ -266,16 +246,7 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
             system_parts.append(req.agent_prompt)
 
         # ── Process RAG: retrieve relevant chunks instead of full text ──
-        # Max chars to send as full text (~50k tokens). Above this, use RAG or truncate.
-        MAX_TEXT_CHARS = 200_000
-
-        # Auto-activate RAG for large documents even if user didn't toggle it
-        use_rag = req.use_rag
-        if req.uploaded_text and len(req.uploaded_text) > MAX_TEXT_CHARS and _process_rag_cache and not use_rag:
-            print(f"⚡ Auto-ativando RAG: texto tem {len(req.uploaded_text)} chars (>{MAX_TEXT_CHARS}). Usando chunks semânticos.")
-            use_rag = True
-
-        if use_rag and req.uploaded_text and _process_rag_cache:
+        if req.use_rag and req.uploaded_text and _process_rag_cache:
             try:
                 # Find the cached retriever (use first available)
                 retriever = None
@@ -288,16 +259,11 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
                     relevant_chunks = retriever.invoke(req.message)
                     if relevant_chunks:
                         chunks_text = "\n\n".join([
-                            f"[Seção: {doc.metadata.get('section', 'GERAL')} | "
-                            f"Pág. {doc.metadata.get('page', '?')} | "
-                            f"{doc.metadata.get('chunk_strategy', doc.metadata.get('extraction', 'text'))}]\n"
-                            f"{doc.page_content}"
+                            f"[Pág. {doc.metadata.get('page', '?')} — {doc.metadata.get('extraction', 'text')}]\n{doc.page_content}"
                             for doc in relevant_chunks
                         ])
                         system_parts.append(
-                            f"\n\n---\n🎯 **TRECHOS RELEVANTES DO PROCESSO (RAG Semântico — {len(relevant_chunks)} chunks recuperados):**\n"
-                            f"Os trechos abaixo foram selecionados automaticamente por similaridade semântica com a pergunta do usuário. "
-                            f"Cada trecho indica a seção jurídica de origem (ex: FUNDAMENTAÇÃO, DOS FATOS, DISPOSITIVO).\n\n"
+                            f"\n\n---\n🎯 **TRECHOS RELEVANTES DO PROCESSO (RAG — {len(relevant_chunks)} chunks):**\n\n"
                             f"{chunks_text}\n---"
                         )
                         total_tokens_approx = sum(len(d.page_content) for d in relevant_chunks) // 4
@@ -318,27 +284,12 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
                     f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
                 )
         elif req.uploaded_text:
-            text_to_send = req.uploaded_text
-            truncated = False
-            if len(text_to_send) > MAX_TEXT_CHARS:
-                text_to_send = text_to_send[:MAX_TEXT_CHARS]
-                truncated = True
-                print(f"✂️ Texto truncado: {len(req.uploaded_text)} → {MAX_TEXT_CHARS} chars (sem RAG disponível)")
-
-            truncation_warning = ""
-            if truncated:
-                truncation_warning = (
-                    f"\n⚠️ ATENÇÃO: Este texto foi TRUNCADO de {len(req.uploaded_text):,} para {MAX_TEXT_CHARS:,} caracteres "
-                    f"por limite de contexto. Para análise completa, ative a Vetorização e o RAG.\n"
-                )
-
             system_parts.append(
-                f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL — TEXTO EXTRAÍDO VIA OCR):**\n"
+                f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL — TEXTO INTEGRAL EXTRAÍDO VIA OCR):**\n"
                 f"⚠️ ATENÇÃO: O texto abaixo foi extraído automaticamente de um PDF via OCR. "
-                f"Este É o conteúdo do documento/processo judicial. NÃO solicite o envio do arquivo — "
-                f"ele já está aqui em formato texto. Analise este conteúdo diretamente."
-                f"{truncation_warning}\n\n"
-                f"{text_to_send}\n---"
+                f"Este É o conteúdo completo do documento/processo judicial. NÃO solicite o envio do arquivo — "
+                f"ele já está aqui em formato texto. Analise este conteúdo diretamente.\n\n"
+                f"{req.uploaded_text}\n---"
             )
         if req.style_dossier:
             system_parts.append(
@@ -350,114 +301,42 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
         # V0.5: Inject imported jurisprudence into the LLM context
         if req.jurisprudence_context:
             system_parts.append(
-                f"\n\n---\n📚 **JURISPRUDÊNCIA SELECIONADA PELO MAGISTRADO:**\n"
-                f"O magistrado selecionou a(s) jurisprudência(s) abaixo para inclusão na fundamentação da minuta.\n"
-                f"Insira na seção de FUNDAMENTAÇÃO, contextualizando o tema e transcrevendo a ementa com a citação do processo.\n"
-                f"⚠️ CITE **APENAS** a jurisprudência listada abaixo. NÃO adicione jurisprudência do seu treinamento.\n\n"
-                f"JURISPRUDÊNCIA SELECIONADA:\n"
+                f"\n\n---\n📚 **JURISPRUDÊNCIA SELECIONADA PELO MAGISTRADO (INCLUIR NA FUNDAMENTAÇÃO DA MINUTA):**\n"
+                f"⚠️ INSTRUÇÃO: O magistrado selecionou a(s) jurisprudência(s) abaixo como relevante(s) para este caso. "
+                f"INCLUA obrigatoriamente na fundamentação da minuta, citando o número do processo e o entendimento.\n\n"
                 f"{req.jurisprudence_context}\n---"
             )
-        else:
-            # Explicit instruction: NO jurisprudence available
-            system_parts.append(
-                "\n\n---\n⚠️ **NENHUMA JURISPRUDÊNCIA FOI FORNECIDA PELA PLATAFORMA.**\n"
-                "O magistrado NÃO selecionou jurisprudência para esta minuta.\n"
-                "Portanto: NÃO cite números de processo, ementas, relatores ou datas de julgamento do seu treinamento.\n"
-                "Fundamente a decisão EXCLUSIVAMENTE com legislação (artigos de lei, CPC, CC, CDC, CF, etc.).\n"
-                "É PREFERÍVEL uma minuta sem jurisprudência a uma minuta com jurisprudência INVENTADA.\n---"
-            )
 
-        # ── Phase-aware RAG: inject model context only when needed ──────
-        # Phase 1 (Raio-X): No history → lightweight, just process text
-        # Phase 3 (Minuta): User responded to deliberation → inject RAG + dossiê
-        model_context_meta = {"mirror_used": False, "mirror_source": None, "match_quality": None, "dossier_used": False}
-        
+        # ── Auto RAG: retrieve mirror context from persisted templates ──
         if req.uploaded_text:
-            has_history = len(past_messages) >= 2  # At least 1 assistant + 1 user response
-            
-            if has_history:
-                # ── FASE 3: User has responded — inject RAG models + dossiê ──
-                try:
-                    token = _get_user_token(request)
-                    rag_retriever = be.load_persistent_rag(collection_name="rag_templates_persistent", user_id=user_id, token=token)
+            try:
+                if True:  # Templates use local storage, no API key needed
+                    collection_name = "rag_templates_persistent"
+                    rag_retriever = be.load_persistent_rag(collection_name=collection_name)
                     if rag_retriever:
-                        # Extract legal themes for smart query (instead of raw text)
-                        themes_query = be.extract_legal_themes(req.uploaded_text)
-                        
-                        # Search with scores for quality-aware injection
-                        scored_results = rag_retriever.invoke_scored(themes_query)
-                        
-                        if scored_results and scored_results[0][0] > 0.05:
-                            top_score, mirror_doc = scored_results[0]
-                            mirror_source = mirror_doc.metadata.get('source', '?')
-                            
-                            # Determine match quality
-                            if top_score > 0.25:
-                                quality = "alta"
-                                quality_label = "GABARITO ESTRUTURAL E JURÍDICO"
-                            elif top_score > 0.12:
-                                quality = "media"
-                                quality_label = "REFERÊNCIA ESTRUTURAL E DE ESTILO"
-                            else:
-                                quality = "baixa"
-                                quality_label = "REFERÊNCIA DE ESTILO APENAS"
-                            
-                            model_context_meta = {
-                                "mirror_used": True,
-                                "mirror_source": mirror_source,
-                                "match_quality": quality,
-                                "match_score": top_score,
-                                "dossier_used": False
-                            }
-                            
+                        # Search for similar cases
+                        relevant_docs = rag_retriever.invoke(req.uploaded_text[:6000])
+                        if relevant_docs:
+                            mirror_doc = relevant_docs[0]
                             rag_block = (
-                                f"\n\n---\n💎 **CASO ESPELHO ({quality_label} — Relevância: {quality.upper()}, Score: {top_score:.2f}):**\n"
-                                f"⚠️ Modelo recuperado: `{mirror_source}`\n"
+                                f"\n\n---\n💎 **CASO ESPELHO (GOLDEN SAMPLE - MODELO MAIS SIMILAR):**\n"
+                                f"⚠️ O caso abaixo ({mirror_doc.metadata.get('source', '?')}) é o seu GABARITO ESTRUTURAL.\n"
+                                f"1. Copie a estrutura de tópicos (titulação, numeração).\n"
+                                f"2. Se for o mesmo assunto, adapte apenas os fatos e nomes, mantendo a fundamentação jurídica.\n\n"
+                                f"--- INÍCIO DO CASO ESPELHO ---\n{mirror_doc.page_content}\n--- FIM DO CASO ESPELHO ---\n"
                             )
-                            if quality in ("alta", "media"):
-                                rag_block += (
-                                    "1. Copie a macroestrutura (titulação, numeração, divisões).\n"
-                                    "2. Clone o tom e vocabulário do magistrado.\n"
-                                    "3. Se for o mesmo assunto, adapte apenas fatos e nomes, mantendo a fundamentação jurídica.\n"
-                                )
-                            else:
-                                rag_block += (
-                                    "⚠️ Tema diferente — copie APENAS estilo e estrutura, construa fundamentação nova.\n"
-                                )
-                            rag_block += f"\n--- INÍCIO DO CASO ESPELHO ---\n{mirror_doc.page_content}\n--- FIM DO CASO ESPELHO ---\n"
-                            
-                            # Add secondary models
-                            for i, (sec_score, sec_doc) in enumerate(scored_results[1:3]):
-                                if sec_score > 0.05:
-                                    rag_block += f"\n[MODELO SECUNDÁRIO {i+2} — {sec_doc.metadata.get('source', '?')} (score: {sec_score:.2f})]:\n{sec_doc.page_content[:3000]}\n"
+                            # Add secondary references
+                            for i, doc in enumerate(relevant_docs[1:3]):
+                                rag_block += f"\n[MODELO SECUNDÁRIO {i+2} - {doc.metadata.get('source', '?')}]:\n{doc.page_content[:3000]}\n"
                             rag_block += "---"
                             system_parts.append(rag_block)
-                            print(f"💎 Modelo espelho injetado: {mirror_source} (score: {top_score:.2f}, quality: {quality})")
-                        else:
-                            # No relevant model found — inject fallback template
-                            system_parts.append(
-                                f"\n\n---\n📝 **NENHUM MODELO DO MAGISTRADO ENCONTRADO NO ACERVO.**\n"
-                                f"Use o template padrão abaixo como estrutura base:\n\n"
-                                f"{be.TEMPLATE_SENTENCA_PADRAO}\n---"
-                            )
-                            print("📝 Nenhum modelo relevante — injetando template padrão")
-                    else:
-                        # No templates at all — inject fallback template
-                        system_parts.append(
-                            f"\n\n---\n📝 **NENHUM MODELO DISPONÍVEL NO ACERVO.**\n"
-                            f"O magistrado não indexou modelos de decisão. Use o template padrão:\n\n"
-                            f"{be.TEMPLATE_SENTENCA_PADRAO}\n---"
-                        )
-                except Exception as e:
-                    print(f"⚠️ Phase 3 RAG retrieval failed (non-blocking): {e}")
-                
-                # ── Inject style dossier (from request, memory cache, or disk) ──
-                if not req.style_dossier:
-                    try:
-                        dossier = be.load_style_dossier(user_id)
-                        if dossier:
-                            cloning = dossier.get('cloning_prompt', '')
-                            glossary = dossier.get('glossary', '')
+
+                    # Also inject cached style dossier if not already provided
+                    if not req.style_dossier and be._style_dossier_cache:
+                        # Use the first (and usually only) cached dossier
+                        for cached in be._style_dossier_cache.values():
+                            cloning = cached.get('cloning_prompt', '')
+                            glossary = cached.get('glossary', '')
                             if cloning:
                                 style_block = (
                                     f"\n\n---\n🧬 **SYSTEM PROMPT DE CLONAGEM (ESTILO DO MAGISTRADO):**\n"
@@ -468,40 +347,9 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
                                     style_block += f"\n📝 **GLOSSÁRIO DO MAGISTRADO:**\n{glossary}\n"
                                 style_block += "---"
                                 system_parts.append(style_block)
-                                model_context_meta["dossier_used"] = True
-                                print(f"🧬 Dossiê de estilo injetado (user {user_id[:8]})")
-                    except Exception as e:
-                        print(f"⚠️ Style dossier loading failed: {e}")
-            else:
-                # ── FASE 1: First interaction — no RAG needed ──
-                print("🔍 Fase 1 (Raio-X): sem histórico, contexto leve (sem RAG)")
-
-        # ── Claude rate-limit guard: truncate to stay under 30K input tokens ──
-        # Anthropic Tier 1 allows 30K input tokens/min. ~4 chars ≈ 1 token.
-        # We cap at 80K chars (~20K tokens) for the system prompt, leaving room
-        # for conversation history, user message, and output tokens.
-        if model_name.startswith("claude") and system_parts:
-            CLAUDE_MAX_CHARS = 80_000
-            total_chars = sum(len(p) for p in system_parts)
-            if total_chars > CLAUDE_MAX_CHARS:
-                print(f"✂️ Claude truncation: {total_chars} chars → ~{CLAUDE_MAX_CHARS} chars (rate limit guard)")
-                # Truncate the largest part (usually uploaded_text at index 1+)
-                # Strategy: keep agent prompt (first part) intact, truncate the rest proportionally
-                budget = CLAUDE_MAX_CHARS
-                truncated_parts = []
-                for i, part in enumerate(system_parts):
-                    if budget <= 0:
-                        truncated_parts.append("\n\n⚠️ *[Conteúdo adicional omitido para respeitar o limite do Claude. Use GPT-5.2 para contextos maiores.]*")
-                        break
-                    if len(part) <= budget or i == 0:
-                        # Keep agent prompt (i==0) and small parts intact
-                        truncated_parts.append(part)
-                        budget -= len(part)
-                    else:
-                        # Truncate this part to fit the remaining budget
-                        truncated_parts.append(part[:budget] + "\n\n⚠️ *[Texto truncado para caber no limite do Claude (30K tokens/min). Use GPT-5.2 para o texto integral.]*")
-                        budget = 0
-                system_parts = truncated_parts
+                            break
+            except Exception as e:
+                print(f"⚠️ RAG auto-retrieval failed (non-blocking): {e}")
 
         if system_parts:
             messages.append(SystemMessage(content="\n".join(system_parts)))
@@ -635,30 +483,116 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
                         response_text = f"⚠️ **Erro no V3 Engine:** {str(e)}\n\n**Fallback GPT-5.2 também falhou:** {str(fb_err)}"
             else:
                 response_text = "Erro: V3 Engine (run_autonomous_magistrate) não foi importada. Verifique se langgraph está instalado."
+        elif req.model == "v3-local" and (HAS_REMOTE_SLM or HAS_SLM_ORCHESTRATOR):
+            # ── V3 Local: Pipeline de 5 SLMs (remoto via tunnel OU local) ──
+            try:
+                processo_text = req.uploaded_text or req.message
+                estilo = req.style_dossier or ""
+
+                if HAS_REMOTE_SLM:
+                    # ── Proxy para SLM Server remoto (MacBook via tunnel) ──
+                    result = _call_remote_slm(processo_text, estilo)
+                else:
+                    # ── Execução local (dev no MacBook) ──
+                    global _slm_orchestrator
+                    if _slm_orchestrator is None:
+                        _slm_orchestrator = SLMOrchestrator(load_all=False)
+                    result = _slm_orchestrator.run_pipeline(
+                        processo_text=processo_text,
+                        estilo=estilo,
+                    )
+
+                # Formatar resposta como a V2 (minuta + cards colapsáveis)
+                minuta = result.get("minuta", "")
+                timing = result.get("timing", {})
+                audit = result.get("audit", {})
+                fatos = result.get("fatos", {})
+                rota = result.get("rota", {})
+
+                timing_str = (f"Router: {timing.get('router', '?')}s | "
+                              f"Extrator: {timing.get('extrator', '?')}s | "
+                              f"Jurista: {timing.get('jurista', '?')}s | "
+                              f"Redator: {timing.get('redator', '?')}s | "
+                              f"Auditor: {timing.get('auditor', '?')}s | "
+                              f"**Total: {timing.get('total', '?')}s**")
+
+                source = "remoto" if HAS_REMOTE_SLM else "local"
+                response_text = minuta
+                model_name = f"SLM Pipeline ({timing.get('total', '?')}s, {source})"
+
+                # V2-style sections for collapsible cards
+                v2_sections = {
+                    "draft": minuta,
+                    "triage": (f"**Tipo:** {rota.get('tipo', '?')}\n"
+                               f"**Matéria:** {rota.get('materia', '?')}\n"
+                               f"**Confiança:** {rota.get('confianca', '?')}\n\n"
+                               f"**Fatos extraídos:**\n"
+                               f"- Autor: {fatos.get('autor', '?')}\n"
+                               f"- Réu: {fatos.get('reu', '?')}\n"
+                               f"- Ação: {fatos.get('acao', '?')}\n"
+                               f"- Valor: {fatos.get('valor_causa', '?')}\n\n"
+                               f"⏱️ {timing_str}"),
+                    "audit": (f"**Aprovado:** {'✅ Sim' if audit.get('aprovado') else '❌ Não'}\n"
+                              f"**Score:** {audit.get('score', '?')}/100\n"
+                              f"**Resumo:** {audit.get('resumo', 'N/A')}\n\n"
+                              f"**Modelos usados:**\n"
+                              f"- Router: {result.get('model_info', {}).get('router', '?')}\n"
+                              f"- Extrator: {result.get('model_info', {}).get('extrator', '?')}\n"
+                              f"- Jurista: {result.get('model_info', {}).get('jurista', '?')}\n"
+                              f"- Redator: {result.get('model_info', {}).get('redator', '?')}\n"
+                              f"- Auditor: {result.get('model_info', {}).get('auditor', '?')}"),
+                }
+
+            except Exception as e:
+                traceback.print_exc()
+                response_text = f"⚠️ **Erro no pipeline V3 Local:** {str(e)[:300]}"
+                model_name = "SLM Pipeline (erro)"
+        elif model_name == "local-slm" and HAS_SLM:
+            # ── Local SLM inference via MLX ──────────────────────────────
+            try:
+                # Convert LangChain messages to plain dicts for slm_engine
+                slm_messages = []
+                for msg in messages:
+                    if isinstance(msg, SystemMessage):
+                        slm_messages.append({"role": "system", "content": msg.content})
+                    elif isinstance(msg, HumanMessage):
+                        slm_messages.append({"role": "user", "content": msg.content})
+                    elif isinstance(msg, AIMessage):
+                        slm_messages.append({"role": "assistant", "content": msg.content})
+
+                response_text = slm_engine.generate_chat(
+                    slm_messages,
+                    model_key="main",
+                    max_tokens=4096,
+                    temperature=0.3,
+                )
+                model_name = slm_engine.MODELS["main"]["name"]
+            except Exception as slm_err:
+                print(f"⚠️ SLM local falhou: {slm_err}. Fallback para GPT-5.2.")
+                traceback.print_exc()
+                try:
+                    fallback_llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
+                    response = fallback_llm.invoke(messages)
+                    response_text = f"{be.safe_content(response)}\n\n---\n⚠️ *SLM local falhou ({str(slm_err)[:100]}). Resultado gerado por GPT-5.2.*"
+                    model_name = "gpt-5.2-chat"
+                except Exception as fb_err:
+                    response_text = f"⚠️ **Erro:** SLM local falhou ({str(slm_err)[:150]}). Fallback GPT-5.2 também falhou: {str(fb_err)[:150]}"
         else:
             # Default V0/V1 - just invoke LLM (Chat-based logic)
             try:
                 response = llm.invoke(messages)
                 response_text = be.safe_content(response)
             except Exception as invoke_err:
-                error_str = str(invoke_err)
-                is_rate_limit = "429" in error_str or "rate_limit" in error_str.lower()
-
                 # If model fails at invocation, retry with GPT-5.2
                 if original_model != "gpt-5.2-chat":
-                    if is_rate_limit:
-                        print(f"⚠️ {original_model} rate limit (429). Retrying com GPT-5.2.")
-                        reason = f"Modelo {original_model} excedeu o limite de taxa (rate limit). Tente novamente em alguns minutos ou use um prompt menor."
-                    else:
-                        print(f"⚠️ {original_model} invoke falhou: {invoke_err}. Retrying com GPT-5.2.")
-                        reason = f"Modelo {original_model} indisponível ({error_str[:100]})."
+                    print(f"⚠️ {original_model} invoke falhou: {invoke_err}. Retrying com GPT-5.2.")
                     try:
                         fallback_llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
                         response = fallback_llm.invoke(messages)
-                        response_text = f"{be.safe_content(response)}\n\n---\n⚠️ *{reason} Resultado gerado por GPT-5.2.*"
+                        response_text = f"{be.safe_content(response)}\n\n---\n⚠️ *Modelo {original_model} indisponível. Resultado gerado por GPT-5.2.*"
                         model_name = "gpt-5.2-chat"
                     except Exception as fb_err:
-                        response_text = f"⚠️ **Erro:** {reason} Fallback GPT-5.2 também falhou: {str(fb_err)[:150]}"
+                        response_text = f"⚠️ **Erro:** {original_model} falhou ({str(invoke_err)[:150]}). Fallback GPT-5.2 também falhou: {str(fb_err)[:150]}"
                 else:
                     raise invoke_err
 
@@ -670,15 +604,29 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
             "conversation_id": conv_id,
             "response": response_text,
             "model": model_name,
-            "model_context": model_context_meta,
         }
         
         # Include V2 structured sections if available
-        if req.model == "v2" and 'v2_sections' in locals():
+        if req.model in ("v2", "v3-local") and 'v2_sections' in locals():
             result_payload["v2_sections"] = v2_sections
 
-        # V0.5: jurisprudence research is now triggered manually via
-        # POST /api/jurisprudencia/research (no longer auto-triggered here)
+        # ── V0.5: trigger background jurisprudence research ──────────────
+        # Only on the SECOND interaction (after triagem is done), when there's history
+        if req.model == "v0.5" and req.uploaded_text and HAS_JURISPRUDENCIA and len(past_messages) >= 2:
+            juris_task_id = str(uuid.uuid4())
+            _bg_tasks[juris_task_id] = {
+                "status": "pending",
+                "result": None,
+                "error": None,
+                "progress": "Extraindo temas jurídicos do processo...",
+            }
+            thread = threading.Thread(
+                target=_run_jurisprudence_research_background,
+                args=(juris_task_id, req.uploaded_text, response_text),
+                daemon=True,
+            )
+            thread.start()
+            result_payload["jurisprudence_task_id"] = juris_task_id
 
         return result_payload
 
@@ -690,27 +638,21 @@ async def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_cu
 
 
 @app.get("/api/history")
-async def get_history(user_id: str = Depends(get_current_user)):
-    """Fetch conversation history."""
+async def get_history():
+    """Fetch conversation history (currently returns empty — no auth)."""
     return {"conversations": []}
 
 
-def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_engine: str, compress: bool, vectorize: bool = True):
+def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_engine: str, compress: bool):
     """Background worker: extracts text from uploaded file and stores result."""
-    def _update_progress(msg: str, percent: int):
-        _bg_tasks[task_id]["progress"] = msg
-        _bg_tasks[task_id]["percent"] = percent
-
     try:
         _bg_tasks[task_id]["status"] = "running"
-        _update_progress(f"📤 Recebendo arquivo {filename}...", 10)
+        _bg_tasks[task_id]["progress"] = f"Extraindo texto de {filename}..."
 
         suffix = os.path.splitext(filename)[1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(file_data)
             tmp_path = tmp.name
-
-        _update_progress("🔍 Iniciando extração de texto (OCR)...", 20)
 
         try:
             full_text, retriever = be.process_uploaded_file(
@@ -718,8 +660,6 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
                 filename,
                 ocr_engine_choice=ocr_engine,
                 compress=compress,
-                vectorize=vectorize,
-                progress_callback=lambda msg, pct: _update_progress(msg, pct),
             )
         finally:
             os.unlink(tmp_path)
@@ -736,8 +676,6 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
             _process_rag_cache[cache_key] = (retriever, full_text, len(full_text))
             rag_available = True
             print(f"🎯 Process RAG cached: key={cache_key[:8]}")
-
-        _update_progress("✅ Processamento concluído!", 100)
 
         _bg_tasks[task_id]["status"] = "done"
         _bg_tasks[task_id]["result"] = {
@@ -756,10 +694,8 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
 @app.post("/api/upload")
 async def upload_file(
     file: UploadFile = File(...),
-    ocr_engine: str = Form("mistral_doc_ai"),
+    ocr_engine: str = Form("paddle"),
     compress: bool = Form(True),
-    vectorize: bool = Form(True),
-    user_id: str = Depends(get_current_user)
 ):
     """Upload and extract text from a file. Returns task_id for polling."""
     try:
@@ -776,7 +712,7 @@ async def upload_file(
 
         thread = threading.Thread(
             target=_run_upload_background,
-            args=(task_id, content, filename, ocr_engine, compress, vectorize),
+            args=(task_id, content, filename, ocr_engine, compress),
             daemon=True,
         )
         thread.start()
@@ -789,7 +725,7 @@ async def upload_file(
 
 
 @app.get("/api/upload/{task_id}")
-async def upload_status(task_id: str, user_id: str = Depends(get_current_user)):
+async def upload_status(task_id: str):
     """Poll the status of a background upload task."""
     task = _bg_tasks.get(task_id)
     if not task:
@@ -799,7 +735,6 @@ async def upload_status(task_id: str, user_id: str = Depends(get_current_user)):
         "task_id": task_id,
         "status": task["status"],
         "progress": task.get("progress", ""),
-        "percent": task.get("percent", 0),
     }
 
     if task["status"] == "done":
@@ -827,11 +762,9 @@ def _run_xray_background(task_id: str, file_data: list[tuple[str, bytes]]):
             buf.seek(0)
             file_objects.append(buf)
 
-        # Progress callback — updates task dict so frontend can poll granular status
-        def _xray_progress(msg):
-            _bg_tasks[task_id]["progress"] = msg
+        _bg_tasks[task_id]["progress"] = f"Analisando {len(file_objects)} processos (MAP-REDUCE)..."
 
-        report, text_cache = be.generate_batch_xray(file_objects, None, progress_callback=_xray_progress)
+        report, text_cache = be.generate_batch_xray(file_objects, None)
 
         if isinstance(report, dict) and "error" in report:
             _bg_tasks[task_id]["status"] = "error"
@@ -852,10 +785,7 @@ def _run_xray_background(task_id: str, file_data: list[tuple[str, bytes]]):
 
 
 @app.post("/api/xray")
-async def batch_xray(
-    files: list[UploadFile] = File(...),
-    user_id: str = Depends(get_current_user)
-):
+async def batch_xray(files: list[UploadFile] = File(...)):
     """
     Batch X-Ray: upload files and start background MAP-REDUCE clustering.
     Returns a task_id immediately — poll GET /api/xray/{task_id} for results.
@@ -891,7 +821,7 @@ async def batch_xray(
 
 
 @app.get("/api/xray/{task_id}")
-async def xray_status(task_id: str, user_id: str = Depends(get_current_user)):
+async def xray_status(task_id: str):
     """
     Poll the status of a background X-Ray task.
     Returns status ('pending', 'running', 'done', 'error') and result when done.
@@ -918,10 +848,7 @@ async def xray_status(task_id: str, user_id: str = Depends(get_current_user)):
 
 
 @app.post("/api/style-report")
-async def style_report(
-    files: list[UploadFile] = File(...),
-    user_id: str = Depends(get_current_user)
-):
+async def style_report(files: list[UploadFile] = File(...)):
     """
     Generate a Style Dossier (Dossiê de Identidade Decisional) from template files.
     Uses the existing generate_style_dossier pipeline in backend.py.
@@ -969,7 +896,7 @@ class ClusterAnalyzeRequest(BaseModel):
     llm: Optional[str] = None
 
 
-def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_name: str, collection_name: str = "rag_templates_persistent", user_id: str = "default"):
+def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_name: str, collection_name: str = "rag_templates_persistent"):
     """Analyze one process. Runs in a thread pool. Retries on 429 rate limit."""
     import time as _time
 
@@ -994,7 +921,7 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
             op_key = os.getenv("AZURE_OPENAI_API_KEY", "")
             if op_key:
                 try:
-                    rag_retriever = be.load_persistent_rag(collection_name=collection_name, user_id=user_id, token=_get_user_token(request))
+                    rag_retriever = be.load_persistent_rag(collection_name=collection_name)
                     if rag_retriever:
                         relevant_docs = rag_retriever.invoke(text[:6000])
                         if relevant_docs:
@@ -1048,10 +975,7 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
 
 
 @app.post("/api/cluster-analyze")
-async def cluster_analyze(
-    req: ClusterAnalyzeRequest,
-    user_id: str = Depends(get_current_user)
-):
+async def cluster_analyze(req: ClusterAnalyzeRequest):
     """
     Process all files in a cluster individually, in parallel.
     Returns a list of individual analysis results.
@@ -1084,8 +1008,7 @@ async def cluster_analyze(
                     p["text"],
                     req.agent_prompt or "",
                     model_name,
-                    collection_name,
-                    user_id
+                    collection_name
                 )
                 futures[future] = p["filename"]
             for future in concurrent.futures.as_completed(futures):
@@ -1111,12 +1034,10 @@ async def cluster_analyze(
 
 @app.post("/api/templates")
 async def upload_templates(
-    request: Request,
     files: list[UploadFile] = File(...),
-    user_id: str = Depends(get_current_user)
 ):
     """
-    Upload and index template files for persistent RAG (Supabase + local fallback).
+    Upload and index template files in ChromaDB for persistent RAG.
     Also auto-generates the style dossier.
     """
     import io
@@ -1124,8 +1045,6 @@ async def upload_templates(
     try:
         import time as _time
         import asyncio
-
-        token = _get_user_token(request)
 
         # Convert UploadFiles into file-like objects
         file_objects = []
@@ -1136,13 +1055,12 @@ async def upload_templates(
             buf.seek(0)
             file_objects.append(buf)
 
-        # 1. Index templates (chunking is local; persistence via Supabase)
+        # 1. Index templates (100% local — no ChromaDB, no embeddings)
         t0 = _time.time()
         collection_name = "rag_templates_persistent"
-        print(f"📥 Upload templates: user={user_id[:8]}, files={[f.name for f in file_objects]}")
-        retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name, user_id=user_id, token=token)
+        retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name)
         indexed_count = len(docs) if docs else 0
-        print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks para user {user_id[:8]})")
+        print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks)")
 
         # 2. Auto-generate style dossier in BACKGROUND (don't block response)
         # The dossier calls GPT-5.2 which adds 10-30s; run it async instead.
@@ -1155,19 +1073,14 @@ async def upload_templates(
             buf_copy.seek(0)
             dossier_buffers.append(buf_copy)
 
-        async def _gen_dossier_bg(fobjs, uid):
+        async def _gen_dossier_bg(fobjs):
             try:
                 result = await asyncio.to_thread(be.generate_style_dossier, fobjs, None)
-                if result and not result.get('error'):
-                    # Persist dossier to disk per-user
-                    be.save_style_dossier(uid, result)
-                    print(f"✅ Dossiê de estilo gerado e salvo para user {uid[:8]}")
-                else:
-                    print(f"⚠️ Dossiê gerado com erro: {result.get('error', '?')}")
+                print(f"✅ Dossiê de estilo gerado em background: {bool(result and not result.get('error'))}")
             except Exception as e:
                 print(f"⚠️ Erro ao gerar dossiê em background: {e}")
 
-        asyncio.create_task(_gen_dossier_bg(dossier_buffers, user_id))
+        asyncio.create_task(_gen_dossier_bg(dossier_buffers))
 
         return {
             "indexed_chunks": indexed_count,
@@ -1185,13 +1098,12 @@ async def upload_templates(
 
 
 @app.get("/api/templates/status")
-async def templates_status(request: Request, user_id: str = Depends(get_current_user)):
-    """Check how many templates are indexed for the current user."""
+async def templates_status():
+    """Check how many templates are indexed."""
     try:
-        token = _get_user_token(request)
-        if user_id not in be._template_store or not be._template_store.get(user_id):
-            be._load_template_store(user_id, token)
-        count = len(be._template_store.get(user_id, []))
+        if not be._template_store:
+            be._load_template_store()
+        count = len(be._template_store)
         has_dossier = len(be._style_dossier_cache) > 0
         return {"indexed_chunks": count, "has_dossier": has_dossier}
     except Exception:
@@ -1199,409 +1111,19 @@ async def templates_status(request: Request, user_id: str = Depends(get_current_
 
 
 @app.delete("/api/templates")
-async def clear_templates(request: Request, user_id: str = Depends(get_current_user)):
-    """Clear all indexed templates for the current user."""
+async def clear_templates():
+    """Clear all indexed templates."""
     try:
-        token = _get_user_token(request)
-        # Clear from Supabase
-        be._delete_templates_supabase(user_id, token=token)
-        # Clear from memory
-        be._template_store.pop(user_id, None)
-        # Remove persisted JSON for this user (local fallback)
-        user_path = be._get_template_store_path(user_id)
-        if os.path.exists(user_path):
-            os.remove(user_path)
+        be._template_store.clear()
+        # Remove persisted JSON
+        if os.path.exists(be._TEMPLATE_STORE_PATH):
+            os.remove(be._TEMPLATE_STORE_PATH)
         # Clear style dossier cache
         be._style_dossier_cache.clear()
         return {"status": "ok", "message": "Modelos e cache limpos."}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao limpar modelos: {str(e)}")
-
-
-@app.get("/api/templates/list")
-async def list_templates(request: Request, user_id: str = Depends(get_current_user)):
-    """List all template files for the current user with metadata."""
-    try:
-        token = _get_user_token(request)
-        templates = be.list_templates(user_id, token)
-        return {"templates": templates, "total": len(templates)}
-    except Exception as e:
-        traceback.print_exc()
-        return {"templates": [], "total": 0}
-
-
-@app.delete("/api/templates/{filename:path}")
-async def delete_single_template(filename: str, request: Request, user_id: str = Depends(get_current_user)):
-    """Delete a specific template file by source filename."""
-    try:
-        token = _get_user_token(request)
-        removed = be.delete_template_by_source(user_id, filename, token)
-        if removed == 0:
-            raise HTTPException(status_code=404, detail=f"Modelo '{filename}' não encontrado.")
-        
-        remaining = be.list_templates(user_id, token)
-        return {
-            "status": "ok",
-            "removed_chunks": removed,
-            "remaining_templates": len(remaining),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro ao remover modelo: {str(e)}")
-
-
-class TemplateAskRequest(BaseModel):
-    query: str
-
-
-@app.post("/api/templates/ask")
-async def templates_ask(req: TemplateAskRequest, request: Request, user_id: str = Depends(get_current_user)):
-    """
-    RAG: busca nos templates do usuário + resumo por LLM.
-    Similar ao /api/jurisprudencia/ask mas para os modelos de decisão do usuário.
-    """
-    if not req.query.strip():
-        raise HTTPException(status_code=400, detail="Parâmetro 'query' é obrigatório.")
-
-    try:
-        token = _get_user_token(request)
-        # 1. Search user's templates
-        results = be.search_templates(user_id, req.query, k=5, token=token)
-        if not results:
-            return {
-                "summary": f"Nenhum trecho relevante encontrado em seus modelos para: \"{req.query}\". Faça upload de modelos de decisão primeiro.",
-                "results": [],
-                "total": 0,
-                "query": req.query,
-            }
-
-        # 2. Build context from relevant chunks
-        context_parts = []
-        for i, r in enumerate(results, 1):
-            context_parts.append(
-                f"[{i}] Fonte: {r['source']} | {r['full_length']} caracteres\n"
-                f"Trecho: {r['text']}"
-            )
-        context = "\n\n---\n\n".join(context_parts)
-
-        # 3. LLM summarization
-        system_prompt = (
-            "Você é um assistente jurídico especializado em modelos de decisão. "
-            "O usuário possui modelos de sentença/decisão indexados e fez uma busca. "
-            "Você recebeu os trechos mais relevantes desses modelos.\n\n"
-            "Sua tarefa é:\n"
-            "1. **Resumir como os modelos tratam** o tema pesquisado\n"
-            "2. **Identificar padrões de fundamentação** usados nos modelos\n"
-            "3. **Destacar frases e estruturas** recorrentes que possam ser reaproveitadas\n"
-            "4. **Citar os modelos** pelo nome do arquivo fonte\n\n"
-            "Responda em linguagem clara. Use markdown para formatar. "
-            "NÃO invente informações — baseie-se APENAS nos trechos fornecidos."
-        )
-
-        user_prompt = (
-            f"**Pesquisa do usuário:** {req.query}\n\n"
-            f"**{len(results)} trechos mais relevantes dos modelos:**\n\n"
-            f"{context}"
-        )
-
-        llm = be.get_llm(model_name="gpt-4.1-mini", temperature=0.3)
-        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
-        response = llm.invoke([SM(content=system_prompt), HM(content=user_prompt)])
-        summary = be.safe_content(response)
-
-        return {
-            "summary": summary,
-            "results": results,
-            "total": len(results),
-            "query": req.query,
-        }
-
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro na pesquisa nos modelos: {str(e)}")
-
-
-# ── Template Jurisprudence Verification ───────────────────────────────────────
-
-@app.post("/api/templates/extract-themes")
-async def extract_themes(request: Request, user_id: str = Depends(get_current_user)):
-    """
-    LLM reads user's templates and extracts the main legal themes.
-    Returns a list of themes with titles and descriptions.
-    """
-    try:
-        token = _get_user_token(request)
-        # Get user's template chunks
-        if user_id not in be._template_store or not be._template_store.get(user_id):
-            be._load_template_store(user_id, token)
-        user_store = be._template_store.get(user_id, [])
-
-        if not user_store:
-            raise HTTPException(status_code=400, detail="Nenhum modelo indexado. Faça upload de modelos primeiro.")
-
-        # Sample representative chunks (up to 15 chunks, spread across sources)
-        import random
-        sources = {}
-        for chunk in user_store:
-            src = chunk.get("metadata", {}).get("source", "?")
-            if src not in sources:
-                sources[src] = []
-            sources[src].append(chunk)
-
-        sampled = []
-        for src, chunks in sources.items():
-            n = min(3, len(chunks))
-            sampled.extend(random.sample(chunks, n))
-        if len(sampled) > 15:
-            sampled = random.sample(sampled, 15)
-
-        # Build context
-        context_parts = []
-        for i, chunk in enumerate(sampled, 1):
-            source = chunk.get("metadata", {}).get("source", "?")
-            text = chunk.get("text", "")[:2000]
-            context_parts.append(f"[Trecho {i} — {source}]\n{text}")
-        context = "\n\n---\n\n".join(context_parts)
-
-        # LLM extraction
-        system_prompt = (
-            "Você é um analista jurídico sênior. Analise os trechos de modelos de decisão/sentença "
-            "fornecidos e identifique os TEMAS JURÍDICOS CENTRAIS tratados neles.\n\n"
-            "Extraia até 10 temas distintos. Para cada tema, retorne:\n"
-            "- Um TÍTULO curto (máximo 8 palavras)\n"
-            "- Uma DESCRIÇÃO de 1 frase explicando o tema\n\n"
-            "Retorne APENAS um JSON array, sem markdown, sem explicações:\n"
-            '[{"title": "...", "description": "..."}, ...]\n\n'
-            "Exemplos de bons temas:\n"
-            '- {"title": "Dano moral por negativação indevida", "description": "Responsabilidade civil por inscrição indevida em cadastros de inadimplentes."}\n'
-            '- {"title": "Tutela de urgência", "description": "Concessão de tutela antecipada em casos de verossimilhança e perigo de dano."}\n'
-        )
-
-        llm = be.get_llm(model_name="gpt-4.1-mini", temperature=0.2, max_tokens=2000)
-        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
-        response = llm.invoke([
-            SM(content=system_prompt),
-            HM(content=f"Analise estes trechos de modelos de decisão e extraia os temas:\n\n{context}"),
-        ])
-        raw = be.safe_content(response).strip()
-
-        # Parse JSON
-        import re
-        json_match = re.search(r'\[.*\]', raw, re.DOTALL)
-        if json_match:
-            themes = json.loads(json_match.group())
-        else:
-            themes = json.loads(raw)
-
-        # Add IDs
-        for i, t in enumerate(themes):
-            t["id"] = i + 1
-
-        return {"themes": themes[:10], "total": len(themes[:10])}
-
-    except HTTPException:
-        raise
-    except json.JSONDecodeError:
-        return {"themes": [{"id": 1, "title": "Análise geral", "description": "Tema extraído dos modelos de decisão."}], "total": 1}
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro ao extrair temas: {str(e)}")
-
-
-class VerifyThemeRequest(BaseModel):
-    theme: str
-
-
-@app.post("/api/templates/verify-theme")
-async def verify_theme(req: VerifyThemeRequest, request: Request, user_id: str = Depends(get_current_user)):
-    """
-    For a given theme:
-    1. Search user's templates for relevant excerpts
-    2. Search jurisprudence DB for relevant case law
-    3. GPT-5.2 compares both and classifies: aligned / divergent / no_data
-    """
-    if not req.theme.strip():
-        raise HTTPException(status_code=400, detail="Tema não pode ser vazio.")
-
-    try:
-        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
-        token = _get_user_token(request)
-
-        # 1. Get relevant template excerpts
-        template_results = be.search_templates(user_id, req.theme, k=3, token=token)
-        template_context = ""
-        if template_results:
-            parts = []
-            for i, r in enumerate(template_results, 1):
-                parts.append(f"[Modelo {i} — {r['source']}]\n{r['text']}")
-            template_context = "\n\n---\n\n".join(parts)
-
-        # 2. Search jurisprudence
-        juris_results = []
-        juris_context = ""
-        if HAS_JURISPRUDENCIA:
-            try:
-                search_result = jsearch.semantic_search(
-                    query=req.theme, page=1, page_size=5,
-                )
-                juris_results = search_result.get("results", [])
-
-                # Fallback to keyword if semantic returns nothing
-                if not juris_results:
-                    search_result = jsearch.search(
-                        query=req.theme, page=1, page_size=5,
-                    )
-                    juris_results = search_result.get("results", [])
-
-                if juris_results:
-                    jp = []
-                    for i, r in enumerate(juris_results[:5], 1):
-                        sim = round(r.get("similarity", 0) * 100)
-                        jp.append(
-                            f"[Acórdão {i}] {r.get('tipo_recurso', 'Acórdão')} | "
-                            f"Processo: {r.get('numero_processo', '?')} | "
-                            f"{r.get('data_publicacao', '?')} | {r.get('comarca', '?')} | "
-                            f"Relevância: {sim}%\n"
-                            f"Ementa: {r.get('ementa', '')[:800]}"
-                        )
-                    juris_context = "\n\n---\n\n".join(jp)
-            except Exception as e:
-                print(f"⚠️ Jurisprudence search failed for theme '{req.theme}': {e}")
-
-        # 3. If no data on either side
-        if not template_context and not juris_context:
-            return {
-                "status": "no_data",
-                "theme": req.theme,
-                "summary": "Dados insuficientes para comparação. Verifique se há modelos indexados e se o banco de jurisprudência está disponível.",
-                "model_approach": "",
-                "majority_understanding": "",
-                "comparison": "",
-                "alert": None,
-                "acordaos": [],
-            }
-
-        if not juris_context:
-            return {
-                "status": "no_data",
-                "theme": req.theme,
-                "summary": "Banco de jurisprudência não disponível ou sem acórdãos relevantes para este tema.",
-                "model_approach": template_context[:500] if template_context else "",
-                "majority_understanding": "",
-                "comparison": "",
-                "alert": None,
-                "acordaos": [],
-            }
-
-        # 4. GPT-5.2 comparative analysis
-        system_prompt = (
-            "Você é um analista jurisprudencial sênior do TJMG. Sua tarefa é COMPARAR "
-            "como os modelos de decisão do magistrado tratam um tema versus o entendimento "
-            "MAJORITÁRIO da jurisprudência recente do TJMG.\n\n"
-            "Você receberá:\n"
-            "- TRECHOS DOS MODELOS DE DECISÃO do magistrado\n"
-            "- ACÓRDÃOS RECENTES do TJMG sobre o mesmo tema\n\n"
-            "Responda em JSON estrito (sem markdown, sem code fences):\n"
-            "{\n"
-            '  "status": "aligned" ou "divergent",\n'
-            '  "majority_understanding": "Resumo CONCISO (máx 150 palavras) do entendimento predominante do TJMG",\n'
-            '  "model_approach": "Resumo CONCISO (máx 100 palavras) de como os modelos tratam o tema",\n'
-            '  "comparison": "Comparação CONCISA (máx 200 palavras). Se divergente, explique onde diverge citando processos. Se alinhado, os pontos de concordância.",\n'
-            '  "alert_title": "Se divergent: título curto (1 frase). Se aligned: null",\n'
-            '  "alert_detail": "Se divergent: explicação breve da divergência (máx 150 palavras). Se aligned: null"\n'
-            "}\n\n"
-            "REGRAS CRÍTICAS:\n"
-            "- Baseie-se APENAS nos textos fornecidos\n"
-            "- NÃO invente informações\n"
-            "- Cite números de processo quando relevante\n"
-            "- Seja CONCISO — respostas longas demais serão cortadas\n"
-            "- Retorne o JSON COMPLETO e válido, sem truncar"
-        )
-
-        user_prompt = (
-            f"**TEMA:** {req.theme}\n\n"
-            f"## MODELOS DE DECISÃO DO MAGISTRADO:\n\n{template_context}\n\n"
-            f"## ACÓRDÃOS RECENTES DO TJMG:\n\n{juris_context}"
-        )
-
-        llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.2, max_tokens=6000)
-        response = llm.invoke([SM(content=system_prompt), HM(content=user_prompt)])
-        raw = be.safe_content(response).strip()
-
-        # Parse JSON response
-        import re
-        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if json_match:
-            analysis = json.loads(json_match.group())
-        else:
-            analysis = json.loads(raw)
-
-        # Build response with acórdãos metadata
-        acordaos = []
-        for r in juris_results[:5]:
-            acordaos.append({
-                "id": r.get("id"),
-                "numero_processo": r.get("numero_processo", "?"),
-                "tipo_recurso": r.get("tipo_recurso", "Acórdão"),
-                "ementa": r.get("ementa", "")[:500],
-                "data_publicacao": r.get("data_publicacao", "?"),
-                "comarca": r.get("comarca", "?"),
-                "relator": r.get("relator", ""),
-                "similarity": r.get("similarity", 0),
-            })
-
-        return {
-            "status": analysis.get("status", "no_data"),
-            "theme": req.theme,
-            "majority_understanding": analysis.get("majority_understanding", ""),
-            "model_approach": analysis.get("model_approach", ""),
-            "comparison": analysis.get("comparison", ""),
-            "alert": {
-                "title": analysis.get("alert_title"),
-                "detail": analysis.get("alert_detail"),
-            } if analysis.get("alert_title") else None,
-            "acordaos": acordaos,
-        }
-
-    except json.JSONDecodeError:
-        # LLM returned truncated/invalid JSON — try to salvage partial fields
-        import re as _re
-        def _extract(field):
-            m = _re.search(rf'"{field}"\s*:\s*"((?:[^"\\]|\\.)*)"?', raw or "", _re.DOTALL)
-            return m.group(1).replace('\\n', '\n').replace('\\"', '"') if m else ""
-
-        status_m = _re.search(r'"status"\s*:\s*"(aligned|divergent)"', raw or "")
-        salvaged_status = status_m.group(1) if status_m else "no_data"
-
-        acordaos = []
-        for r in juris_results[:5]:
-            acordaos.append({
-                "id": r.get("id"),
-                "numero_processo": r.get("numero_processo", "?"),
-                "tipo_recurso": r.get("tipo_recurso", "Acórdão"),
-                "ementa": r.get("ementa", "")[:500],
-                "data_publicacao": r.get("data_publicacao", "?"),
-                "comarca": r.get("comarca", "?"),
-                "relator": r.get("relator", ""),
-                "similarity": r.get("similarity", 0),
-            })
-
-        alert_title = _extract("alert_title")
-        return {
-            "status": salvaged_status,
-            "theme": req.theme,
-            "majority_understanding": _extract("majority_understanding") or (raw[:1500] if raw else "Análise indisponível."),
-            "model_approach": _extract("model_approach"),
-            "comparison": _extract("comparison"),
-            "alert": {"title": alert_title, "detail": _extract("alert_detail")} if alert_title else None,
-            "acordaos": acordaos,
-        }
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro ao verificar tema: {str(e)}")
 
 
 # ── Admin: Upload Jurisprudência DB ───────────────────────────────────────────
@@ -1810,7 +1332,7 @@ def _run_jurisprudence_research_background(task_id: str, uploaded_text: str, ana
 
 
 @app.get("/api/jurisprudencia/research/{task_id}")
-async def jurisprudencia_research_status(task_id: str, user_id: str = Depends(get_current_user)):
+async def jurisprudencia_research_status(task_id: str):
     """Poll the status of a background jurisprudence research task."""
     task = _bg_tasks.get(task_id)
     if not task:
@@ -1830,34 +1352,6 @@ async def jurisprudencia_research_status(task_id: str, user_id: str = Depends(ge
         del _bg_tasks[task_id]
 
     return response
-
-
-class JurisResearchRequest(BaseModel):
-    uploaded_text: str
-    analysis_text: str = ""
-
-
-@app.post("/api/jurisprudencia/research")
-async def trigger_jurisprudencia_research(req: JurisResearchRequest, user_id: str = Depends(get_current_user)):
-    """Manually trigger jurisprudence research for the given process text."""
-    if not HAS_JURISPRUDENCIA:
-        raise HTTPException(status_code=503, detail="Módulo de jurisprudência não disponível.")
-
-    task_id = str(uuid.uuid4())
-    _bg_tasks[task_id] = {
-        "status": "pending",
-        "result": None,
-        "error": None,
-        "progress": "Extraindo temas jurídicos do processo...",
-    }
-    thread = threading.Thread(
-        target=_run_jurisprudence_research_background,
-        args=(task_id, req.uploaded_text, req.analysis_text),
-        daemon=True,
-    )
-    thread.start()
-
-    return {"task_id": task_id, "status": "pending"}
 
 
 # ── Jurisprudência Search ─────────────────────────────────────────────────────
@@ -1884,7 +1378,6 @@ async def jurisprudencia_search(
     page: int = 1,
     page_size: int = 20,
     mode: str = "semantic",
-    user_id: str = Depends(get_current_user)
 ):
     """Full-text or semantic search across TJMG case law database.
     
@@ -1973,10 +1466,7 @@ class JurisprudenciaAskRequest(BaseModel):
     tipo: str = ""
 
 @app.post("/api/jurisprudencia/ask")
-async def jurisprudencia_ask(
-    req: JurisprudenciaAskRequest,
-    user_id: str = Depends(get_current_user)
-):
+async def jurisprudencia_ask(req: JurisprudenciaAskRequest):
     """
     RAG: busca semântica + resumo por LLM.
     Retorna um resumo inteligente dos acórdãos mais relevantes + os resultados brutos.
@@ -2072,7 +1562,7 @@ async def jurisprudencia_ask(
 
 
 @app.get("/api/jurisprudencia/doc/{doc_id}")
-async def jurisprudencia_doc(doc_id: int, user_id: str = Depends(get_current_user)):
+async def jurisprudencia_doc(doc_id: int):
     """Retrieve full text of a specific case law document."""
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
@@ -2084,7 +1574,7 @@ async def jurisprudencia_doc(doc_id: int, user_id: str = Depends(get_current_use
 
 
 @app.get("/api/jurisprudencia/stats")
-async def jurisprudencia_stats(user_id: str = Depends(get_current_user)):
+async def jurisprudencia_stats():
     """Get statistics about the case law database."""
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
@@ -2092,7 +1582,7 @@ async def jurisprudencia_stats(user_id: str = Depends(get_current_user)):
 
 
 @app.get("/api/jurisprudencia/diagnostics")
-async def jurisprudencia_diagnostics(user_id: str = Depends(get_current_user)):
+async def jurisprudencia_diagnostics():
     """Diagnóstico: verifica tabelas e embeddings no banco."""
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
@@ -2135,195 +1625,39 @@ async def jurisprudencia_diagnostics(user_id: str = Depends(get_current_user)):
     return result
 
 
-# ── Custom Agents CRUD (Supabase REST API) ────────────────────────────────────
+# ── SLM Engine Status ─────────────────────────────────────────────────────────
 
-import requests as _requests
-
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "") or os.getenv("VITE_SUPABASE_ANON_KEY", "")
-# In-memory fallback if Supabase REST fails (e.g. table not created yet)
-_custom_agents_fallback: dict[str, list[dict]] = {}  # user_id -> [agents]
-
-
-def _supabase_headers(user_token: str = ""):
-    """Build headers for Supabase REST API calls."""
-    h = {
-        "apikey": SUPABASE_ANON_KEY,
-        "Content-Type": "application/json",
-        "Prefer": "return=representation",
-    }
-    if user_token:
-        h["Authorization"] = f"Bearer {user_token}"
-    return h
-
-
-def _get_user_token(request: Request) -> str:
-    """Extract bearer token from request."""
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        return auth[7:]
-    return ""
+@app.get("/api/slm/status")
+async def slm_status():
+    """Status do SLM — verifica servidor remoto ou engine local."""
+    # 1. Check remote SLM server (tunnel → MacBook)
+    if HAS_REMOTE_SLM:
+        remote_health = _check_remote_slm_health()
+        return {
+            "available": remote_health.get("status") == "online",
+            "mode": "remote",
+            "server_url": SLM_SERVER_URL,
+            "remote": remote_health,
+        }
+    # 2. Check local SLM engine (dev on MacBook)
+    if HAS_SLM:
+        local_status = slm_engine.get_status()
+        local_status["mode"] = "local"
+        return local_status
+    # 3. Not available
+    return {"available": False, "mode": "none", "reason": "SLM não configurado (defina SLM_SERVER_URL ou rode no MacBook com MLX)"}
 
 
-class CreateAgentRequest(BaseModel):
-    name: str
-    prompt: str
-    color: str = "#8B5CF6"
+@app.post("/api/slm/unload")
+async def slm_unload():
+    """Descarrega modelos SLM da memória para liberar VRAM."""
+    if not HAS_SLM:
+        return {"status": "not_available"}
+    slm_engine.unload()
+    return {"status": "ok", "message": "Modelos descarregados da memória."}
 
 
-class ShareAgentRequest(BaseModel):
-    email: str
-
-
-@app.post("/api/custom-agents")
-async def create_custom_agent(req: CreateAgentRequest, request: Request, user_id: str = Depends(get_current_user)):
-    """Create a custom agent for the current user."""
-    agent_id = str(uuid.uuid4())
-    agent = {
-        "id": agent_id,
-        "user_id": user_id,
-        "name": req.name,
-        "prompt": req.prompt,
-        "color": req.color,
-        "icon": "FaRobot",
-    }
-
-    # Try Supabase REST
-    if SUPABASE_URL and SUPABASE_ANON_KEY:
-        try:
-            token = _get_user_token(request)
-            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/custom_agents"
-            payload = {**agent, "created_at": "now()"}
-            resp = _requests.post(url, json=payload, headers=_supabase_headers(token), timeout=5)
-            if resp.ok:
-                data = resp.json()
-                created = data[0] if isinstance(data, list) and data else agent
-                return created
-            else:
-                print(f"⚠️ Supabase create agent failed ({resp.status_code}): {resp.text[:200]}. Using fallback.")
-        except Exception as e:
-            print(f"⚠️ Supabase create agent error: {e}. Using fallback.")
-
-    # Fallback to in-memory
-    if user_id not in _custom_agents_fallback:
-        _custom_agents_fallback[user_id] = []
-    _custom_agents_fallback[user_id].append(agent)
-    return agent
-
-
-@app.get("/api/custom-agents")
-async def list_custom_agents(request: Request, user_id: str = Depends(get_current_user)):
-    """List custom agents for the current user."""
-    # Try Supabase REST
-    if SUPABASE_URL and SUPABASE_ANON_KEY:
-        try:
-            token = _get_user_token(request)
-            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/custom_agents?user_id=eq.{user_id}&order=created_at.desc"
-            resp = _requests.get(url, headers=_supabase_headers(token), timeout=5)
-            if resp.ok:
-                agents = resp.json()
-                return {"agents": agents}
-            else:
-                print(f"⚠️ Supabase list agents failed ({resp.status_code}): {resp.text[:200]}. Using fallback.")
-        except Exception as e:
-            print(f"⚠️ Supabase list agents error: {e}. Using fallback.")
-
-    # Fallback
-    agents = _custom_agents_fallback.get(user_id, [])
-    return {"agents": agents}
-
-
-@app.delete("/api/custom-agents/{agent_id}")
-async def delete_custom_agent(agent_id: str, request: Request, user_id: str = Depends(get_current_user)):
-    """Delete a custom agent (only owner)."""
-    # Try Supabase REST
-    if SUPABASE_URL and SUPABASE_ANON_KEY:
-        try:
-            token = _get_user_token(request)
-            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/custom_agents?id=eq.{agent_id}&user_id=eq.{user_id}"
-            resp = _requests.delete(url, headers=_supabase_headers(token), timeout=5)
-            if resp.ok:
-                return {"status": "deleted"}
-            else:
-                print(f"⚠️ Supabase delete agent failed ({resp.status_code}): {resp.text[:200]}. Using fallback.")
-        except Exception as e:
-            print(f"⚠️ Supabase delete agent error: {e}. Using fallback.")
-
-    # Fallback
-    if user_id in _custom_agents_fallback:
-        _custom_agents_fallback[user_id] = [a for a in _custom_agents_fallback[user_id] if a["id"] != agent_id]
-    return {"status": "deleted"}
-
-
-@app.post("/api/custom-agents/{agent_id}/share")
-async def share_custom_agent(agent_id: str, req: ShareAgentRequest, request: Request, user_id: str = Depends(get_current_user)):
-    """Share a custom agent with another user by email."""
-    # 1. Find the agent
-    agent_data = None
-
-    if SUPABASE_URL and SUPABASE_ANON_KEY:
-        try:
-            token = _get_user_token(request)
-            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/custom_agents?id=eq.{agent_id}&user_id=eq.{user_id}"
-            resp = _requests.get(url, headers=_supabase_headers(token), timeout=5)
-            if resp.ok:
-                data = resp.json()
-                if data:
-                    agent_data = data[0]
-        except Exception as e:
-            print(f"⚠️ Supabase get agent error: {e}")
-
-    # Fallback
-    if not agent_data and user_id in _custom_agents_fallback:
-        for a in _custom_agents_fallback[user_id]:
-            if a["id"] == agent_id:
-                agent_data = a
-                break
-
-    if not agent_data:
-        raise HTTPException(status_code=404, detail="Agente não encontrado.")
-
-    # 2. Find target user by email (Supabase admin API or fallback)
-    target_user_id = None
-    if SUPABASE_URL and SUPABASE_ANON_KEY:
-        try:
-            # Use Supabase admin/service role to lookup user by email
-            # Since we may not have service role key, we store the agent with email as target
-            # For now, create the agent with a special marker
-            new_agent = {
-                "id": str(uuid.uuid4()),
-                "user_id": req.email,  # Placeholder — will be resolved when user logs in
-                "name": agent_data.get("name", "Agente Compartilhado"),
-                "prompt": agent_data.get("prompt", ""),
-                "color": agent_data.get("color", "#8B5CF6"),
-                "icon": agent_data.get("icon", "FaRobot"),
-                "shared_from": user_id,
-            }
-            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/custom_agents"
-            token = _get_user_token(request)
-            resp = _requests.post(url, json=new_agent, headers=_supabase_headers(token), timeout=5)
-            if resp.ok:
-                return {"status": "shared", "target_email": req.email}
-            else:
-                print(f"⚠️ Supabase share failed ({resp.status_code}): {resp.text[:200]}")
-        except Exception as e:
-            print(f"⚠️ Supabase share error: {e}")
-
-    # Fallback: store in memory with email as key
-    if req.email not in _custom_agents_fallback:
-        _custom_agents_fallback[req.email] = []
-    _custom_agents_fallback[req.email].append({
-        "id": str(uuid.uuid4()),
-        "user_id": req.email,
-        "name": agent_data.get("name", "Agente Compartilhado"),
-        "prompt": agent_data.get("prompt", ""),
-        "color": agent_data.get("color", "#8B5CF6"),
-        "icon": "FaRobot",
-        "shared_from": user_id,
-    })
-    return {"status": "shared", "target_email": req.email}
-
-
-
+# ── Serve React frontend (production) ────────────────────────────────────────
 FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 if FRONTEND_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")

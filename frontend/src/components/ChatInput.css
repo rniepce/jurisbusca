@@ -39,57 +39,155 @@
     color: #333;
 }
 
-/* ── Jurisprudence Toggle (replaces model selector) ── */
-.juris-toggle-wrapper {
+/* ── Model Selector ── */
+.model-selector-wrapper {
     position: relative;
 }
 
-.juris-toggle-btn {
+.model-selector {
     border: 1px solid #ddd;
     border-radius: 20px;
-    padding: 4px 12px 4px 8px;
-    font-size: 12px;
+    padding: 4px 10px 4px 8px;
+    font-size: 13px;
     gap: 6px;
-    transition: all 0.2s ease;
 }
 
-.juris-toggle-btn:hover {
-    border-color: #bbb;
-    background: #f9f9f9 !important;
+.model-selector.open {
+    border-color: #999;
+    background: #f5f5f5;
 }
 
-.juris-toggle-btn.juris-active {
-    border-color: #8B5CF6;
-    background: linear-gradient(135deg, #f5f3ff, #ede9fe) !important;
-    color: #6D28D9 !important;
+.model-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
 }
 
-.juris-label {
+.model-label {
     font-size: 12px;
     font-weight: 500;
-    color: #666;
+    color: #444;
     white-space: nowrap;
 }
 
-.juris-toggle-btn.juris-active .juris-label {
-    color: #6D28D9;
+.chevron {
+    transition: transform 0.2s ease;
+    color: #888;
+}
+
+.chevron.rotated {
+    transform: rotate(180deg);
+}
+
+/* ── Dropdown Menu ── */
+.model-dropdown {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    min-width: 240px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    box-shadow:
+        0 4px 24px rgba(0, 0, 0, 0.08),
+        0 1px 4px rgba(0, 0, 0, 0.04);
+    padding: 6px;
+    z-index: 100;
+    animation: dropdownSlide 0.15s ease-out;
+}
+
+@keyframes dropdownSlide {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.dropdown-header {
+    font-size: 11px;
     font-weight: 600;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 6px 10px 8px;
 }
 
-.juris-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #ddd;
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    background: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.12s;
+    text-align: left;
+}
+
+.dropdown-item:hover {
+    background: #f5f5f7;
+}
+
+.dropdown-item.selected {
+    background: #f0f4ff;
+}
+
+.dropdown-item .model-dot {
+    width: 10px;
+    height: 10px;
+}
+
+.dropdown-item-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #222;
+    flex: 1;
+}
+
+.dropdown-check {
+    color: #4F46E5;
     flex-shrink: 0;
-    transition: all 0.2s ease;
 }
 
-.juris-dot.active {
-    background: #8B5CF6;
-    box-shadow: 0 0 6px rgba(139, 92, 246, 0.5);
+/* ── SLM Status Indicator ── */
+.slm-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-left: auto;
 }
 
+.slm-status-dot.online {
+    background: #22c55e;
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+    animation: slmPulse 2s ease-in-out infinite;
+}
+
+.slm-status-dot.offline {
+    background: #ef4444;
+    opacity: 0.6;
+}
+
+@keyframes slmPulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
 
 /* ── File Chips ── */
 .file-chips {
@@ -467,16 +565,6 @@
     accent-color: #059669;
 }
 
-/* ── Vectorize Toggle (blue-teal accent when active) ── */
-.vectorize-toggle.vectorize-active .compress-label {
-    color: #0891B2;
-    font-weight: 600;
-}
-
-.vectorize-toggle.vectorize-active input[type="checkbox"] {
-    accent-color: #0891B2;
-}
-
 /* ── Template files — compact pill ── */
 .template-bar {
     display: flex;
@@ -606,103 +694,14 @@
 
 @media (max-width: 768px) {
     .chat-footer {
-        padding: 0 12px 12px;
-        padding-bottom: calc(12px + var(--sab, 0px));
+        padding: 0 16px 16px;
     }
 
-    .chat-toolbar {
-        gap: 4px;
-        flex-wrap: wrap;
-    }
-
-    .toolbar-btn {
-        padding: 6px 8px;
-        font-size: 14px;
-    }
-
-    .juris-label {
+    .model-label {
         display: none;
     }
 
-    .chat-textarea {
-        padding: 12px 44px 12px 14px;
-        font-size: 14px;
-    }
-
-    .send-btn {
-        bottom: 10px;
-        right: 10px;
-    }
-
-    .xray-btn {
-        right: 40px;
-        font-size: 0.65rem;
-        padding: 4px 8px;
-    }
-
-    /* File chips */
-    .file-chips {
-        gap: 4px;
-    }
-
-    .file-chip {
-        max-width: 100%;
-    }
-
-    .file-chip-name {
-        max-width: 120px;
-    }
-
-    /* OCR bar: wrap and compact */
-    .ocr-bar {
-        flex-wrap: wrap;
-        gap: 4px;
-    }
-
-    .ocr-label {
-        font-size: 9px;
-    }
-
-    .ocr-option {
-        font-size: 9px;
-        padding: 2px 6px;
-    }
-
-    .compress-label {
-        font-size: 9px;
-    }
-
-    /* LLM selector compact */
-    .llm-selector-btn {
-        font-size: 9px;
-        padding: 2px 8px 2px 6px;
-    }
-
-    .llm-name {
-        font-size: 9px;
-    }
-
-    .llm-dropdown {
-        min-width: 160px;
-    }
-
-    /* Template bar */
-    .template-bar {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        gap: 6px;
-        padding-bottom: 2px;
-    }
-
-    .template-pill {
-        white-space: nowrap;
-        flex-shrink: 0;
-    }
-
-    .style-report-btn {
-        white-space: nowrap;
-        flex-shrink: 0;
-        font-size: 11px;
-        padding: 4px 10px;
+    .model-dropdown {
+        min-width: 200px;
     }
 }

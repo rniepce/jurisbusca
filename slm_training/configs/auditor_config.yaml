@@ -1,0 +1,19 @@
+# Fine-tuning: Auditor (Gemma 3 4B)
+model: "mlx-community/gemma-3-4b-it-4bit"
+train: true
+data: "slm_training/data/auditor"
+seed: 42
+lora_layers: 16
+batch_size: 1
+iters: 600
+val_batches: 25
+learning_rate: 1e-5
+steps_per_report: 10
+steps_per_eval: 200
+resume_adapter_file: null
+adapter_path: "adapters/auditor"
+save_every: 100
+lora_parameters:
+  rank: 16
+  alpha: 32
+  dropout: 0.05

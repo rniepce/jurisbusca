@@ -1,0 +1,19 @@
+# Fine-tuning: Router (Qwen 2.5 1.5B)
+model: "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+train: true
+data: "slm_training/data/router"
+seed: 42
+lora_layers: 8
+batch_size: 2
+iters: 300
+val_batches: 15
+learning_rate: 2e-5
+steps_per_report: 10
+steps_per_eval: 100
+resume_adapter_file: null
+adapter_path: "adapters/router"
+save_every: 100
+lora_parameters:
+  rank: 8
+  alpha: 16
+  dropout: 0.05

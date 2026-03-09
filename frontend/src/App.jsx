@@ -701,6 +701,7 @@ function MainApp() {
         <ChatArea
           messages={messages}
           isLoading={isLoading}
+          selectedModel={globalSelectedModel}
           activeAgent={activeAgent}
           ocrProcessing={ocrProcessing}
           ocrEngineName={ocrEngineName}

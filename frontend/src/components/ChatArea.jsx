@@ -2,8 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
     FaUser,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
-    FaBookOpen, FaPenNib, FaClipboardCheck, FaGavel,
-    FaClipboardCheck as FaQAIcon
+    FaBookOpen, FaPenNib, FaClipboardCheck
 } from 'react-icons/fa6';
 import OcrPreview from './OcrPreview';
 import JurisprudenciaInsightsCard from './JurisprudenciaInsightsCard';
@@ -67,7 +66,7 @@ function StyleAnalysisAnimation() {
 }
 
 /** Multi-step animation shown during Raio-X batch processing */
-function XRayProcessingAnimation({ progress = '' }) {
+function XRayProcessingAnimation() {
     const [phase, setPhase] = useState(0);
 
     useEffect(() => {
@@ -78,11 +77,7 @@ function XRayProcessingAnimation({ progress = '' }) {
     }, []);
 
     const current = XRAY_PHASES[phase];
-    const progressPct = ((phase + 1) / XRAY_PHASES.length) * 100;
-
-    // Use live server progress if available, otherwise fall back to static phase text
-    const displayTitle = progress || current.title;
-    const displaySub = progress ? 'Processamento em andamento...' : current.sub;
+    const progress = ((phase + 1) / XRAY_PHASES.length) * 100;
 
     return (
         <div className="xray-processing-card">
@@ -99,10 +94,76 @@ function XRayProcessingAnimation({ progress = '' }) {
                     ))}
                     <span className="xray-step-label">Etapa {phase + 1}/{XRAY_PHASES.length}</span>
                 </div>
-                <span className="xray-processing-title" key={`t-${progress || phase}`}>{displayTitle}</span>
-                <span className="xray-processing-sub" key={`s-${progress || phase}`}>{displaySub}</span>
+                <span className="xray-processing-title" key={`t-${phase}`}>{current.title}</span>
+                <span className="xray-processing-sub" key={`s-${phase}`}>{current.sub}</span>
                 <div className="xray-progress-track">
-                    <div className="xray-progress-fill" style={{ width: `${progressPct}%` }} />
+                    <div className="xray-progress-fill" style={{ width: `${progress}%` }} />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
+// ── V3 Local SLM Pipeline progress phases ──
+const SLM_PIPELINE_PHASES = [
+    { icon: '🔀', title: 'Router: Classificando tipo processual...', sub: 'Qwen 2.5 1.5B analisando matéria e competência', duration: 2000 },
+    { icon: '📋', title: 'Extrator: Extraindo fatos do processo...', sub: 'Gemma 3 4B identificando partes, pedidos e valores', duration: 7000 },
+    { icon: '⚖️', title: 'Jurista: Analisando mérito jurídico...', sub: 'Mistral-Nemo 12B + RAG Jurisprudência TJMG', duration: 30000 },
+    { icon: '📝', title: 'Redator: Redigindo minuta de decisão...', sub: 'Mistral-Nemo 12B clonando estilo do magistrado', duration: 25000 },
+    { icon: '🔍', title: 'Auditor: Verificando integridade...', sub: 'Gemma 3 4B — checklist fático, eficiência, congruência', duration: 6000 },
+];
+
+/** Animated pipeline progress for V3 Local SLM */
+function SLMPipelineAnimation() {
+    const [phase, setPhase] = useState(0);
+    const [elapsed, setElapsed] = useState(0);
+
+    useEffect(() => {
+        const startTime = Date.now();
+        const interval = setInterval(() => {
+            const totalElapsed = Date.now() - startTime;
+            setElapsed(Math.round(totalElapsed / 1000));
+
+            // Advance phases based on realistic timing
+            let cumulative = 0;
+            for (let i = 0; i < SLM_PIPELINE_PHASES.length; i++) {
+                cumulative += SLM_PIPELINE_PHASES[i].duration;
+                if (totalElapsed < cumulative) {
+                    setPhase(i);
+                    return;
+                }
+            }
+            setPhase(SLM_PIPELINE_PHASES.length - 1);
+        }, 500);
+        return () => clearInterval(interval);
+    }, []);
+
+    const current = SLM_PIPELINE_PHASES[phase];
+    const progress = ((phase + 1) / SLM_PIPELINE_PHASES.length) * 100;
+
+    return (
+        <div className="style-processing-card" style={{ borderLeft: '3px solid #F97316' }}>
+            <div className="style-phase-icon" key={phase}>
+                <span>{current.icon}</span>
+            </div>
+            <div className="style-processing-body">
+                <div className="style-steps-row">
+                    {SLM_PIPELINE_PHASES.map((_, i) => (
+                        <div key={i} className={`style-step-dot ${i <= phase ? 'active' : ''}`}
+                            style={{ background: i <= phase ? '#F97316' : undefined }}
+                        />
+                    ))}
+                </div>
+                <div className="style-processing-title">{current.title}</div>
+                <div className="style-processing-sub">{current.sub}</div>
+                <div className="style-progress-track" style={{ marginTop: '8px' }}>
+                    <div className="style-progress-fill"
+                        style={{ width: `${progress}%`, background: 'linear-gradient(90deg, #F97316, #FB923C)' }}
+                    />
+                </div>
+                <div style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '4px', textAlign: 'right' }}>
+                    ⏱ {elapsed}s • Etapa {phase + 1}/5 • 12.5 GB VRAM
                 </div>
             </div>
         </div>
@@ -142,7 +203,7 @@ function V2CollapsibleCard({ icon, title, content }) {
     );
 }
 
-const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocrEngineName = 'none', ocrProgress = { progress: '', percent: 0 }, styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, onQAReview, hasUploadedText = false, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, selectedModel }) => {
+const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessing = false, ocrEngineName = 'none', styleAnalyzing = false, xrayLoading = false, onAutoAction, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
@@ -264,20 +325,6 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                                     {msg.model && (
                                         <span className="message-model">{msg.model}</span>
                                     )}
-                                    {msg.modelContext?.mirror_used && (
-                                        <span className="model-context-badge" style={{
-                                            '--quality-color': msg.modelContext.match_quality === 'alta' ? '#10B981' : msg.modelContext.match_quality === 'media' ? '#F59E0B' : '#D97706'
-                                        }}>
-                                            📎 Modelo: {msg.modelContext.mirror_source}
-                                            <span className="quality-dot" />
-                                            {msg.modelContext.match_quality}
-                                        </span>
-                                    )}
-                                    {msg.modelContext?.dossier_used && (
-                                        <span className="model-context-badge" style={{ '--quality-color': '#8B5CF6' }}>
-                                            🧬 Estilo clonado do magistrado
-                                        </span>
-                                    )}
                                 </div>
                             </div>
                         );
@@ -304,26 +351,12 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                                 {msg.model && (
                                     <span className="message-model">{msg.model}</span>
                                 )}
-                                {msg.modelContext?.mirror_used && (
-                                    <span className="model-context-badge" style={{
-                                        '--quality-color': msg.modelContext.match_quality === 'alta' ? '#10B981' : msg.modelContext.match_quality === 'media' ? '#F59E0B' : '#D97706'
-                                    }}>
-                                        📎 Modelo: {msg.modelContext.mirror_source}
-                                        <span className="quality-dot" />
-                                        {msg.modelContext.match_quality}
-                                    </span>
-                                )}
-                                {msg.modelContext?.dossier_used && (
-                                    <span className="model-context-badge" style={{ '--quality-color': '#8B5CF6' }}>
-                                        🧬 Estilo clonado do magistrado
-                                    </span>
-                                )}
                             </div>
                         </div>
                     );
                 })}
 
-                {/* OCR + Vectorization Progress Animation */}
+                {/* OCR Processing Animation */}
                 {ocrProcessing && (
                     <div className="ocr-processing-card">
                         <div className="ocr-processing-icon">
@@ -331,81 +364,29 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                         </div>
                         <div className="ocr-processing-info">
                             <span className="ocr-processing-title">
-                                {ocrProgress.progress || (ocrEngineName === 'none' ? 'Fazendo a leitura do processo...' : 'Processando documento...')}
+                                {ocrEngineName === 'none' ? 'Fazendo a leitura do processo...' : 'Processando OCR...'}
                             </span>
-                            <div className="ocr-progress-bar-container">
-                                <div
-                                    className="ocr-progress-bar-fill"
-                                    style={{ width: `${Math.max(ocrProgress.percent || 0, 3)}%` }}
-                                />
-                            </div>
-                            <div className="ocr-progress-meta">
-                                <span className="ocr-progress-step">
-                                    {ocrProgress.percent <= 20 && '📄 Etapa 1/4 — Upload'}
-                                    {ocrProgress.percent > 20 && ocrProgress.percent <= 55 && '🔍 Etapa 2/4 — OCR'}
-                                    {ocrProgress.percent > 55 && ocrProgress.percent <= 75 && '🧠 Etapa 3/4 — Chunking Semântico'}
-                                    {ocrProgress.percent > 75 && ocrProgress.percent < 100 && '🔗 Etapa 4/4 — Vetorização'}
-                                    {ocrProgress.percent >= 100 && '✅ Concluído'}
-                                </span>
-                                <span className="ocr-progress-percent">{ocrProgress.percent || 0}%</span>
-                            </div>
+                            <span className="ocr-processing-sub">
+                                {ocrEngineName === 'none' ? 'Extraindo texto nativo do documento' : 'Extraindo texto do documento via OCR'}
+                            </span>
+                        </div>
+                        <div className="ocr-processing-dots">
+                            <span className="dot" />
+                            <span className="dot" />
+                            <span className="dot" />
                         </div>
                     </div>
                 )}
 
-                {/* Raio-X Processing Animation — Multi-step with live progress */}
+                {/* Raio-X Processing Animation — Multi-step */}
                 {xrayLoading && (
-                    <XRayProcessingAnimation progress={xrayProgress} />
+                    <XRayProcessingAnimation />
                 )}
 
                 {/* Style Analysis Processing Animation — Multi-step */}
                 {styleAnalyzing && (
                     <StyleAnalysisAnimation />
                 )}
-
-                {/* Jurisprudence Search Button — always visible after 2+ messages */}
-                {onJurisSearch && messages.length >= 2 && !jurisResearch && !jurisResearchLoading && (
-                    <div className="juris-search-trigger">
-                        <button
-                            className="juris-search-btn"
-                            onClick={onJurisSearch}
-                            disabled={isLoading}
-                        >
-                            <FaGavel size={12} />
-                            Pesquisar Jurisprudência
-                        </button>
-                    </div>
-                )}
-
-                {/* QA Revisor Button — appears when a minuta (long assistant response) is detected */}
-                {(() => {
-                    // Find last substantial assistant message (the minuta)
-                    const lastAssistant = [...messages].reverse().find(
-                        m => m.role === 'assistant' && m.content && m.content.length > 500
-                            && !m.content.includes('MESA DE DELIBERAÇÃO')
-                            && !m.content.includes('AGUARDANDO DIRETRIZES')
-                            && !m.content.includes('DASHBOARD DE CONFORMIDADE')
-                            && !m.content.includes('⚠️ **Erro')
-                    );
-                    const showQABtn = onQAReview && hasUploadedText && lastAssistant && !isLoading;
-                    if (!showQABtn) return null;
-
-                    return (
-                        <div className="qa-review-trigger">
-                            <button
-                                className="qa-review-btn"
-                                onClick={() => onQAReview()}
-                                disabled={isLoading}
-                            >
-                                <FaClipboardCheck size={13} />
-                                Rodar Revisor (QA)
-                            </button>
-                            <span className="qa-review-hint">
-                                Auditar a minuta gerada cruzando com os dados do processo
-                            </span>
-                        </div>
-                    );
-                })()}
 
                 {/* V0.5: Jurisprudence Research Insights Card */}
                 {(jurisResearchLoading || jurisResearch) && (
@@ -423,12 +404,16 @@ const ChatArea = ({ messages, isLoading, activeAgent, ocrProcessing = false, ocr
                         <div className="message-avatar">
                             <img src={logoSvg} alt="Assistente" style={{ width: 14, height: 14, borderRadius: '2px' }} />
                         </div>
-                        <div className="message-bubble assistant">
-                            <div className="typing-indicator">
-                                <span className="dot" />
-                                <span className="dot" />
-                                <span className="dot" />
-                            </div>
+                        <div className="message-bubble assistant" style={{ minWidth: selectedModel?.id === 'v3-local' ? '380px' : undefined }}>
+                            {selectedModel?.id === 'v3-local' ? (
+                                <SLMPipelineAnimation />
+                            ) : (
+                                <div className="typing-indicator">
+                                    <span className="dot" />
+                                    <span className="dot" />
+                                    <span className="dot" />
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

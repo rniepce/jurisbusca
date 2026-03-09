@@ -6,26 +6,39 @@ import {
     FaBullseye, FaMicrochip
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
-import { uploadTemplates, clearTemplates } from '../services/api';
+import { uploadTemplates, clearTemplates, getSlmStatus } from '../services/api';
 import './ChatInput.css';
+
+const ENGINE_VERSIONS = [
+    { id: 'v0', name: 'Gabinete V0', color: '#10B981' },
+    { id: 'v0.5', name: 'V0.5 + Jurisprud.', color: '#8B5CF6' },
+    { id: 'v1', name: 'Gabinete V1', color: '#4285F4' },
+    { id: 'v2', name: 'Gabinete V2 (Agêntico)', color: '#D97706' },
+    { id: 'v3-local', name: 'V3 Local (5 SLMs)', color: '#F97316' },
+];
 
 const LLM_OPTIONS = [
     { id: 'gpt52', name: 'GPT-5.2', color: '#4285F4', deployment: 'gpt-5.2-chat' },
     { id: 'gemini', name: 'Gemini 3.1 Pro', color: '#34A853', deployment: 'gemini-3.1-pro' },
     { id: 'claude', name: 'Claude Sonnet 4.6', color: '#D97706', deployment: 'claude-sonnet-4-6' },
+    { id: 'local', name: 'SLMs Locais', color: '#F97316', deployment: 'local-slm' },
 ];
 
 const ACCEPTED_TYPES = '.pdf,.docx,.txt';
 
 const OCR_ENGINES = [
-    { id: 'mistral_doc_ai', label: 'Mistral DocAI' },
-    { id: 'marker', label: 'Marker (PDF→MD)' },
     { id: 'none', label: 'Sem OCR' },
+    { id: 'gpt4o_mini', label: 'GPT-4o mini' },
+    { id: 'paddle', label: 'PaddleOCR' },
+    { id: 'deepseek', label: 'DeepSeek-OCR' },
+    { id: 'mistral_doc_ai', label: 'Mistral DocAI' },
 ];
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange, activeAgent = null, jurisEnabled = false }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange }) => {
     const [message, setMessage] = useState('');
+    const [selectedModel, setSelectedModel] = useState(ENGINE_VERSIONS[0]);
     const [selectedLlm, setSelectedLlm] = useState(LLM_OPTIONS[0]);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
     const [llmDropdownOpen, setLlmDropdownOpen] = useState(false);
     const [files, setFiles] = useState([]);
     const [templateFiles, setTemplateFiles] = useState([]);
@@ -35,6 +48,8 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     const [ragAvailable, setRagAvailable] = useState(false);
     const [indexing, setIndexing] = useState(false);
     const [indexSuccess, setIndexSuccess] = useState(false);
+    const [slmStatus, setSlmStatus] = useState({ available: false, mode: 'none' });
+    const dropdownRef = useRef(null);
     const llmDropdownRef = useRef(null);
     const fileInputRef = useRef(null);
     const templateInputRef = useRef(null);
@@ -42,6 +57,9 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     // Close dropdowns when clicking outside
     useEffect(() => {
         const handleClickOutside = (e) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+                setDropdownOpen(false);
+            }
             if (llmDropdownRef.current && !llmDropdownRef.current.contains(e.target)) {
                 setLlmDropdownOpen(false);
             }
@@ -50,30 +68,19 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Notify parent when LLM changes (parent derives engine from activeAgent)
+    // Poll SLM server status every 30s
     useEffect(() => {
-        if (onModelChange && activeAgent) {
-            const combinedModel = {
-                id: activeAgent.engineId || 'v0',
-                name: activeAgent.name,
-                color: activeAgent.color,
-                llm: selectedLlm.deployment,
-            };
-            onModelChange(combinedModel);
-        }
-    }, [selectedLlm, activeAgent]);
+        const checkSlm = () => getSlmStatus().then(setSlmStatus).catch(() => { });
+        checkSlm();
+        const interval = setInterval(checkSlm, 30000);
+        return () => clearInterval(interval);
+    }, []);
 
     const handleSend = () => {
-        if (isLoading || ocrProcessing) return;
+        if (isLoading) return;
         if (message.trim() || files.length > 0 || hasContext) {
-            // Build model from active agent + selected LLM
-            const engineId = activeAgent?.engineId || 'v0';
-            const combinedModel = {
-                id: engineId,
-                name: activeAgent?.name || 'Gabinete 1.0',
-                color: activeAgent?.color || '#10B981',
-                llm: selectedLlm.deployment,
-            };
+            // Pass both engine version and LLM choice
+            const combinedModel = { ...selectedModel, llm: selectedLlm.deployment };
             if (onSend) onSend(message, combinedModel, files, ocrEngine, templateFiles, ragEnabled);
             setMessage('');
             setFiles([]);
@@ -93,8 +100,21 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         }
     };
 
+    const handleSelectModel = (model) => {
+        setSelectedModel(model);
+        const combinedModel = { ...model, llm: selectedLlm.deployment };
+        if (onModelChange) {
+            onModelChange(combinedModel);
+        }
+        setDropdownOpen(false);
+    };
+
     const handleSelectLlm = (llm) => {
         setSelectedLlm(llm);
+        const combinedModel = { ...selectedModel, llm: llm.deployment };
+        if (onModelChange) {
+            onModelChange(combinedModel);
+        }
         setLlmDropdownOpen(false);
     };
 
@@ -122,31 +142,10 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         e.target.value = '';
     };
 
-    const handleTemplateChange = async (e) => {
+    const handleTemplateChange = (e) => {
         const selected = Array.from(e.target.files);
         if (selected.length > 0) {
             setTemplateFiles((prev) => [...prev, ...selected]);
-            // Auto-index in RAG immediately
-            setIndexing(true);
-            try {
-                const result = await uploadTemplates(selected);
-                if (onRagStatusChange) {
-                    onRagStatusChange({
-                        indexed_chunks: result.indexed_chunks,
-                        has_dossier: result.has_dossier,
-                    });
-                }
-                setIndexing(false);
-                setIndexSuccess(true);
-                setTimeout(() => {
-                    setIndexSuccess(false);
-                    setTemplateFiles([]);
-                }, 2500);
-            } catch (err) {
-                console.error('Auto-indexing failed:', err);
-                setIndexing(false);
-                alert(`Erro ao indexar modelos: ${err.message}`);
-            }
         }
         e.target.value = '';
     };
@@ -170,6 +169,52 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
             {/* Toolbar */}
             <div className="chat-toolbar">
                 <div className="toolbar-left">
+                    <div className="model-selector-wrapper" ref={dropdownRef}>
+                        <button
+                            className={`toolbar-btn model-selector ${dropdownOpen ? 'open' : ''}`}
+                            onClick={() => setDropdownOpen(!dropdownOpen)}
+                            aria-label="Selecionar modelo"
+                            aria-expanded={dropdownOpen}
+                        >
+                            <span
+                                className="model-dot"
+                                style={{ background: selectedModel.color }}
+                            />
+                            <span className="model-label">{selectedModel.name}</span>
+                            <FaChevronDown size={10} className={`chevron ${dropdownOpen ? 'rotated' : ''}`} />
+                        </button>
+
+                        {dropdownOpen && (
+                            <div className="model-dropdown">
+                                <div className="dropdown-header">Selecionar Versão do Gabinete</div>
+                                {ENGINE_VERSIONS.map((model) => (
+                                    <button
+                                        key={model.id}
+                                        className={`dropdown-item ${selectedModel.id === model.id ? 'selected' : ''}`}
+                                        onClick={() => handleSelectModel(model)}
+                                    >
+                                        <span
+                                            className="model-dot"
+                                            style={{ background: model.color }}
+                                        />
+                                        <span className="dropdown-item-name">{model.name}</span>
+                                        {model.id === 'v3-local' && (
+                                            <span
+                                                className={`slm-status-dot ${slmStatus.available ? 'online' : 'offline'}`}
+                                                title={slmStatus.available
+                                                    ? `SLM Conectado (${slmStatus.mode})`
+                                                    : 'SLM Desconectado'}
+                                            />
+                                        )}
+                                        {selectedModel.id === model.id && (
+                                            <FaCheck size={12} className="dropdown-check" />
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     <button className="toolbar-btn" aria-label="Anexar processo" onClick={handleFileClick}>
                         <FaPaperclip />
                     </button>
@@ -181,7 +226,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                         onChange={handleFileChange}
                         style={{ display: 'none' }}
                     />
-                    <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={() => onOpenModelManager && onOpenModelManager()}>
+                    <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={handleTemplateClick}>
                         <FaBook />
                     </button>
                     <input
@@ -245,32 +290,58 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                         </div>
                     )}
 
-                    {/* Show newly selected templates — auto-indexing in progress */}
+                    {/* Show newly selected (un-indexed) templates */}
                     {templateFiles.length > 0 && (
                         <>
-                            <div className={`template-pill ${indexing ? 'indexing-active' : ''} ${indexSuccess ? 'rag-active' : ''}`}>
-                                {indexing ? (
-                                    <><FaDatabase size={12} /><span>Indexando {templateFiles.length} modelo{templateFiles.length > 1 ? 's' : ''}...</span></>
-                                ) : indexSuccess ? (
+                            <div className="template-pill">
+                                <FaBook size={12} />
+                                <span>{templateFiles.length} modelo{templateFiles.length > 1 ? 's' : ''} selecionado{templateFiles.length > 1 ? 's' : ''}</span>
+                                <button
+                                    className="template-pill-clear"
+                                    onClick={() => setTemplateFiles([])}
+                                    aria-label="Remover modelos"
+                                >
+                                    <FaXmark size={10} />
+                                </button>
+                            </div>
+                            <button
+                                className={`style-report-btn ${indexSuccess ? 'index-success' : ''} ${indexing ? 'indexing-active' : ''}`}
+                                onClick={async () => {
+                                    if (indexing || indexSuccess) return;
+                                    setIndexing(true);
+                                    try {
+                                        const result = await uploadTemplates(templateFiles);
+                                        if (onRagStatusChange) {
+                                            onRagStatusChange({
+                                                indexed_chunks: result.indexed_chunks,
+                                                has_dossier: result.has_dossier,
+                                            });
+                                        }
+                                        // Show success state
+                                        setIndexing(false);
+                                        setIndexSuccess(true);
+                                        setTimeout(() => {
+                                            setIndexSuccess(false);
+                                            setTemplateFiles([]);
+                                        }, 2500);
+                                    } catch (err) {
+                                        console.error('Indexing failed:', err);
+                                        setIndexing(false);
+                                        alert(`Erro ao indexar modelos: ${err.message}`);
+                                    }
+                                }}
+                                disabled={isLoading || indexing || indexSuccess}
+                            >
+                                {indexSuccess ? (
                                     <><FaCheck size={12} /><span>Modelos indexados!</span></>
                                 ) : (
-                                    <>
-                                        <FaBook size={12} />
-                                        <span>{templateFiles.length} modelo{templateFiles.length > 1 ? 's' : ''} selecionado{templateFiles.length > 1 ? 's' : ''}</span>
-                                        <button
-                                            className="template-pill-clear"
-                                            onClick={() => setTemplateFiles([])}
-                                            aria-label="Remover modelos"
-                                        >
-                                            <FaXmark size={10} />
-                                        </button>
-                                    </>
+                                    <><FaDatabase size={12} /><span>{indexing ? 'Indexando...' : 'Indexar no RAG'}</span></>
                                 )}
-                            </div>
+                            </button>
                             <button
                                 className="style-report-btn"
                                 onClick={() => onStyleReport && onStyleReport(templateFiles)}
-                                disabled={isLoading || indexing}
+                                disabled={isLoading}
                             >
                                 <FaPalette size={12} />
                                 <span>Relatório de Estilo</span>
@@ -284,7 +355,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
             <div className="chat-input-box">
                 <textarea
                     className="chat-textarea"
-                    placeholder={ocrProcessing ? '⏳ Aguardando OCR finalizar...' : isLoading ? 'Processando...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
+                    placeholder={isLoading ? 'Processando...' : ocrProcessing ? 'Executando OCR...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
@@ -303,11 +374,10 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                     </button>
                 )}
                 <button
-                    className={`send-btn ${(message.trim() || files.length > 0 || hasContext) && !isLoading && !ocrProcessing ? 'active' : ''}`}
+                    className={`send-btn ${(message.trim() || files.length > 0 || hasContext) && !isLoading ? 'active' : ''}`}
                     onClick={handleSend}
-                    disabled={isLoading || ocrProcessing}
-                    aria-label={ocrProcessing ? 'Aguardando OCR...' : 'Enviar'}
-                    title={ocrProcessing ? 'Aguarde o OCR finalizar antes de enviar' : 'Enviar mensagem'}
+                    disabled={isLoading}
+                    aria-label="Enviar"
                 >
                     <IoSend size={14} />
                 </button>

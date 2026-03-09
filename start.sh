@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
 
+# ── Auto-detect Python environment ──────────────────────────────────────────
+# Use venv312 if available (Apple Silicon with MLX support)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/venv312/bin/activate" ]; then
+    echo "🧠 Activating venv312 (Python 3.12 + MLX for Apple Silicon)"
+    source "$SCRIPT_DIR/venv312/bin/activate"
+fi
+
 # Ensure data directory exists (for Railway Volume mount or local dev)
 DATA_DIR="${JURISPRUDENCIA_DB_PATH%/*}"
 if [ -n "$DATA_DIR" ] && [ "$DATA_DIR" != "$JURISPRUDENCIA_DB_PATH" ]; then
