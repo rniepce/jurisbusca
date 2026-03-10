@@ -1126,6 +1126,231 @@ async def clear_templates():
         raise HTTPException(status_code=500, detail=f"Erro ao limpar modelos: {str(e)}")
 
 
+@app.get("/api/templates/list")
+async def list_templates_endpoint():
+    """List all indexed templates grouped by source filename."""
+    try:
+        templates = be.list_templates(user_id="default")
+        return {"templates": templates}
+    except Exception as e:
+        traceback.print_exc()
+        return {"templates": []}
+
+
+@app.delete("/api/templates/{filename:path}")
+async def delete_template_endpoint(filename: str):
+    """Delete all chunks from a specific source file."""
+    try:
+        removed = be.delete_template_by_source(user_id="default", source_name=filename)
+        return {"status": "ok", "removed_chunks": removed, "filename": filename}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao remover modelo: {str(e)}")
+
+
+class AskTemplatesRequest(BaseModel):
+    query: str
+
+
+@app.post("/api/templates/ask")
+async def ask_templates_endpoint(req: AskTemplatesRequest):
+    """RAG query: search templates + generate LLM summary."""
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="Query é obrigatória.")
+    try:
+        # 1. Search templates using TF-IDF
+        results = be.search_templates(user_id="default", query=req.query, k=5)
+        if not results:
+            return {"summary": "Nenhum trecho relevante encontrado nos modelos indexados.", "results": []}
+
+        # 2. Build context for LLM summary
+        context = "\n\n---\n\n".join([
+            f"[Fonte: {r['source']}]\n{r['text']}"
+            for r in results
+        ])
+
+        # 3. LLM summary
+        summary_llm = be.get_llm("gpt-4.1-mini", temperature=0.3, max_tokens=800)
+        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
+        summary_response = summary_llm.invoke([
+            SM(content=(
+                "Você é um analista jurídico. Com base nos trechos de modelos de decisão abaixo, "
+                "responda à pergunta do usuário de forma objetiva e fundamentada. "
+                "Cite os modelos-fonte quando relevante."
+            )),
+            HM(content=f"**Pergunta:** {req.query}\n\n**Trechos dos Modelos:**\n\n{context}"),
+        ])
+        summary = be.safe_content(summary_response)
+
+        return {"summary": summary, "results": results}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na consulta: {str(e)}")
+
+
+@app.post("/api/templates/themes")
+async def extract_themes_endpoint():
+    """Extract legal themes from indexed templates for verification."""
+    try:
+        # Load templates
+        if "default" not in be._template_store or not be._template_store["default"]:
+            be._load_template_store("default")
+        user_store = be._template_store.get("default", [])
+        if not user_store:
+            return {"themes": []}
+
+        # Build a sample from templates (first 6000 chars from each source)
+        sources = {}
+        for chunk in user_store:
+            src = chunk.get("metadata", {}).get("source", "?")
+            if src not in sources:
+                sources[src] = ""
+            if len(sources[src]) < 6000:
+                sources[src] += chunk.get("text", "")[:3000] + "\n"
+
+        sample = "\n\n---\n\n".join([
+            f"[Modelo: {src}]\n{text[:6000]}"
+            for src, text in list(sources.items())[:10]
+        ])
+
+        # LLM: extract themes
+        llm = be.get_llm("gpt-4.1-mini", temperature=0.1, max_tokens=1000)
+        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
+        response = llm.invoke([
+            SM(content=(
+                "Você é um classificador jurídico especializado em decisões judiciais cíveis. "
+                "Analise os modelos de decisão abaixo e identifique os TEMAS JURÍDICOS distintos "
+                "abordados neles.\n\n"
+                "Para cada tema, forneça:\n"
+                "- title: título conciso do tema (ex: 'Dano Moral por Negativação Indevida')\n"
+                "- description: breve descrição (1 linha)\n\n"
+                "Retorne APENAS um JSON array com objetos {\"id\": N, \"title\": \"...\", \"description\": \"...\"}.\n"
+                "Identifique entre 5 e 15 temas. Não invente temas que não estão nos modelos."
+            )),
+            HM(content=sample),
+        ])
+        raw = be.safe_content(response).strip()
+
+        # Parse JSON from response
+        import re
+        json_match = re.search(r'\[.*\]', raw, re.DOTALL)
+        if json_match:
+            themes = json.loads(json_match.group())
+        else:
+            themes = []
+
+        return {"themes": themes}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao extrair temas: {str(e)}")
+
+
+class VerifyThemeRequest(BaseModel):
+    theme: str
+
+
+@app.post("/api/templates/verify-theme")
+async def verify_theme_endpoint(req: VerifyThemeRequest):
+    """Verify a legal theme against TJMG jurisprudence."""
+    if not HAS_JURISPRUDENCIA:
+        raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
+    if not req.theme.strip():
+        raise HTTPException(status_code=400, detail="Tema é obrigatório.")
+
+    try:
+        # 1. Search jurisprudence for this theme
+        search_result = jsearch.semantic_search(query=req.theme, page=1, page_size=5)
+        results = search_result.get("results", [])
+
+        # Fallback to keyword
+        if not results:
+            search_result = jsearch.search(query=req.theme, page=1, page_size=5)
+            results = search_result.get("results", [])
+
+        if not results:
+            return {
+                "status": "no_data",
+                "theme": req.theme,
+                "majority_understanding": None,
+                "model_approach": None,
+                "alert": None,
+                "acordaos": [],
+            }
+
+        # 2. Get model approach from templates
+        model_results = be.search_templates(user_id="default", query=req.theme, k=3)
+        model_context = "\n".join([r["text"][:1500] for r in model_results]) if model_results else "Nenhum trecho relevante nos modelos."
+
+        # 3. Build jurisprudence context
+        juris_context = "\n\n---\n\n".join([
+            f"[{r.get('tipo_recurso', 'Acórdão')}] {r.get('numero_processo', '?')} ({r.get('data_publicacao', '?')})\n"
+            f"Ementa: {r.get('ementa', '')[:600]}"
+            for r in results[:5]
+        ])
+
+        # 4. LLM comparison
+        llm = be.get_llm("gpt-4.1-mini", temperature=0.2, max_tokens=1200)
+        from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
+        comparison_response = llm.invoke([
+            SM(content=(
+                "Você é um analista jurídico comparando modelos de decisão com a jurisprudência do TJMG.\n\n"
+                "Analise o tema abaixo, compare o entendimento dos modelos do magistrado com os acórdãos do TJMG, "
+                "e determine se estão ALINHADOS ou DIVERGENTES.\n\n"
+                "Retorne um JSON com:\n"
+                "{\n"
+                '  "status": "aligned" ou "divergent",\n'
+                '  "majority_understanding": "resumo do entendimento majoritário do TJMG (2-3 parágrafos)",\n'
+                '  "model_approach": "como os modelos do magistrado tratam o tema (1-2 parágrafos)",\n'
+                '  "comparison": "análise comparativa detalhada",\n'
+                '  "alert": null ou {"title": "título do alerta", "detail": "explicação da divergência"}\n'
+                "}\n\n"
+                "IMPORTANTE: se os modelos estão alinhados com a jurisprudência, alert deve ser null."
+            )),
+            HM(content=(
+                f"**Tema:** {req.theme}\n\n"
+                f"**Acórdãos do TJMG:**\n{juris_context}\n\n"
+                f"**Trechos dos Modelos do Magistrado:**\n{model_context}"
+            )),
+        ])
+        raw = be.safe_content(comparison_response).strip()
+
+        # Parse JSON
+        import re
+        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if json_match:
+            result = json.loads(json_match.group())
+        else:
+            result = {
+                "status": "aligned",
+                "majority_understanding": raw,
+                "model_approach": "",
+                "comparison": "",
+                "alert": None,
+            }
+
+        # Add acordaos data for frontend
+        result["theme"] = req.theme
+        result["acordaos"] = [
+            {
+                "id": r.get("id"),
+                "tipo_recurso": r.get("tipo_recurso", "Acórdão"),
+                "numero_processo": r.get("numero_processo", "?"),
+                "data_publicacao": r.get("data_publicacao", "?"),
+                "comarca": r.get("comarca", ""),
+                "relator": r.get("relator", ""),
+                "ementa": r.get("ementa", "")[:300],
+                "similarity": r.get("similarity", 0),
+            }
+            for r in results[:5]
+        ]
+
+        return result
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao verificar tema: {str(e)}")
+
+
 # ── Admin: Upload Jurisprudência DB ───────────────────────────────────────────
 
 @app.post("/api/admin/upload-jurisprudencia")
