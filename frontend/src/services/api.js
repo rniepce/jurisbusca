@@ -318,6 +318,87 @@ export async function clearTemplates() {
     return safeJson(res, 'Clear Templates');
 }
 
+/**
+ * List all indexed templates with metadata.
+ * @returns {Promise<{templates: Array<{filename: string, chunk_count: number, total_chars: number, upload_date: string}>}>}
+ */
+export async function listTemplates() {
+    const res = await fetch(`${API_BASE}/templates/list`, {
+        headers: getAuthHeaders(),
+    });
+    if (!res.ok) return { templates: [] };
+    return safeJson(res, 'List Templates').catch(() => ({ templates: [] }));
+}
+
+/**
+ * Delete a specific template by filename.
+ * @param {string} filename
+ * @returns {Promise<{status: string}>}
+ */
+export async function deleteTemplate(filename) {
+    const res = await fetch(`${API_BASE}/templates/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Delete Template').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao remover modelo (${res.status})`);
+    }
+    return safeJson(res, 'Delete Template');
+}
+
+/**
+ * Ask a question against indexed templates (RAG query).
+ * @param {string} query
+ * @returns {Promise<{summary: string, results: Array}>}
+ */
+export async function askTemplates(query) {
+    const res = await fetch(`${API_BASE}/templates/ask`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ query }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Ask Templates').catch(() => ({}));
+        throw new Error(err.detail || `Erro na busca de modelos (${res.status})`);
+    }
+    return safeJson(res, 'Ask Templates');
+}
+
+/**
+ * Extract legal themes from indexed templates.
+ * @returns {Promise<{themes: Array<{id: number, title: string, description: string}>}>}
+ */
+export async function extractThemes() {
+    const res = await fetch(`${API_BASE}/templates/themes`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Extract Themes').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao extrair temas (${res.status})`);
+    }
+    return safeJson(res, 'Extract Themes');
+}
+
+/**
+ * Verify a legal theme against TJMG jurisprudence.
+ * @param {string} themeTitle
+ * @returns {Promise<{status: string, theme: string, majority_understanding: string, model_approach: string, alert?: object, acordaos?: Array}>}
+ */
+export async function verifyTheme(themeTitle) {
+    const res = await fetch(`${API_BASE}/templates/verify-theme`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ theme: themeTitle }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Verify Theme').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao verificar tema (${res.status})`);
+    }
+    return safeJson(res, 'Verify Theme');
+}
+
 
 // ── Jurisprudência Search ───────────────────────────────────────────────────
 
