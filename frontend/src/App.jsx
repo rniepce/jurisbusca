@@ -59,6 +59,8 @@ function MainApp() {
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasContent, setCanvasContent] = useState('');
   const [canvasTitle, setCanvasTitle] = useState('');
+  const [canvasSelection, setCanvasSelection] = useState(null); // selected text in canvas
+  const chatTextareaRef = useRef(null); // ref to focus the chat input from canvas
 
 
 
@@ -79,6 +81,38 @@ function MainApp() {
       (uploadedText && activeAgent ? 'Analise o documento anexado conforme as instruções do agente.' :
         uploadedText ? 'Analise o documento anexado.' : '');
     if (!effectiveMessage) return;
+
+    // ── Canvas context injection ──
+    // When canvas is open and has content, wrap the user's message with canvas context
+    let finalMessage = effectiveMessage;
+    if (canvasOpen && canvasContent && canvasContent.length > 50) {
+      if (canvasSelection && canvasSelection.length > 5) {
+        // Selection-based refinement
+        finalMessage = [
+          '[TRECHO SELECIONADO PARA EDIÇÃO]:',
+          canvasSelection,
+          '',
+          '[DOCUMENTO COMPLETO NO CANVAS (contexto)]:',
+          canvasContent,
+          '',
+          `[INSTRUÇÃO DO USUÁRIO]: ${effectiveMessage}`,
+          '',
+          'Retorne O DOCUMENTO COMPLETO ATUALIZADO, com o trecho selecionado ajustado conforme a instrução. Preserve todo o restante do documento intacto.',
+        ].join('\n');
+      } else {
+        // Full document refinement
+        finalMessage = [
+          '[DOCUMENTO ATUAL NO CANVAS]:',
+          canvasContent,
+          '',
+          `[INSTRUÇÃO DO USUÁRIO]: ${effectiveMessage}`,
+          '',
+          'Retorne O DOCUMENTO COMPLETO ATUALIZADO conforme a instrução. Preserve o que não precisa mudar.',
+        ].join('\n');
+      }
+      // Clear selection after using it
+      setCanvasSelection(null);
+    }
 
     // 1. Add user message immediately (hide auto-generated messages)
     if (userTyped && !hideUserBubble) {
@@ -144,7 +178,7 @@ function MainApp() {
 
       // 3. Call the backend
       const result = await sendMessage({
-        message: effectiveMessage,
+        message: finalMessage,
         model: selectedModel.id,
         llm: selectedModel.llm || null,
         agentPrompt,
@@ -204,7 +238,7 @@ function MainApp() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext, canvasOpen, canvasContent]);
+  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext, canvasOpen, canvasContent, canvasSelection]);
 
   // ── V0.5: Manually trigger jurisprudence research ─────────────────
   const handleJurisSearch = useCallback(async () => {
@@ -794,7 +828,6 @@ function MainApp() {
             setMessages((prev) => [...prev, importMsg]);
           }}
           onJurisSearch={handleJurisSearch}
-          selectedModel={globalSelectedModel}
         />
       );
     }
@@ -836,6 +869,16 @@ function MainApp() {
             <CanvasEditor
               content={canvasContent}
               onClose={handleCanvasClose}
+              onContentChange={(text) => setCanvasContent(text)}
+              onSelectionChange={(text) => setCanvasSelection(text)}
+              onFocusChat={(selectedText) => {
+                // Focus the chat input and pre-fill with selection context
+                setCanvasSelection(selectedText);
+                if (chatTextareaRef.current) {
+                  chatTextareaRef.current.focus();
+                  chatTextareaRef.current.placeholder = `Refinar: "${selectedText.slice(0, 40)}..." — digite sua instrução`;
+                }
+              }}
               isUpdating={isLoading}
             />
           )}
@@ -864,7 +907,9 @@ function MainApp() {
             onRagStatusChange={setRagStatus}
             activeAgent={activeAgent}
             canvasOpen={canvasOpen}
+            canvasSelection={canvasSelection}
             onCanvasToggle={handleCanvasToggle}
+            chatTextareaRef={chatTextareaRef}
           />
         )}
       </div>

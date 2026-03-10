@@ -34,7 +34,7 @@ const OCR_ENGINES = [
     { id: 'mistral_doc_ai', label: 'Mistral DocAI' },
 ];
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange, activeAgent = null, jurisEnabled = false, canvasOpen = false, onCanvasToggle }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange, activeAgent = null, jurisEnabled = false, canvasOpen = false, canvasSelection = null, onCanvasToggle, chatTextareaRef }) => {
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(ENGINE_VERSIONS[0]);
     const [selectedLlm, setSelectedLlm] = useState(LLM_OPTIONS[0]);
@@ -360,11 +360,24 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                 </div>
             )}
 
+            {/* Canvas context badge */}
+            {canvasOpen && (
+                <div className="canvas-context-badge">
+                    <span className="canvas-badge-icon">📄</span>
+                    <span className="canvas-badge-text">
+                        {canvasSelection
+                            ? `Refinando trecho: "${canvasSelection.slice(0, 50)}${canvasSelection.length > 50 ? '...' : ''}"`
+                            : 'Canvas ativo — suas mensagens editarão o documento'}
+                    </span>
+                </div>
+            )}
+
             {/* Input Area */}
             <div className="chat-input-box">
                 <textarea
+                    ref={chatTextareaRef}
                     className="chat-textarea"
-                    placeholder={isLoading ? 'Processando...' : ocrProcessing ? 'Executando OCR...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
+                    placeholder={isLoading ? 'Processando...' : ocrProcessing ? 'Executando OCR...' : canvasOpen ? 'Digite uma instrução para editar o documento no Canvas...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}

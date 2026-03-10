@@ -86,19 +86,23 @@ const HEADING_OPTIONS = [
     { value: 'h4', label: 'Título 4', tag: 'H4' },
 ];
 
-const CanvasEditor = ({ content, onClose, onContentChange, isUpdating = false }) => {
+const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, onFocusChat, isUpdating = false }) => {
     const [copied, setCopied] = useState(false);
     const [flashKey, setFlashKey] = useState(0);
     const [lastUpdated, setLastUpdated] = useState(null);
     const [headingDropdownOpen, setHeadingDropdownOpen] = useState(false);
     const [currentHeading, setCurrentHeading] = useState('Texto normal');
     const [activeFormats, setActiveFormats] = useState({});
+    const [selectionFab, setSelectionFab] = useState(null); // { text, x, y }
     const editorRef = useRef(null);
     const headingRef = useRef(null);
+    const contentChangeTimer = useRef(null);
+    const lastLlmContent = useRef(''); // tracks LLM content to avoid overwriting user edits
 
     // Set content into the editor when it changes from LLM
     useEffect(() => {
-        if (content && editorRef.current) {
+        if (content && editorRef.current && content !== lastLlmContent.current) {
+            lastLlmContent.current = content;
             const html = formatMarkdown(content);
             // Only update if content is from LLM (not user typing)
             if (editorRef.current.dataset.source !== 'user') {
@@ -108,6 +112,37 @@ const CanvasEditor = ({ content, onClose, onContentChange, isUpdating = false })
             setLastUpdated(new Date());
         }
     }, [content]);
+
+    // Track text selection for floating action button
+    useEffect(() => {
+        const handleSelectionEnd = () => {
+            if (!editorRef.current) return;
+            const sel = window.getSelection();
+            if (!sel || sel.isCollapsed || !editorRef.current.contains(sel.anchorNode)) {
+                setSelectionFab(null);
+                if (onSelectionChange) onSelectionChange(null);
+                return;
+            }
+            const text = sel.toString().trim();
+            if (text.length < 5) {
+                setSelectionFab(null);
+                if (onSelectionChange) onSelectionChange(null);
+                return;
+            }
+            // Position FAB near the selection
+            const range = sel.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            const editorRect = editorRef.current.getBoundingClientRect();
+            setSelectionFab({
+                text,
+                x: rect.left - editorRect.left + rect.width / 2,
+                y: rect.top - editorRect.top - 44,
+            });
+            if (onSelectionChange) onSelectionChange(text);
+        };
+        document.addEventListener('mouseup', handleSelectionEnd);
+        return () => document.removeEventListener('mouseup', handleSelectionEnd);
+    }, [onSelectionChange]);
 
     // Close heading dropdown on click outside
     useEffect(() => {
@@ -162,7 +197,7 @@ const CanvasEditor = ({ content, onClose, onContentChange, isUpdating = false })
         updateActiveFormats();
     };
 
-    // ── Content edit handler — marks edits as user-originated ──
+    // ── Content edit handler — marks edits as user-originated + debounced sync ──
     const handleInput = () => {
         if (editorRef.current) {
             editorRef.current.dataset.source = 'user';
@@ -170,7 +205,15 @@ const CanvasEditor = ({ content, onClose, onContentChange, isUpdating = false })
             clearTimeout(editorRef.current._userTimeout);
             editorRef.current._userTimeout = setTimeout(() => {
                 if (editorRef.current) editorRef.current.dataset.source = '';
-            }, 500);
+            }, 2000);
+
+            // Debounced content sync → parent state
+            clearTimeout(contentChangeTimer.current);
+            contentChangeTimer.current = setTimeout(() => {
+                if (editorRef.current && onContentChange) {
+                    onContentChange(editorRef.current.innerText);
+                }
+            }, 1000);
         }
     };
 
@@ -194,7 +237,7 @@ const CanvasEditor = ({ content, onClose, onContentChange, isUpdating = false })
         }
     };
 
-    // ── Download ──
+    // ── Download TXT ──
     const handleDownload = () => {
         const text = editorRef.current?.innerText || content || '';
         if (!text) return;
@@ -208,6 +251,52 @@ const CanvasEditor = ({ content, onClose, onContentChange, isUpdating = false })
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    };
+
+    // ── Download DOCX (HTML wrapper) ──
+    const handleDownloadDocx = () => {
+        const html = editorRef.current?.innerHTML || '';
+        if (!html) return;
+        const docxHtml = `
+            <html xmlns:o="urn:schemas-microsoft-com:office:office"
+                  xmlns:w="urn:schemas-microsoft-com:office:word"
+                  xmlns="http://www.w3.org/TR/REC-html40">
+            <head><meta charset="utf-8"><style>
+                body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.8; margin: 2cm; }
+                h1 { font-size: 16pt; } h2 { font-size: 14pt; } h3 { font-size: 13pt; }
+                p { text-align: justify; margin: 0 0 8px; }
+                table { border-collapse: collapse; width: 100%; }
+                th, td { border: 1px solid #999; padding: 4px 8px; }
+            </style></head>
+            <body>${html}</body></html>`;
+        const blob = new Blob(['\ufeff', docxHtml], { type: 'application/msword' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const t = extractTitle(content).replace(/[^a-zA-Z0-9À-ÿ\s_-]/g, '').trim().replace(/\s+/g, '_');
+        a.download = `${t || 'minuta'}.doc`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    // ── Handle FAB actions ──
+    const handleRefineSelection = () => {
+        if (selectionFab?.text && onFocusChat) {
+            onFocusChat(selectionFab.text);
+        }
+        setSelectionFab(null);
+    };
+
+    const handleCopySelection = async () => {
+        if (!selectionFab?.text) return;
+        try {
+            await navigator.clipboard.writeText(selectionFab.text);
+        } catch {
+            // fallback
+        }
+        setSelectionFab(null);
     };
 
     // ── Print ──
@@ -267,6 +356,9 @@ const CanvasEditor = ({ content, onClose, onContentChange, isUpdating = false })
                     </button>
                     <button className="canvas-action-btn" onClick={handleDownload} title="Baixar como .txt">
                         <FaDownload size={13} />
+                    </button>
+                    <button className="canvas-action-btn" onClick={handleDownloadDocx} title="Baixar como .doc">
+                        <FaFileLines size={13} />
                     </button>
                     <button className="canvas-action-btn" onClick={handlePrint} title="Imprimir">
                         <FaPrint size={13} />
@@ -357,7 +449,7 @@ const CanvasEditor = ({ content, onClose, onContentChange, isUpdating = false })
 
             {/* ── Editable content area ── */}
             {content ? (
-                <div className="canvas-content-wrapper">
+                <div className="canvas-content-wrapper" style={{ position: 'relative' }}>
                     <div
                         ref={editorRef}
                         key={flashKey}
@@ -368,6 +460,23 @@ const CanvasEditor = ({ content, onClose, onContentChange, isUpdating = false })
                         spellCheck
                         dangerouslySetInnerHTML={{ __html: formatMarkdown(content) }}
                     />
+                    {/* ── Floating Action Button for selection ── */}
+                    {selectionFab && (
+                        <div
+                            className="canvas-selection-fab"
+                            style={{
+                                left: `${Math.max(16, Math.min(selectionFab.x - 60, 300))}px`,
+                                top: `${Math.max(0, selectionFab.y)}px`,
+                            }}
+                        >
+                            <button className="fab-action" onClick={handleRefineSelection} title="Pedir à IA para refinar este trecho">
+                                ✏️ Refinar
+                            </button>
+                            <button className="fab-action" onClick={handleCopySelection} title="Copiar trecho">
+                                📋 Copiar
+                            </button>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="canvas-empty">
