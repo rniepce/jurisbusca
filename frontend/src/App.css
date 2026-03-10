@@ -91,3 +91,46 @@
     pointer-events: auto;
   }
 }
+
+/* ===== CANVAS SPLIT LAYOUT ===== */
+.main-content.with-canvas {
+  flex-direction: row;
+  overflow: hidden;
+}
+
+.main-content.with-canvas>.canvas-chat-pane {
+  flex: 0 0 42%;
+  max-width: 42%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-width: 0;
+  border-right: 1px solid #f0f0f0;
+}
+
+.main-content.with-canvas>.canvas-editor {
+  flex: 1;
+  min-width: 0;
+}
+
+/* When not in canvas, the chat pane wrapper should be transparent */
+.canvas-chat-pane:not([class]) {
+  display: contents;
+}
+
+@media (max-width: 768px) {
+  .main-content.with-canvas {
+    flex-direction: column;
+  }
+
+  .main-content.with-canvas>.canvas-chat-pane {
+    flex: 0 0 40%;
+    max-width: 100%;
+    min-height: 0;
+  }
+
+  .main-content.with-canvas>.canvas-editor {
+    flex: 1;
+    min-height: 0;
+  }
+}

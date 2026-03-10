@@ -4,6 +4,7 @@ import Header from './components/Header';
 import WelcomeContent from './components/WelcomeContent';
 import ChatArea from './components/ChatArea';
 import ChatInput from './components/ChatInput';
+import CanvasEditor from './components/CanvasEditor';
 import XRayDashboard from './components/XRayDashboard';
 import BatchPanel from './components/BatchPanel';
 import JurisprudenciaPanel from './components/JurisprudenciaPanel';
@@ -54,6 +55,10 @@ function MainApp() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [shareAgent, setShareAgent] = useState(null); // agent being shared
+  // Canvas state
+  const [canvasOpen, setCanvasOpen] = useState(false);
+  const [canvasContent, setCanvasContent] = useState('');
+  const [canvasTitle, setCanvasTitle] = useState('');
 
 
 
@@ -158,14 +163,37 @@ function MainApp() {
         rawResponse = rawResponse.text || rawResponse.content || rawResponse.output || JSON.stringify(rawResponse);
       }
 
-      const assistantMsg = {
-        role: 'assistant',
-        content: typeof rawResponse === 'string' ? rawResponse : String(rawResponse),
-        model: result.model,
-        v2Sections: result.v2_sections || null,
-        modelContext: result.model_context || null,
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
+      const safeResponse = typeof rawResponse === 'string' ? rawResponse : String(rawResponse);
+
+      // ── Canvas mode: route long responses to canvas editor ──
+      const isLongResponse = safeResponse.length > 500;
+      const isErrorOrSystem = safeResponse.includes('⚠️ **Erro') || safeResponse.includes('MESA DE DELIBERAÇÃO') || safeResponse.includes('AGUARDANDO DIRETRIZES');
+
+      if (canvasOpen && isLongResponse && !isErrorOrSystem) {
+        // Update canvas content in-place
+        setCanvasContent(safeResponse);
+        // Show short notification in chat
+        const isFirstCanvas = !canvasContent;
+        const canvasMsg = {
+          role: 'assistant',
+          content: isFirstCanvas
+            ? '📄 **Minuta gerada no Canvas.** Veja o documento no painel ao lado. Peça alterações aqui no chat e o Canvas será atualizado automaticamente.'
+            : '✏️ **Canvas atualizado** com as alterações solicitadas.',
+          model: result.model,
+          isCanvasUpdate: true,
+        };
+        setMessages((prev) => [...prev, canvasMsg]);
+      } else {
+        // Normal flow — show full response in chat
+        const assistantMsg = {
+          role: 'assistant',
+          content: safeResponse,
+          model: result.model,
+          v2Sections: result.v2_sections || null,
+          modelContext: result.model_context || null,
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+      }
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
@@ -176,7 +204,7 @@ function MainApp() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext]);
+  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext, canvasOpen, canvasContent]);
 
   // ── V0.5: Manually trigger jurisprudence research ─────────────────
   const handleJurisSearch = useCallback(async () => {
@@ -604,6 +632,9 @@ function MainApp() {
     setJurisResearch(null);
     setJurisResearchLoading(false);
     setJurisContext('');
+    setCanvasOpen(false);
+    setCanvasContent('');
+    setCanvasTitle('');
   }, [messages, activeAgent, conversationId]);
 
   // ── Load chat from history ──────────────────────────────────────────
@@ -653,6 +684,27 @@ function MainApp() {
   }, []);
 
   const hasMessages = messages.length > 0;
+
+  // ── Canvas toggle handler ──
+  const handleCanvasToggle = useCallback(() => {
+    setCanvasOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        // Hide sidebar when canvas opens
+        setSidebarOpen(false);
+      } else {
+        // Restore sidebar when canvas closes (desktop only)
+        if (window.innerWidth > 768) setSidebarOpen(true);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleCanvasClose = useCallback(() => {
+    setCanvasOpen(false);
+    // Restore sidebar if not mobile
+    if (window.innerWidth > 768) setSidebarOpen(true);
+  }, []);
 
   // Build sidebar history format
   const sidebarHistory = chatHistory.length > 0
@@ -776,8 +828,17 @@ function MainApp() {
       <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
         <Header onMenuClick={toggleSidebar} isOpen={sidebarOpen} />
 
-        <div className={`main-content ${showBatchPanel ? 'with-batch' : ''}`}>
-          {renderContent()}
+        <div className={`main-content ${showBatchPanel ? 'with-batch' : ''} ${canvasOpen ? 'with-canvas' : ''}`}>
+          <div className={canvasOpen ? 'canvas-chat-pane' : undefined}>
+            {renderContent()}
+          </div>
+          {canvasOpen && (
+            <CanvasEditor
+              content={canvasContent}
+              onClose={handleCanvasClose}
+              isUpdating={isLoading}
+            />
+          )}
           {showBatchPanel && (
             <BatchPanel
               results={batchResults}
@@ -802,6 +863,8 @@ function MainApp() {
             ragStatus={ragStatus}
             onRagStatusChange={setRagStatus}
             activeAgent={activeAgent}
+            canvasOpen={canvasOpen}
+            onCanvasToggle={handleCanvasToggle}
           />
         )}
       </div>

@@ -1,0 +1,567 @@
+/* ===== CANVAS EDITOR — Gemini-style split-screen document editor ===== */
+
+/* ── Container ── */
+.canvas-editor {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #fff;
+    border-left: 1px solid #e8e8e8;
+    animation: canvasSlideIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+@keyframes canvasSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(40px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* ── Top Toolbar ── */
+.canvas-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fafbfc;
+    flex-shrink: 0;
+    min-height: 48px;
+}
+
+.canvas-title-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.canvas-title-icon {
+    color: #2563eb;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.canvas-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a1a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: -0.2px;
+}
+
+.canvas-updated-badge {
+    font-size: 11px;
+    color: #888;
+    white-space: nowrap;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.canvas-updated-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #10B981;
+    display: inline-block;
+    animation: canvasPulse 2s ease-in-out infinite;
+}
+
+@keyframes canvasPulse {
+
+    0%,
+    100% {
+        opacity: 0.4;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+.canvas-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.canvas-action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #666;
+    font-size: 14px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+
+.canvas-action-btn:hover {
+    background: #f0f4ff;
+    color: #2563eb;
+    transform: scale(1.05);
+}
+
+.canvas-action-btn.close-btn:hover {
+    background: #fef2f2;
+    color: #ef4444;
+}
+
+.canvas-action-btn .tooltip {
+    display: none;
+}
+
+/* ── Copy feedback ── */
+.canvas-action-btn.copied {
+    color: #10B981 !important;
+    background: #ecfdf5;
+}
+
+/* ── Content Area ── */
+.canvas-content-wrapper {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 40px 60px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.canvas-content-wrapper::-webkit-scrollbar {
+    width: 5px;
+}
+
+.canvas-content-wrapper::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.canvas-content-wrapper::-webkit-scrollbar-thumb {
+    background: #ddd;
+    border-radius: 4px;
+}
+
+.canvas-content-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #ccc;
+}
+
+/* ── Document rendering ── */
+.canvas-document {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.85;
+    color: #1a1a1a;
+    max-width: 780px;
+    margin: 0 auto;
+    animation: canvasContentFade 0.4s ease;
+}
+
+@keyframes canvasContentFade {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.canvas-document h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #111;
+    margin: 28px 0 12px;
+    letter-spacing: -0.3px;
+    border-bottom: 2px solid #e8f0fe;
+    padding-bottom: 6px;
+}
+
+.canvas-document h3 {
+    font-size: 17px;
+    font-weight: 600;
+    color: #222;
+    margin: 22px 0 8px;
+}
+
+.canvas-document h4 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+    margin: 18px 0 6px;
+}
+
+.canvas-document p {
+    margin: 0 0 14px;
+    text-align: justify;
+}
+
+.canvas-document strong {
+    font-weight: 700;
+    color: #111;
+}
+
+.canvas-document em {
+    font-style: italic;
+    color: #444;
+}
+
+.canvas-document ul,
+.canvas-document ol {
+    margin: 8px 0 14px 20px;
+    padding: 0;
+}
+
+.canvas-document li {
+    margin-bottom: 4px;
+}
+
+.canvas-document hr {
+    border: none;
+    border-top: 1px solid #e8e8e8;
+    margin: 20px 0;
+}
+
+.canvas-document table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+}
+
+.canvas-document th,
+.canvas-document td {
+    border: 1px solid #e0e0e0;
+    padding: 8px 12px;
+    text-align: left;
+}
+
+.canvas-document th {
+    background: #f5f7fa;
+    font-weight: 600;
+    color: #333;
+}
+
+.canvas-document code {
+    background: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: 'Fira Code', 'Consolas', monospace;
+}
+
+.canvas-document pre {
+    background: #f8f9fa;
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    padding: 14px 18px;
+    overflow-x: auto;
+    margin: 12px 0;
+}
+
+.canvas-document pre code {
+    background: none;
+    padding: 0;
+}
+
+/* ── Empty state ── */
+.canvas-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: #aaa;
+    text-align: center;
+    padding: 40px;
+}
+
+.canvas-empty-icon {
+    font-size: 48px;
+    opacity: 0.3;
+    animation: canvasEmptyBreathe 3s ease-in-out infinite;
+}
+
+@keyframes canvasEmptyBreathe {
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 0.3;
+    }
+
+    50% {
+        transform: scale(1.05);
+        opacity: 0.5;
+    }
+}
+
+.canvas-empty-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #999;
+}
+
+.canvas-empty-sub {
+    font-size: 13px;
+    color: #bbb;
+    max-width: 280px;
+    line-height: 1.5;
+}
+
+/* ── Update flash animation ── */
+.canvas-document.updating {
+    animation: canvasFlash 0.6s ease;
+}
+
+@keyframes canvasFlash {
+    0% {
+        background-color: transparent;
+    }
+
+    30% {
+        background-color: rgba(37, 99, 235, 0.04);
+    }
+
+    100% {
+        background-color: transparent;
+    }
+}
+
+/* ── contentEditable focus ── */
+.canvas-document[contenteditable] {
+    outline: none;
+    cursor: text;
+    min-height: 200px;
+    border-radius: 4px;
+    transition: box-shadow 0.2s ease;
+}
+
+.canvas-document[contenteditable]:focus {
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.08);
+}
+
+/* ===== FORMATTING TOOLBAR ===== */
+.canvas-format-bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fff;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.fmt-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #555;
+    font-size: 13px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s, color 0.12s;
+    min-width: 30px;
+    min-height: 30px;
+}
+
+.fmt-btn:hover {
+    background: #f0f4ff;
+    color: #2563eb;
+}
+
+.fmt-btn.active {
+    background: #e8f0fe;
+    color: #1a56db;
+}
+
+.fmt-separator {
+    width: 1px;
+    height: 20px;
+    background: #e8e8e8;
+    margin: 0 4px;
+    flex-shrink: 0;
+}
+
+/* ── Heading selector dropdown ── */
+.heading-selector {
+    position: relative;
+}
+
+.heading-selector-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: #444;
+    transition: all 0.15s;
+    white-space: nowrap;
+    min-width: 120px;
+}
+
+.heading-selector-btn:hover {
+    border-color: #bbb;
+    background: #f9f9f9;
+}
+
+.heading-selector-btn.open {
+    border-color: #2563eb;
+    background: #f0f4ff;
+    color: #2563eb;
+}
+
+.heading-selector-btn svg {
+    transition: transform 0.2s ease;
+    color: #aaa;
+}
+
+.heading-selector-btn.open svg {
+    transform: rotate(180deg);
+    color: #2563eb;
+}
+
+.heading-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 180px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1), 0 1px 4px rgba(0, 0, 0, 0.04);
+    padding: 4px;
+    z-index: 100;
+    animation: headingDropIn 0.15s ease-out;
+}
+
+@keyframes headingDropIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.heading-dropdown-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 6px 10px;
+    border: none;
+    background: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.12s;
+    text-align: left;
+    font-family: 'Inter', system-ui, sans-serif;
+}
+
+.heading-dropdown-item:hover {
+    background: #f5f5f7;
+}
+
+.heading-dropdown-item.active {
+    background: #e8f0fe;
+}
+
+.heading-preview {
+    color: #333;
+}
+
+.heading-preview-p {
+    font-size: 13px;
+    font-weight: 400;
+}
+
+.heading-preview-h1 {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.heading-preview-h2 {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.heading-preview-h3 {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.heading-preview-h4 {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+    .canvas-editor {
+        border-left: none;
+        border-top: 1px solid #e8e8e8;
+    }
+
+    .canvas-content-wrapper {
+        padding: 20px 16px 40px;
+    }
+
+    .canvas-document {
+        font-size: 14px;
+        line-height: 1.75;
+    }
+
+    .canvas-toolbar {
+        padding: 8px 12px;
+    }
+
+    .canvas-format-bar {
+        padding: 4px 8px;
+        gap: 1px;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .fmt-btn {
+        padding: 5px 6px;
+        min-width: 28px;
+        min-height: 28px;
+    }
+
+    .heading-selector-btn {
+        font-size: 11px;
+        min-width: 100px;
+        padding: 4px 8px;
+    }
+}

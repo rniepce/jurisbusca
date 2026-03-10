@@ -704,4 +704,40 @@
     .model-dropdown {
         min-width: 200px;
     }
+
+    .canvas-indicator {
+        font-size: 9px !important;
+    }
+}
+
+/* ===== CANVAS TOGGLE BUTTON ===== */
+.canvas-toggle-btn {
+    position: relative;
+    gap: 5px !important;
+}
+
+.canvas-toggle-btn.canvas-active {
+    color: #2563eb !important;
+    background: #e8f0fe !important;
+    border-radius: 8px;
+}
+
+.canvas-indicator {
+    font-size: 10px;
+    font-weight: 600;
+    color: #10B981;
+    letter-spacing: 0.2px;
+    animation: canvasLabelIn 0.25s ease-out;
+}
+
+@keyframes canvasLabelIn {
+    from {
+        opacity: 0;
+        transform: translateX(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }

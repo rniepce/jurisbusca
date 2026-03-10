@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistente TJMG</title>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" crossorigin href="/assets/index-BeyV6zRG.css">
+</head>
+
+<body>
+    <div class="assistente-wrapper">
+        <!-- Sidebar / Drawer Container -->
+        <aside class="assistente-sidebar">
+            <!-- Header -->
+            <header class="header">
+                <div class="logo-area">
+                    <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR0Kqa5yJ0q2i9o52w_y6vjA44c20q2u9u9-w&s"
+                        alt="Logo TJMG" class="logo-img"> <!-- Placeholder Logo -->
+                    <span class="title">Assistente TJMG</span>
+                </div>
+                <!-- Window Controls (Mac-style or simple icons) -->
+                <div class="window-controls">
+                    <button class="control-btn minimize" aria-label="Minimizar"><i
+                            class="fa-solid fa-minus"></i></button>
+                    <button class="control-btn close" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </header>
+
+            <!-- Main Content -->
+            <main class="content">
+                <div class="welcome-section">
+                    <h1 class="welcome-title">Bem-vindo,</h1>
+                    <h2 class="welcome-subtitle">O que você deseja fazer?</h2>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="action-card">
+                        <div class="icon-box"><i class="fa-regular fa-file-lines"></i></div>
+                        <span class="action-text">Gerar ementa</span>
+                        <i class="fa-solid fa-arrow-right action-arrow"></i>
+                    </button>
+
+                    <button class="action-card">
+                        <div class="icon-box"><i class="fa-solid fa-layer-group"></i></div>
+                        <span class="action-text">Gerar resumo consolidado</span>
+                        <i class="fa-solid fa-arrow-right action-arrow"></i>
+                    </button>
+
+                    <button class="action-card">
+                        <div class="icon-box"><i class="fa-regular fa-copy"></i></div>
+                        <span class="action-text">Gerar resumo de peças individualizadas</span>
+                        <i class="fa-solid fa-arrow-right action-arrow"></i>
+                    </button>
+                </div>
+
+                <!-- History Link (Optional based on typical patterns, visible in similar designs) -->
+                <div class="history-link">
+                    <a href="#">Ver histórico completo...</a>
+                </div>
+            </main>
+
+            <!-- Footer: Chat Input -->
+            <footer class="footer">
+                <div class="chat-input-container">
+                    <button class="input-action-btn attach" aria-label="Anexar arquivo"><i
+                            class="fa-solid fa-paperclip"></i></button>
+                    <input type="text" class="chat-input" placeholder="Inicie o seu prompt aqui... / para prompts">
+                    <div class="right-actions">
+                        <button class="input-action-btn prompt-lib" aria-label="Biblioteca de Prompts"><i
+                                class="fa-solid fa-wand-magic-sparkles"></i></button>
+                        <button class="input-action-btn send-btn" aria-label="Enviar"><i
+                                class="fa-solid fa-arrow-up"></i></button>
+                    </div>
+                </div>
+                <!-- Optional: 'Novo Chat' button or indicator -->
+                <div class="new-chat-floater">
+                    <button class="new-chat-btn"><i class="fa-solid fa-plus"></i> Novo chat</button>
+                </div>
+            </footer>
+        </aside>
+    </div>
+
+    <script src="js/script.js"></script>
+</body>
+
+</html>

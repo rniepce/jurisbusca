@@ -3,7 +3,7 @@ import {
     FaPaperclip, FaBook, FaSlash,
     FaArrowRotateRight, FaChevronDown, FaCheck,
     FaXmark, FaFile, FaPalette, FaDatabase,
-    FaBullseye, FaMicrochip
+    FaBullseye, FaMicrochip, FaTableColumns
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
 import { uploadTemplates, clearTemplates, getSlmStatus } from '../services/api';
@@ -34,7 +34,7 @@ const OCR_ENGINES = [
     { id: 'mistral_doc_ai', label: 'Mistral DocAI' },
 ];
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange, activeAgent = null, jurisEnabled = false, canvasOpen = false, onCanvasToggle }) => {
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(ENGINE_VERSIONS[0]);
     const [selectedLlm, setSelectedLlm] = useState(LLM_OPTIONS[0]);
@@ -238,6 +238,15 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                         style={{ display: 'none' }}
                     />
                     <button className="toolbar-btn" aria-label="Prompts"><FaSlash /></button>
+                    <button
+                        className={`toolbar-btn canvas-toggle-btn ${canvasOpen ? 'canvas-active' : ''}`}
+                        aria-label={canvasOpen ? 'Fechar Canvas' : 'Abrir Canvas'}
+                        title={canvasOpen ? 'Fechar modo Canvas' : 'Abrir modo Canvas (editor de minuta)'}
+                        onClick={() => onCanvasToggle && onCanvasToggle()}
+                    >
+                        <FaTableColumns />
+                        {canvasOpen && <span className="canvas-indicator">Canvas</span>}
+                    </button>
                 </div>
                 <div className="toolbar-right">
                     <button className="toolbar-btn" aria-label="Recarregar"><FaArrowRotateRight /></button>
