@@ -2,11 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
     FaPaperclip, FaBook, FaSlash,
     FaArrowRotateRight, FaChevronDown, FaCheck,
-    FaXmark, FaFile, FaPalette, FaDatabase,
+    FaXmark, FaFile, FaDatabase,
     FaBullseye, FaMicrochip, FaTableColumns
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
-import { uploadTemplates, clearTemplates, getSlmStatus } from '../services/api';
+import { getSlmStatus } from '../services/api';
 import './ChatInput.css';
 
 const ENGINE_VERSIONS = [
@@ -42,7 +42,6 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [llmDropdownOpen, setLlmDropdownOpen] = useState(false);
     const [files, setFiles] = useState([]);
-    const [templateFiles, setTemplateFiles] = useState([]);
     const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[0].id);
     const [compressEnabled, setCompressEnabled] = useState(false);
     const [ragEnabled, setRagEnabled] = useState(false);
@@ -53,7 +52,6 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     const dropdownRef = useRef(null);
     const llmDropdownRef = useRef(null);
     const fileInputRef = useRef(null);
-    const templateInputRef = useRef(null);
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -82,7 +80,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         if (message.trim() || files.length > 0 || hasContext) {
             // Pass both engine version and LLM choice
             const combinedModel = { ...selectedModel, llm: selectedLlm.deployment };
-            if (onSend) onSend(message, combinedModel, files, ocrEngine, templateFiles, ragEnabled);
+            if (onSend) onSend(message, combinedModel, files, ocrEngine, [], ragEnabled);
             setMessage('');
             setFiles([]);
         }
@@ -123,9 +121,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         fileInputRef.current?.click();
     };
 
-    const handleTemplateClick = () => {
-        templateInputRef.current?.click();
-    };
+
 
     const handleFileChange = (e) => {
         const selected = Array.from(e.target.files);
@@ -143,13 +139,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         e.target.value = '';
     };
 
-    const handleTemplateChange = (e) => {
-        const selected = Array.from(e.target.files);
-        if (selected.length > 0) {
-            setTemplateFiles((prev) => [...prev, ...selected]);
-        }
-        e.target.value = '';
-    };
+
 
     const removeFile = (index) => {
         setFiles((prev) => prev.filter((_, i) => i !== index));
@@ -230,14 +220,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                     <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={() => onOpenModelManager && onOpenModelManager()}>
                         <FaBook />
                     </button>
-                    <input
-                        ref={templateInputRef}
-                        type="file"
-                        accept={ACCEPTED_TYPES}
-                        multiple
-                        onChange={handleTemplateChange}
-                        style={{ display: 'none' }}
-                    />
+
                     <button className="toolbar-btn" aria-label="Prompts"><FaSlash /></button>
                     <button
                         className={`toolbar-btn canvas-toggle-btn ${canvasOpen ? 'canvas-active' : ''}`}
@@ -274,90 +257,13 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                 </div>
             )}
 
-            {/* Template Files — compact pill + persistent indexing */}
-            {(templateFiles.length > 0 || (ragStatus && ragStatus.indexed_chunks > 0)) && (
+            {/* RAG status indicator (managed via ModelManagerPanel) */}
+            {ragStatus && ragStatus.indexed_chunks > 0 && (
                 <div className="template-bar">
-                    {/* Show persisted RAG status */}
-                    {ragStatus && ragStatus.indexed_chunks > 0 && templateFiles.length === 0 && (
-                        <div className="template-pill rag-active">
-                            <FaDatabase size={12} />
-                            <span>📚 {ragStatus.indexed_chunks} chunks indexados {ragStatus.has_dossier ? '+ estilo' : ''}</span>
-                            <button
-                                className="template-pill-clear"
-                                onClick={async () => {
-                                    try {
-                                        await clearTemplates();
-                                        if (onRagStatusChange) onRagStatusChange({ indexed_chunks: 0, has_dossier: false });
-                                    } catch (err) {
-                                        console.warn('Failed to clear templates:', err);
-                                    }
-                                }}
-                                aria-label="Limpar modelos"
-                                title="Limpar modelos indexados"
-                            >
-                                <FaXmark size={10} />
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Show newly selected (un-indexed) templates */}
-                    {templateFiles.length > 0 && (
-                        <>
-                            <div className="template-pill">
-                                <FaBook size={12} />
-                                <span>{templateFiles.length} modelo{templateFiles.length > 1 ? 's' : ''} selecionado{templateFiles.length > 1 ? 's' : ''}</span>
-                                <button
-                                    className="template-pill-clear"
-                                    onClick={() => setTemplateFiles([])}
-                                    aria-label="Remover modelos"
-                                >
-                                    <FaXmark size={10} />
-                                </button>
-                            </div>
-                            <button
-                                className={`style-report-btn ${indexSuccess ? 'index-success' : ''} ${indexing ? 'indexing-active' : ''}`}
-                                onClick={async () => {
-                                    if (indexing || indexSuccess) return;
-                                    setIndexing(true);
-                                    try {
-                                        const result = await uploadTemplates(templateFiles);
-                                        if (onRagStatusChange) {
-                                            onRagStatusChange({
-                                                indexed_chunks: result.indexed_chunks,
-                                                has_dossier: result.has_dossier,
-                                            });
-                                        }
-                                        // Show success state
-                                        setIndexing(false);
-                                        setIndexSuccess(true);
-                                        setTimeout(() => {
-                                            setIndexSuccess(false);
-                                            setTemplateFiles([]);
-                                        }, 2500);
-                                    } catch (err) {
-                                        console.error('Indexing failed:', err);
-                                        setIndexing(false);
-                                        alert(`Erro ao indexar modelos: ${err.message}`);
-                                    }
-                                }}
-                                disabled={isLoading || indexing || indexSuccess}
-                            >
-                                {indexSuccess ? (
-                                    <><FaCheck size={12} /><span>Modelos indexados!</span></>
-                                ) : (
-                                    <><FaDatabase size={12} /><span>{indexing ? 'Indexando...' : 'Indexar no RAG'}</span></>
-                                )}
-                            </button>
-                            <button
-                                className="style-report-btn"
-                                onClick={() => onStyleReport && onStyleReport(templateFiles)}
-                                disabled={isLoading}
-                            >
-                                <FaPalette size={12} />
-                                <span>Relatório de Estilo</span>
-                            </button>
-                        </>
-                    )}
+                    <div className="template-pill rag-active" onClick={() => onOpenModelManager && onOpenModelManager()} style={{ cursor: 'pointer' }}>
+                        <FaDatabase size={12} />
+                        <span>📚 {ragStatus.indexed_chunks} chunks indexados {ragStatus.has_dossier ? '+ estilo' : ''}</span>
+                    </div>
                 </div>
             )}
 
