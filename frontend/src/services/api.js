@@ -623,3 +623,22 @@ export async function shareCustomAgent(agentId, email) {
     }
     return safeJson(res, 'Share Agent');
 }
+
+
+// ── SLM Status ──────────────────────────────────────────────────────────────
+
+/**
+ * Check the SLM (Small Language Model) server status.
+ * @returns {Promise<{available: boolean, mode: string, ...}>}
+ */
+export async function getSlmStatus() {
+    try {
+        const res = await fetch(`${API_BASE}/slm/status`, {
+            headers: await getAuthHeaders(),
+        }).catch(() => null);
+        if (!res || !res.ok) return { available: false, mode: 'none' };
+        return safeJson(res, 'SLM Status').catch(() => ({ available: false, mode: 'none' }));
+    } catch {
+        return { available: false, mode: 'none' };
+    }
+}
