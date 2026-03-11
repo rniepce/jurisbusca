@@ -40,7 +40,7 @@ function MainApp() {
   const [ragStatus, setRagStatus] = useState(null);
   const [batchResults, setBatchResults] = useState([]);
   const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
-  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: agentDefinitions[0]?.engineId || 'v1', name: agentDefinitions[0]?.name || 'Gabinete 2.0', color: agentDefinitions[0]?.color || '#10B981', llm: 'gpt-5.2-chat' });
+  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'gpt52', name: 'GPT-5.2', color: '#4285F4', llm: 'gpt-5.2-chat' });
   const [showJurisprudencia, setShowJurisprudencia] = useState(false);
   const [showModelManager, setShowModelManager] = useState(false);
   // Jurisprudence toggle state — always enabled
@@ -153,7 +153,6 @@ function MainApp() {
 
       // 2. Load agent prompt — use overridePrompt if provided (e.g. auto-review QA)
       let agentPrompt = overridePrompt || null;
-      const engineId = selectedModel.id;
 
       if (!agentPrompt && activeAgent?.prompt && !activeAgent?.promptModule) {
         // Custom agent — use stored prompt directly
@@ -165,14 +164,6 @@ function MainApp() {
           agentPrompt = mod.default || null;
         } catch {
           console.warn('Could not load agent prompt');
-        }
-      } else if (['v0', 'v1', 'v2'].includes(engineId)) {
-        // No agent selected but engine known — auto-load unified prompt
-        try {
-          const mod = await import('./prompts/gabineteCivelV2.js');
-          agentPrompt = mod.default || null;
-        } catch {
-          console.warn('Could not auto-load Gabinete prompt');
         }
       }
 
@@ -473,15 +464,8 @@ function MainApp() {
 
     setActiveAgent(agent);
     setShowAgentBuilder(false); // Close builder if open
-    // Sync the global model with the agent's engine
-    setGlobalSelectedModel((prev) => ({
-      ...prev,
-      id: agent.engineId || 'v0',
-      name: agent.name,
-      color: agent.color || '#8B5CF6',
-    }));
     // For custom agents, use their prompt as the promptModule
-    const isCustom = !agent.engineId && agent.prompt;
+    const isCustom = !agent.promptModule && agent.prompt;
     const activationMsg = {
       role: 'agent-activation',
       agentName: agent.name,

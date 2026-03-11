@@ -455,8 +455,8 @@ const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessi
                         <div className="message-avatar">
                             <img src={logoSvg} alt="Assistente" style={{ width: 14, height: 14, borderRadius: '2px' }} />
                         </div>
-                        <div className="message-bubble assistant" style={{ minWidth: selectedModel?.id === 'v3-local' ? '380px' : undefined }}>
-                            {selectedModel?.id === 'v3-local' ? (
+                        <div className="message-bubble assistant" style={{ minWidth: selectedModel?.id === 'local' ? '380px' : undefined }}>
+                            {selectedModel?.id === 'local' ? (
                                 <SLMPipelineAnimation />
                             ) : (
                                 <div className="typing-indicator">
