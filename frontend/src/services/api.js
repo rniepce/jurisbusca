@@ -519,3 +519,95 @@ export async function getSlmStatus() {
         return { available: false, mode: 'none' };
     }
 }
+
+
+// ── Jurisprudência Research (background task trigger) ────────────────────────
+
+/**
+ * Trigger background jurisprudence research.
+ * @param {string} uploadedText - The process OCR text
+ * @param {string} analysisText - The latest assistant analysis
+ * @returns {Promise<{task_id: string}>}
+ */
+export async function triggerJurisprudenciaResearch(uploadedText, analysisText = '') {
+    const res = await fetch(`${API_BASE}/chat`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+            message: 'Pesquisar jurisprudência relevante para este processo.',
+            model: 'research',
+            uploaded_text: uploadedText,
+            analysis_text: analysisText,
+            trigger_research: true,
+        }),
+        redirect: 'error',
+    });
+
+    if (!res.ok) {
+        const err = await safeJson(res, 'Jurisprudência Research').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao iniciar pesquisa (${res.status})`);
+    }
+
+    return safeJson(res, 'Jurisprudência Research');
+}
+
+
+// ── Custom Agents (localStorage-backed) ─────────────────────────────────────
+
+const AGENTS_STORAGE_KEY = 'jurisbusca_custom_agents';
+
+/**
+ * Get all custom agents.
+ * @returns {Promise<{agents: Array}>}
+ */
+export async function getCustomAgents() {
+    try {
+        const stored = localStorage.getItem(AGENTS_STORAGE_KEY);
+        return { agents: stored ? JSON.parse(stored) : [] };
+    } catch {
+        return { agents: [] };
+    }
+}
+
+/**
+ * Create a custom agent.
+ * @param {object} agent - { name, prompt, color }
+ * @returns {Promise<object>} - The created agent with generated id
+ */
+export async function createCustomAgent({ name, prompt, color }) {
+    const agents = (await getCustomAgents()).agents;
+    const newAgent = {
+        id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        prompt,
+        color: color || '#6366f1',
+        created_at: new Date().toISOString(),
+    };
+    agents.push(newAgent);
+    localStorage.setItem(AGENTS_STORAGE_KEY, JSON.stringify(agents));
+    return newAgent;
+}
+
+/**
+ * Delete a custom agent by id.
+ * @param {string} agentId
+ * @returns {Promise<{status: string}>}
+ */
+export async function deleteCustomAgent(agentId) {
+    const agents = (await getCustomAgents()).agents;
+    const filtered = agents.filter(a => a.id !== agentId);
+    localStorage.setItem(AGENTS_STORAGE_KEY, JSON.stringify(filtered));
+    return { status: 'ok' };
+}
+
+/**
+ * Share a custom agent with another user (placeholder — no backend yet).
+ * @param {string} agentId
+ * @param {string} email
+ * @returns {Promise<{status: string}>}
+ */
+export async function shareCustomAgent(agentId, email) {
+    // TODO: Implement backend sharing when agent API exists
+    console.log(`Sharing agent ${agentId} with ${email} (not yet implemented on backend)`);
+    return { status: 'ok', message: 'Compartilhamento pendente de implementação no backend.' };
+}
