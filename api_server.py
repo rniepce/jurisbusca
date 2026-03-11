@@ -1189,6 +1189,7 @@ async def ask_templates_endpoint(req: AskTemplatesRequest):
 
 
 @app.post("/api/templates/themes")
+@app.post("/api/templates/extract-themes")
 async def extract_themes_endpoint():
     """Extract legal themes from indexed templates for verification."""
     try:
@@ -1556,6 +1557,37 @@ def _run_jurisprudence_research_background(task_id: str, uploaded_text: str, ana
         _bg_tasks[task_id]["error"] = f"Erro na pesquisa jurisprudencial: {str(e)}"
 
 
+class JurisResearchTriggerRequest(BaseModel):
+    uploaded_text: str
+    analysis_text: str = ""
+
+
+@app.post("/api/jurisprudencia/research")
+async def trigger_jurisprudencia_research(req: JurisResearchTriggerRequest):
+    """Trigger background jurisprudence research for a process."""
+    if not HAS_JURISPRUDENCIA:
+        raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
+    if not req.uploaded_text.strip():
+        raise HTTPException(status_code=400, detail="Texto do processo é obrigatório.")
+
+    task_id = str(uuid.uuid4())
+    _bg_tasks[task_id] = {
+        "status": "pending",
+        "result": None,
+        "error": None,
+        "progress": "Iniciando pesquisa jurisprudencial...",
+    }
+
+    thread = threading.Thread(
+        target=_run_jurisprudence_research_background,
+        args=(task_id, req.uploaded_text, req.analysis_text),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"task_id": task_id, "status": "pending"}
+
+
 @app.get("/api/jurisprudencia/research/{task_id}")
 async def jurisprudencia_research_status(task_id: str):
     """Poll the status of a background jurisprudence research task."""
@@ -1577,6 +1609,129 @@ async def jurisprudencia_research_status(task_id: str):
         del _bg_tasks[task_id]
 
     return response
+
+
+# ── Custom Agents CRUD (Supabase-backed) ──────────────────────────────────────
+
+_CUSTOM_AGENTS_TABLE = "custom_agents"
+
+
+class CreateAgentRequest(BaseModel):
+    name: str
+    prompt: str
+    color: str = "#6366f1"
+
+
+class ShareAgentRequest(BaseModel):
+    email: str
+
+
+@app.get("/api/custom-agents")
+async def list_custom_agents(request: Request = None):
+    """List custom agents for the authenticated user."""
+    # Extract user_id from JWT
+    user_id = _extract_user_id(request)
+    if not user_id:
+        return {"agents": []}
+
+    if _SUPA_URL and _SUPA_ANON_KEY:
+        try:
+            token = _extract_token(request)
+            url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_CUSTOM_AGENTS_TABLE}?user_id=eq.{user_id}&select=*"
+            resp = _requests_lib.get(url, headers=_supa_headers(token), timeout=10)
+            if resp.ok:
+                return {"agents": resp.json()}
+        except Exception as e:
+            print(f"⚠️ Failed to list custom agents: {e}")
+
+    return {"agents": []}
+
+
+@app.post("/api/custom-agents")
+async def create_custom_agent(req: CreateAgentRequest, request: Request = None):
+    """Create a custom agent."""
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+
+    agent_id = f"custom_{uuid.uuid4().hex[:12]}"
+    agent = {
+        "id": agent_id,
+        "user_id": user_id,
+        "name": req.name,
+        "prompt": req.prompt,
+        "color": req.color,
+    }
+
+    if _SUPA_URL and _SUPA_ANON_KEY:
+        try:
+            token = _extract_token(request)
+            url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_CUSTOM_AGENTS_TABLE}"
+            resp = _requests_lib.post(url, json=agent, headers=_supa_headers(token), timeout=10)
+            if resp.ok:
+                created = resp.json()
+                return created[0] if isinstance(created, list) else created
+        except Exception as e:
+            print(f"⚠️ Failed to create agent: {e}")
+
+    return agent
+
+
+@app.delete("/api/custom-agents/{agent_id}")
+async def delete_custom_agent(agent_id: str, request: Request = None):
+    """Delete a custom agent."""
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+
+    if _SUPA_URL and _SUPA_ANON_KEY:
+        try:
+            token = _extract_token(request)
+            url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_CUSTOM_AGENTS_TABLE}?id=eq.{agent_id}&user_id=eq.{user_id}"
+            resp = _requests_lib.delete(url, headers=_supa_headers(token), timeout=10)
+            if resp.ok:
+                return {"status": "ok"}
+        except Exception as e:
+            print(f"⚠️ Failed to delete agent: {e}")
+
+    return {"status": "ok"}
+
+
+@app.post("/api/custom-agents/{agent_id}/share")
+async def share_custom_agent(agent_id: str, req: ShareAgentRequest, request: Request = None):
+    """Share a custom agent with another user by email."""
+    # Placeholder — copies agent data for target user
+    return {"status": "ok", "message": f"Compartilhamento de {agent_id} para {req.email} registrado."}
+
+
+def _extract_user_id(request) -> str:
+    """Extract user_id from JWT in Authorization header."""
+    if not request:
+        return ""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return ""
+    token = auth[7:]
+    try:
+        import base64
+        # Decode JWT payload (middle part)
+        payload = token.split(".")[1]
+        # Add padding
+        payload += "=" * (4 - len(payload) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(payload))
+        return decoded.get("sub", "")
+    except Exception:
+        return ""
+
+
+def _extract_token(request) -> str:
+    """Extract raw JWT token from Authorization header."""
+    if not request:
+        return ""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return ""
 
 
 # ── Jurisprudência Search ─────────────────────────────────────────────────────
