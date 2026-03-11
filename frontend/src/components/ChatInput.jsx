@@ -3,19 +3,13 @@ import {
     FaPaperclip, FaBook, FaSlash,
     FaArrowRotateRight, FaChevronDown, FaCheck,
     FaXmark, FaFile, FaDatabase,
-    FaBullseye, FaMicrochip, FaTableColumns
+    FaBullseye, FaTableColumns
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
 import { getSlmStatus } from '../services/api';
 import './ChatInput.css';
 
-const ENGINE_VERSIONS = [
-    { id: 'v0', name: 'Gabinete V0', color: '#10B981' },
-    { id: 'v0.5', name: 'V0.5 + Jurisprud.', color: '#8B5CF6' },
-    { id: 'v1', name: 'Gabinete V1', color: '#4285F4' },
-    { id: 'v2', name: 'Gabinete V2 (Agêntico)', color: '#D97706' },
-    { id: 'v3-local', name: 'V3 Local (5 SLMs)', color: '#F97316' },
-];
+
 
 const LLM_OPTIONS = [
     { id: 'gpt52', name: 'GPT-5.2', color: '#4285F4', deployment: 'gpt-5.2-chat' },
@@ -37,10 +31,9 @@ const OCR_ENGINES = [
 
 const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange, activeAgent = null, jurisEnabled = false, canvasOpen = false, canvasSelection = null, onCanvasToggle, chatTextareaRef }) => {
     const [message, setMessage] = useState('');
-    const [selectedModel, setSelectedModel] = useState(ENGINE_VERSIONS[0]);
-    const [selectedLlm, setSelectedLlm] = useState(LLM_OPTIONS[0]);
+    const [selectedModel, setSelectedModel] = useState(LLM_OPTIONS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
-    const [llmDropdownOpen, setLlmDropdownOpen] = useState(false);
+
     const [files, setFiles] = useState([]);
     const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[0].id);
     const [compressEnabled, setCompressEnabled] = useState(false);
@@ -50,7 +43,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
     const [indexSuccess, setIndexSuccess] = useState(false);
     const [slmStatus, setSlmStatus] = useState({ available: false, mode: 'none' });
     const dropdownRef = useRef(null);
-    const llmDropdownRef = useRef(null);
+
     const fileInputRef = useRef(null);
 
     // Close dropdowns when clicking outside
@@ -59,9 +52,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
             if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
                 setDropdownOpen(false);
             }
-            if (llmDropdownRef.current && !llmDropdownRef.current.contains(e.target)) {
-                setLlmDropdownOpen(false);
-            }
+
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -79,8 +70,8 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         if (isLoading) return;
         if (message.trim() || files.length > 0 || hasContext) {
             // Pass both engine version and LLM choice
-            const combinedModel = { ...selectedModel, llm: selectedLlm.deployment };
-            if (onSend) onSend(message, combinedModel, files, ocrEngine, [], ragEnabled);
+            const combinedModel = { id: selectedModel.id, name: selectedModel.name, color: selectedModel.color, llm: selectedModel.deployment };
+            if (onSend) onSend(message, combinedModel, files, ocrEngine, [], false);
             setMessage('');
             setFiles([]);
         }
@@ -101,21 +92,14 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
 
     const handleSelectModel = (model) => {
         setSelectedModel(model);
-        const combinedModel = { ...model, llm: selectedLlm.deployment };
+        const combinedModel = { id: model.id, name: model.name, color: model.color, llm: model.deployment };
         if (onModelChange) {
             onModelChange(combinedModel);
         }
         setDropdownOpen(false);
     };
 
-    const handleSelectLlm = (llm) => {
-        setSelectedLlm(llm);
-        const combinedModel = { ...selectedModel, llm: llm.deployment };
-        if (onModelChange) {
-            onModelChange(combinedModel);
-        }
-        setLlmDropdownOpen(false);
-    };
+
 
     const handleFileClick = () => {
         fileInputRef.current?.click();
@@ -164,7 +148,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                         <button
                             className={`toolbar-btn model-selector ${dropdownOpen ? 'open' : ''}`}
                             onClick={() => setDropdownOpen(!dropdownOpen)}
-                            aria-label="Selecionar modelo"
+                            aria-label="Selecionar LLM"
                             aria-expanded={dropdownOpen}
                         >
                             <span
@@ -177,8 +161,8 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
 
                         {dropdownOpen && (
                             <div className="model-dropdown">
-                                <div className="dropdown-header">Selecionar Versão do Gabinete</div>
-                                {ENGINE_VERSIONS.map((model) => (
+                                <div className="dropdown-header">Selecionar LLM</div>
+                                {LLM_OPTIONS.map((model) => (
                                     <button
                                         key={model.id}
                                         className={`dropdown-item ${selectedModel.id === model.id ? 'selected' : ''}`}
@@ -189,7 +173,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                                             style={{ background: model.color }}
                                         />
                                         <span className="dropdown-item-name">{model.name}</span>
-                                        {model.id === 'v3-local' && (
+                                        {model.id === 'local' && (
                                             <span
                                                 className={`slm-status-dot ${slmStatus.available ? 'online' : 'offline'}`}
                                                 title={slmStatus.available
@@ -312,42 +296,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                 </button>
             </div>
 
-            {/* OCR Engine Selector + LLM Selector + Compress Toggle */}
             <div className="ocr-bar">
-                {/* LLM Selector */}
-                <div className="llm-selector-wrapper" ref={llmDropdownRef}>
-                    <button
-                        className={`llm-selector-btn ${llmDropdownOpen ? 'open' : ''}`}
-                        onClick={() => setLlmDropdownOpen(!llmDropdownOpen)}
-                        title="Selecionar LLM"
-                    >
-                        <FaMicrochip size={10} />
-                        <span
-                            className="llm-dot"
-                            style={{ background: selectedLlm.color }}
-                        />
-                        <span className="llm-name">{selectedLlm.name}</span>
-                        <FaChevronDown size={8} className={`llm-chevron ${llmDropdownOpen ? 'rotated' : ''}`} />
-                    </button>
-                    {llmDropdownOpen && (
-                        <div className="llm-dropdown">
-                            <div className="llm-dropdown-header">Selecionar LLM</div>
-                            {LLM_OPTIONS.map((llm) => (
-                                <button
-                                    key={llm.id}
-                                    className={`llm-dropdown-item ${selectedLlm.id === llm.id ? 'selected' : ''}`}
-                                    onClick={() => handleSelectLlm(llm)}
-                                >
-                                    <span className="llm-dot" style={{ background: llm.color }} />
-                                    <span>{llm.name}</span>
-                                    {selectedLlm.id === llm.id && <FaCheck size={10} className="llm-check" />}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                <span className="ocr-separator" />
 
                 <span className="ocr-label">OCR:</span>
                 {OCR_ENGINES.map((engine) => (

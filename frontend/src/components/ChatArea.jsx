@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
     FaUser,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
-    FaBookOpen, FaPenNib, FaClipboardCheck
+    FaBookOpen, FaPenNib, FaClipboardCheck, FaGavel
 } from 'react-icons/fa6';
 import OcrPreview from './OcrPreview';
 import JurisprudenciaInsightsCard from './JurisprudenciaInsightsCard';
@@ -395,6 +395,49 @@ const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessi
                 {styleAnalyzing && (
                     <StyleAnalysisAnimation />
                 )}
+
+                {/* Jurisprudence Search Button — appears after conversation starts */}
+                {onJurisSearch && messages.length >= 2 && !jurisResearch && !jurisResearchLoading && (
+                    <div className="juris-search-trigger">
+                        <button
+                            className="juris-search-btn"
+                            onClick={onJurisSearch}
+                            disabled={isLoading}
+                        >
+                            <FaGavel size={12} />
+                            Pesquisar Jurisprudência
+                        </button>
+                    </div>
+                )}
+
+                {/* QA Revisor Button — appears when a minuta (long assistant response) is detected */}
+                {(() => {
+                    const lastAssistant = [...messages].reverse().find(
+                        m => m.role === 'assistant' && m.content && m.content.length > 500
+                            && !m.content.includes('MESA DE DELIBERAÇÃO')
+                            && !m.content.includes('AGUARDANDO DIRETRIZES')
+                            && !m.content.includes('DASHBOARD DE CONFORMIDADE')
+                            && !m.content.includes('⚠️ **Erro')
+                    );
+                    const showQABtn = onQAReview && hasUploadedText && lastAssistant && !isLoading;
+                    if (!showQABtn) return null;
+
+                    return (
+                        <div className="qa-review-trigger">
+                            <button
+                                className="qa-review-btn"
+                                onClick={() => onQAReview()}
+                                disabled={isLoading}
+                            >
+                                <FaClipboardCheck size={13} />
+                                Rodar Revisor (QA)
+                            </button>
+                            <span className="qa-review-hint">
+                                Auditar a minuta gerada cruzando com os dados do processo
+                            </span>
+                        </div>
+                    );
+                })()}
 
                 {/* V0.5: Jurisprudence Research Insights Card */}
                 {(jurisResearchLoading || jurisResearch) && (
