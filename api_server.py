@@ -1035,6 +1035,7 @@ async def cluster_analyze(req: ClusterAnalyzeRequest):
 @app.post("/api/templates")
 async def upload_templates(
     files: list[UploadFile] = File(...),
+    request: Request = None,
 ):
     """
     Upload and index template files in ChromaDB for persistent RAG.
@@ -1045,6 +1046,10 @@ async def upload_templates(
     try:
         import time as _time
         import asyncio
+
+        # Extract user identity from JWT for Supabase persistence
+        user_id = _extract_user_id(request) or "default"
+        token = _extract_token(request)
 
         # Convert UploadFiles into file-like objects
         file_objects = []
@@ -1058,9 +1063,9 @@ async def upload_templates(
         # 1. Index templates (100% local — no ChromaDB, no embeddings)
         t0 = _time.time()
         collection_name = "rag_templates_persistent"
-        retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name)
+        retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name, user_id=user_id, token=token)
         indexed_count = len(docs) if docs else 0
-        print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks)")
+        print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks, user {user_id[:8]})")
 
         # 2. Auto-generate style dossier in BACKGROUND (don't block response)
         # The dossier calls GPT-5.2 which adds 10-30s; run it async instead.
@@ -1098,12 +1103,14 @@ async def upload_templates(
 
 
 @app.get("/api/templates/status")
-async def templates_status():
+async def templates_status(request: Request = None):
     """Check how many templates are indexed."""
     try:
-        if not be._template_store:
-            be._load_template_store()
-        count = len(be._template_store)
+        user_id = _extract_user_id(request) or "default"
+        token = _extract_token(request)
+        if user_id not in be._template_store or not be._template_store.get(user_id):
+            be._load_template_store(user_id, token)
+        count = len(be._template_store.get(user_id, []))
         has_dossier = len(be._style_dossier_cache) > 0
         return {"indexed_chunks": count, "has_dossier": has_dossier}
     except Exception:
@@ -1111,13 +1118,17 @@ async def templates_status():
 
 
 @app.delete("/api/templates")
-async def clear_templates():
+async def clear_templates(request: Request = None):
     """Clear all indexed templates."""
     try:
-        be._template_store.clear()
-        # Remove persisted JSON
-        if os.path.exists(be._TEMPLATE_STORE_PATH):
-            os.remove(be._TEMPLATE_STORE_PATH)
+        user_id = _extract_user_id(request) or "default"
+        token = _extract_token(request)
+        # Clear in-memory store for this user
+        be._template_store[user_id] = []
+        # Persist the empty state (clears Supabase or local JSON)
+        be._save_template_store(user_id, token)
+        # Also delete from Supabase directly
+        be._delete_templates_supabase(user_id, "", token)
         # Clear style dossier cache
         be._style_dossier_cache.clear()
         return {"status": "ok", "message": "Modelos e cache limpos."}
@@ -1127,10 +1138,12 @@ async def clear_templates():
 
 
 @app.get("/api/templates/list")
-async def list_templates_endpoint():
+async def list_templates_endpoint(request: Request = None):
     """List all indexed templates grouped by source filename."""
     try:
-        templates = be.list_templates(user_id="default")
+        user_id = _extract_user_id(request) or "default"
+        token = _extract_token(request)
+        templates = be.list_templates(user_id=user_id, token=token)
         return {"templates": templates}
     except Exception as e:
         traceback.print_exc()
@@ -1138,10 +1151,12 @@ async def list_templates_endpoint():
 
 
 @app.delete("/api/templates/{filename:path}")
-async def delete_template_endpoint(filename: str):
+async def delete_template_endpoint(filename: str, request: Request = None):
     """Delete all chunks from a specific source file."""
     try:
-        removed = be.delete_template_by_source(user_id="default", source_name=filename)
+        user_id = _extract_user_id(request) or "default"
+        token = _extract_token(request)
+        removed = be.delete_template_by_source(user_id=user_id, source_name=filename, token=token)
         return {"status": "ok", "removed_chunks": removed, "filename": filename}
     except Exception as e:
         traceback.print_exc()
@@ -1153,13 +1168,15 @@ class AskTemplatesRequest(BaseModel):
 
 
 @app.post("/api/templates/ask")
-async def ask_templates_endpoint(req: AskTemplatesRequest):
+async def ask_templates_endpoint(req: AskTemplatesRequest, request: Request = None):
     """RAG query: search templates + generate LLM summary."""
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query é obrigatória.")
     try:
+        user_id = _extract_user_id(request) or "default"
+        token = _extract_token(request)
         # 1. Search templates using TF-IDF
-        results = be.search_templates(user_id="default", query=req.query, k=5)
+        results = be.search_templates(user_id=user_id, query=req.query, k=5, token=token)
         if not results:
             return {"summary": "Nenhum trecho relevante encontrado nos modelos indexados.", "results": []}
 
@@ -1190,13 +1207,15 @@ async def ask_templates_endpoint(req: AskTemplatesRequest):
 
 @app.post("/api/templates/themes")
 @app.post("/api/templates/extract-themes")
-async def extract_themes_endpoint():
+async def extract_themes_endpoint(request: Request = None):
     """Extract legal themes from indexed templates for verification."""
     try:
+        user_id = _extract_user_id(request) or "default"
+        token = _extract_token(request)
         # Load templates
-        if "default" not in be._template_store or not be._template_store["default"]:
-            be._load_template_store("default")
-        user_store = be._template_store.get("default", [])
+        if user_id not in be._template_store or not be._template_store[user_id]:
+            be._load_template_store(user_id, token)
+        user_store = be._template_store.get(user_id, [])
         if not user_store:
             return {"themes": []}
 
@@ -1251,7 +1270,7 @@ class VerifyThemeRequest(BaseModel):
 
 
 @app.post("/api/templates/verify-theme")
-async def verify_theme_endpoint(req: VerifyThemeRequest):
+async def verify_theme_endpoint(req: VerifyThemeRequest, request: Request = None):
     """Verify a legal theme against TJMG jurisprudence."""
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
@@ -1259,6 +1278,9 @@ async def verify_theme_endpoint(req: VerifyThemeRequest):
         raise HTTPException(status_code=400, detail="Tema é obrigatório.")
 
     try:
+        user_id = _extract_user_id(request) or "default"
+        token = _extract_token(request)
+
         # 1. Search jurisprudence for this theme
         search_result = jsearch.semantic_search(query=req.theme, page=1, page_size=5)
         results = search_result.get("results", [])
@@ -1279,7 +1301,7 @@ async def verify_theme_endpoint(req: VerifyThemeRequest):
             }
 
         # 2. Get model approach from templates
-        model_results = be.search_templates(user_id="default", query=req.theme, k=3)
+        model_results = be.search_templates(user_id=user_id, query=req.theme, k=3, token=token)
         model_context = "\n".join([r["text"][:1500] for r in model_results]) if model_results else "Nenhum trecho relevante nos modelos."
 
         # 3. Build jurisprudence context
