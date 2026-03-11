@@ -227,7 +227,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                         onChange={handleFileChange}
                         style={{ display: 'none' }}
                     />
-                    <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={handleTemplateClick}>
+                    <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={() => onOpenModelManager && onOpenModelManager()}>
                         <FaBook />
                     </button>
                     <input
