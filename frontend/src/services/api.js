@@ -261,6 +261,42 @@ export async function analyzeCluster(processes, agentPrompt = '', model = 'claud
     return safeJson(res, 'Cluster Analyze');
 }
 
+/**
+ * Replicate pilot case instructions + draft to remaining processes.
+ * @param {object} params
+ * @param {string} params.pilotInstructions - Consolidated judge instructions from pilot conversation
+ * @param {string} params.pilotMinuta - Draft decision generated during pilot (template)
+ * @param {string} [params.pilotSummary] - Summary of pilot case facts
+ * @param {Array<{filename: string, text: string}>} params.processes - Remaining processes
+ * @param {string} [params.model] - Engine model ID
+ * @param {string} [params.llm] - LLM deployment name
+ * @param {string} [params.agentPrompt] - Agent system prompt (optional)
+ * @returns {Promise<{results: Array, total: number, ok_count: number, total_alerts: number}>}
+ */
+export async function replicateBatchPilot({ pilotInstructions, pilotMinuta, pilotSummary, processes, model, llm, agentPrompt }) {
+    const res = await fetch(`${API_BASE}/batch-pilot/replicate`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+            pilot_instructions: pilotInstructions,
+            pilot_minuta: pilotMinuta,
+            pilot_summary: pilotSummary || null,
+            processes,
+            model: model || 'gpt52',
+            llm: llm || null,
+            agent_prompt: agentPrompt || null,
+        }),
+        redirect: 'error',
+    });
+
+    if (!res.ok) {
+        const err = await safeJson(res, 'Batch Pilot Replicate').catch(() => ({}));
+        throw new Error(err.detail || `Replicação piloto falhou (${res.status})`);
+    }
+
+    return safeJson(res, 'Batch Pilot Replicate');
+}
+
 
 /**
  * Generate a Style Dossier from template decision files.

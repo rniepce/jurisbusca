@@ -349,6 +349,28 @@
     box-shadow: 0 6px 20px rgba(99, 102, 241, 0.3);
 }
 
+/* ── Cluster Actions Container ─────────────────────────────────── */
+.xray-cluster-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.xray-cluster-actions .xray-cluster-action {
+    flex: 1;
+    min-width: 0;
+}
+
+.xray-pilot-btn {
+    background: linear-gradient(135deg, #14b8a6, #0d9488) !important;
+    opacity: 0.95;
+}
+
+.xray-pilot-btn:hover {
+    opacity: 1;
+    box-shadow: 0 6px 20px rgba(20, 184, 166, 0.35) !important;
+}
+
 /* ── Responsive ─────────────────────────────────────────────────── */
 @media (max-width: 768px) {
     .xray-dashboard {

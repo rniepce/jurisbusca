@@ -1030,6 +1030,220 @@ async def cluster_analyze(req: ClusterAnalyzeRequest):
         raise HTTPException(status_code=500, detail=f"Erro na análise em lote: {str(e)}")
 
 
+# ── Batch Pilot Replication (pilot-guided batch analysis) ─────────────────────
+
+class BatchPilotReplicateRequest(BaseModel):
+    pilot_instructions: str          # Consolidated judge instructions from pilot conversation
+    pilot_minuta: str                # Draft decision generated during pilot (template/gabarito)
+    pilot_summary: Optional[str] = None  # Summary of pilot case facts for comparison
+    processes: list[dict]            # [{filename: str, text: str}] — remaining processes
+    model: str = "gpt52"
+    llm: Optional[str] = None
+    agent_prompt: Optional[str] = None
+
+
+def _replicate_single_process(
+    filename: str,
+    text: str,
+    pilot_instructions: str,
+    pilot_minuta: str,
+    pilot_summary: str,
+    agent_prompt: str,
+    model_name: str,
+    collection_name: str = "rag_templates_persistent",
+):
+    """
+    Replicate a pilot case's instructions + draft to a new process.
+    Highlights differences with ⚠️ alerts in the generated draft.
+    Runs in a thread pool. Retries on 429 rate limit.
+    """
+    import time as _time
+
+    MAX_RETRIES = 5
+    BASE_DELAY = 30
+
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            llm = be.get_llm(model_name=model_name, temperature=0.3)
+
+            system_parts = []
+
+            # 1. Agent base prompt (if any)
+            if agent_prompt:
+                system_parts.append(agent_prompt)
+
+            # 2. Pilot instructions block
+            system_parts.append(
+                f"\n\n---\n🧑‍⚖️ **INSTRUÇÕES DO MAGISTRADO (CASO PILOTO):**\n"
+                f"As instruções abaixo foram estabelecidas pelo magistrado durante a análise interativa "
+                f"de um caso piloto. SIGA RIGOROSAMENTE estas diretrizes ao elaborar a minuta.\n\n"
+                f"{pilot_instructions}\n---"
+            )
+
+            # 3. Pilot minuta as structural template
+            system_parts.append(
+                f"\n\n---\n📋 **MINUTA-GABARITO (CASO PILOTO):**\n"
+                f"A minuta abaixo foi gerada e APROVADA pelo magistrado para o caso piloto. "
+                f"Use-a como MODELO ESTRUTURAL e de conteúdo jurídico.\n"
+                f"- Se o novo processo for IDÊNTICO em matéria/fatos, replique a estrutura e "
+                f"fundamentação, adaptando apenas nomes, datas e dados específicos.\n"
+                f"- Se houver DIFERENÇAS relevantes (fatos, pedidos, partes, matéria), "
+                f"DESTAQUE cada diferença com:\n"
+                f"  ⚠️ **ALERTA DE DIFERENÇA:** [descrição da divergência e como impacta a decisão]\n\n"
+                f"--- INÍCIO DA MINUTA-GABARITO ---\n{pilot_minuta}\n--- FIM DA MINUTA-GABARITO ---\n---"
+            )
+
+            # 4. Pilot summary for comparison
+            if pilot_summary:
+                system_parts.append(
+                    f"\n\n---\n📝 **RESUMO DOS FATOS DO CASO PILOTO (para comparação):**\n"
+                    f"{pilot_summary}\n---"
+                )
+
+            # 5. New process text
+            system_parts.append(
+                f"\n\n---\n📄 **NOVO PROCESSO PARA ANÁLISE:**\n\n{text}\n---"
+            )
+
+            # 6. Auto-RAG: inject golden sample from persistent templates
+            op_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+            if op_key:
+                try:
+                    rag_retriever = be.load_persistent_rag(collection_name=collection_name)
+                    if rag_retriever:
+                        relevant_docs = rag_retriever.invoke(text[:6000])
+                        if relevant_docs:
+                            mirror_doc = relevant_docs[0]
+                            rag_block = (
+                                f"\n\n---\n💎 **CASO ESPELHO (GOLDEN SAMPLE):**\n"
+                                f"O caso abaixo ({mirror_doc.metadata.get('source', '?')}) é referência adicional.\n\n"
+                                f"--- INÍCIO ---\n{mirror_doc.page_content}\n--- FIM ---\n---"
+                            )
+                            system_parts.append(rag_block)
+
+                    # Inject cached style dossier
+                    if be._style_dossier_cache:
+                        for cached in be._style_dossier_cache.values():
+                            cloning = cached.get('cloning_prompt', '')
+                            if cloning:
+                                system_parts.append(
+                                    f"\n\n---\n🧬 **CLONAGEM ESTILÍSTICA:**\n{cloning}\n---"
+                                )
+                            break
+                except Exception as e:
+                    print(f"⚠️ RAG failed for {filename}: {e}")
+
+            messages = [
+                SystemMessage(content="\n".join(system_parts)),
+                HumanMessage(content=(
+                    "Elabore a minuta de decisão para este NOVO processo, usando a minuta-gabarito "
+                    "como modelo estrutural e seguindo rigorosamente as instruções do magistrado.\n\n"
+                    "REGRAS CRÍTICAS:\n"
+                    "1. Compare os fatos deste processo com o caso piloto.\n"
+                    "2. Se for similar, replique a estrutura adaptando dados.\n"
+                    "3. Se houver qualquer diferença relevante (fatos, partes, pedidos, matéria, "
+                    "valores, provas), insira ⚠️ **ALERTA DE DIFERENÇA** explicando a divergência "
+                    "e suas implicações.\n"
+                    "4. Mantenha a fundamentação jurídica do gabarito quando aplicável.\n"
+                    "5. Gere a minuta COMPLETA, não apenas as diferenças."
+                )),
+            ]
+
+            response = llm.invoke(messages)
+            response_text = be.safe_content(response)
+
+            # Count alerts in the response
+            alerts_count = response_text.count("ALERTA DE DIFERENÇA")
+
+            return {
+                "filename": filename,
+                "status": "ok",
+                "response": response_text,
+                "model": model_name,
+                "alerts_count": alerts_count,
+                "is_pilot_replica": True,
+            }
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str and attempt < MAX_RETRIES:
+                delay = BASE_DELAY * (2 ** attempt)
+                print(f"⚠️ Rate limit (429) for {filename}, retry {attempt + 1}/{MAX_RETRIES} after {delay}s...")
+                _time.sleep(delay)
+                continue
+            return {
+                "filename": filename,
+                "status": "error",
+                "response": f"Erro: {error_str}",
+                "model": model_name,
+                "alerts_count": 0,
+                "is_pilot_replica": True,
+            }
+
+
+@app.post("/api/batch-pilot/replicate")
+async def batch_pilot_replicate(req: BatchPilotReplicateRequest):
+    """
+    Replicate pilot case instructions + draft to remaining processes.
+    Each process gets its own isolated LLM call with the pilot context.
+    Returns individual results with difference alerts.
+    """
+    import concurrent.futures
+
+    try:
+        model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.2-chat")
+
+        if not req.processes:
+            raise HTTPException(status_code=400, detail="Nenhum processo para replicar.")
+
+        if not req.pilot_minuta:
+            raise HTTPException(status_code=400, detail="Minuta do caso piloto é obrigatória.")
+
+        collection_name = "rag_templates_persistent"
+
+        results = []
+        # Serial execution to respect rate limits
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            futures = {}
+            for i, p in enumerate(req.processes):
+                if not p.get("text"):
+                    continue
+                if i > 0:
+                    import time as _time
+                    _time.sleep(5)
+                future = executor.submit(
+                    _replicate_single_process,
+                    p["filename"],
+                    p["text"],
+                    req.pilot_instructions,
+                    req.pilot_minuta,
+                    req.pilot_summary or "",
+                    req.agent_prompt or "",
+                    model_name,
+                    collection_name,
+                )
+                futures[future] = p["filename"]
+            for future in concurrent.futures.as_completed(futures):
+                results.append(future.result())
+
+        results.sort(key=lambda r: r["filename"])
+
+        total_alerts = sum(r.get("alerts_count", 0) for r in results)
+
+        return {
+            "results": results,
+            "total": len(results),
+            "ok_count": sum(1 for r in results if r["status"] == "ok"),
+            "total_alerts": total_alerts,
+            "pilot_mode": True,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na replicação piloto: {str(e)}")
+
+
 # ── Template Management (Persistent RAG) ─────────────────────────────────────
 
 @app.post("/api/templates")

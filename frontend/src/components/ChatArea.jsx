@@ -203,7 +203,7 @@ function V2CollapsibleCard({ icon, title, content }) {
     );
 }
 
-const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessing = false, ocrEngineName = 'none', ocrProgress = { progress: '', percent: 0 }, styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, onQAReview, hasUploadedText = false, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch }) => {
+const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessing = false, ocrEngineName = 'none', ocrProgress = { progress: '', percent: 0 }, styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, onQAReview, hasUploadedText = false, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, onPilotReplicate, onPilotDismiss }) => {
     const endRef = useRef(null);
 
     useEffect(() => {
@@ -286,6 +286,37 @@ const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessi
                                 engine={msg.engine}
                                 charCount={msg.charCount}
                             />
+                        );
+                    }
+
+                    // ── Batch Pilot Confirmation Card ──
+                    if (msg.role === 'batch-pilot-confirm') {
+                        return (
+                            <div key={i} className="batch-pilot-confirm-card">
+                                <div className="pilot-confirm-icon">🧪</div>
+                                <div className="pilot-confirm-body">
+                                    <div
+                                        className="pilot-confirm-text markdown"
+                                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
+                                    />
+                                    <div className="pilot-confirm-actions">
+                                        <button
+                                            className="pilot-confirm-btn pilot-confirm-yes"
+                                            onClick={() => onPilotReplicate && onPilotReplicate()}
+                                            disabled={isLoading}
+                                        >
+                                            ⚡ Sim, Replicar
+                                        </button>
+                                        <button
+                                            className="pilot-confirm-btn pilot-confirm-no"
+                                            onClick={() => onPilotDismiss && onPilotDismiss()}
+                                            disabled={isLoading}
+                                        >
+                                            ✏️ Não, continuar editando
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         );
                     }
 

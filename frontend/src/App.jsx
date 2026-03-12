@@ -15,7 +15,7 @@ import ShareAgentDialog from './components/ShareAgentDialog';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
 import { AuthProvider, useAuth } from './components/AuthContext';
-import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, uploadTemplates, triggerJurisprudenciaResearch, pollJurisprudenciaResearch, getCustomAgents, createCustomAgent, deleteCustomAgent, shareCustomAgent } from './services/api';
+import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, replicateBatchPilot, uploadTemplates, triggerJurisprudenciaResearch, pollJurisprudenciaResearch, getCustomAgents, createCustomAgent, deleteCustomAgent, shareCustomAgent } from './services/api';
 import agentDefinitions from './config/agents';
 import './App.css';
 
@@ -61,6 +61,9 @@ function MainApp() {
   const [canvasTitle, setCanvasTitle] = useState('');
   const [canvasSelection, setCanvasSelection] = useState(null); // selected text in canvas
   const chatTextareaRef = useRef(null); // ref to focus the chat input from canvas
+  // Batch Pilot state
+  const [batchPilotSession, setBatchPilotSession] = useState(null);
+  // { clusterName, processes: [{filename, text}], pilotFilename, phase: 'pilot'|'confirming'|'replicating'|'done' }
 
 
 
@@ -218,6 +221,21 @@ function MainApp() {
           modelContext: result.model_context || null,
         };
         setMessages((prev) => [...prev, assistantMsg]);
+
+        // ── Batch Pilot: detect when minuta is generated and offer replication ──
+        if (batchPilotSession && batchPilotSession.phase === 'pilot' && safeResponse.length > 800) {
+          const remainingCount = batchPilotSession.processes.length;
+          if (remainingCount > 0) {
+            setBatchPilotSession((prev) => ({ ...prev, phase: 'confirming', pilotMinuta: safeResponse }));
+            const confirmMsg = {
+              role: 'batch-pilot-confirm',
+              content: `✅ **Minuta do caso piloto gerada!**\n\nDeseja aplicar estas instruções e esta minuta como gabarito para os demais **${remainingCount} processo(s)** do grupo "${batchPilotSession.clusterName}"?\n\nCada processo será analisado individualmente, e diferenças serão destacadas com alertas.`,
+              remainingCount,
+              clusterName: batchPilotSession.clusterName,
+            };
+            setMessages((prev) => [...prev, confirmMsg]);
+          }
+        }
       }
     } catch (err) {
       const errorMsg = {
@@ -229,7 +247,7 @@ function MainApp() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext, canvasOpen, canvasContent, canvasSelection]);
+  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext, canvasOpen, canvasContent, canvasSelection, batchPilotSession]);
 
   // ── V0.5: Manually trigger jurisprudence research ─────────────────
   const handleJurisSearch = useCallback(async () => {
@@ -408,6 +426,135 @@ function MainApp() {
   const handleBatchClose = useCallback(() => {
     setBatchResults([]);
     setBatchSelectedIndex(null);
+  }, []);
+
+  // ── Batch Pilot: open first process as interactive chat ────────────
+  const handleClusterPilotAction = useCallback((cluster) => {
+    const filenames = cluster.arquivos || [];
+    if (filenames.length === 0) return;
+
+    // Build process list from text cache
+    const allProcesses = filenames
+      .filter((fname) => xrayTextCache[fname])
+      .map((fname) => ({ filename: fname, text: xrayTextCache[fname] }));
+
+    if (allProcesses.length === 0) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: '⚠️ Textos dos processos não encontrados no cache. Tente refazer o Raio-X.', model: 'erro' },
+      ]);
+      return;
+    }
+
+    // First process = pilot, rest = batch
+    const [pilot, ...remaining] = allProcesses;
+
+    // Switch to chat view
+    setXrayReport(null);
+
+    // Load pilot process text into the chat context
+    setUploadedText(pilot.text);
+
+    // Set batch pilot session
+    setBatchPilotSession({
+      clusterName: cluster.nome,
+      processes: remaining,
+      pilotFilename: pilot.filename,
+      pilotMinuta: null,
+      phase: 'pilot',
+    });
+
+    // Show activation message
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: `📋 **Caso Piloto ativado: ${pilot.filename}**\n\nO texto do processo foi carregado. Converse normalmente com o agente — faça perguntas, dê instruções e refine a minuta.\n\nQuando a minuta estiver pronta, o sistema perguntará se deseja replicar para os demais **${remaining.length} processo(s)** do grupo *"${cluster.nome}"*.`,
+        model: 'sistema',
+      },
+    ]);
+  }, [xrayTextCache]);
+
+  // ── Batch Pilot: replicate pilot instructions to remaining processes ──
+  const handlePilotReplicate = useCallback(async () => {
+    if (!batchPilotSession || !batchPilotSession.pilotMinuta) return;
+
+    setBatchPilotSession((prev) => ({ ...prev, phase: 'replicating' }));
+    setIsLoading(true);
+
+    // Consolidate pilot instructions from conversation history
+    const pilotInstructions = messages
+      .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content?.length > 100))
+      .map((m) => `[${m.role === 'user' ? 'MAGISTRADO' : 'AGENTE'}]: ${m.content}`)
+      .join('\n\n');
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: `⚡ **Replicando para ${batchPilotSession.processes.length} processo(s)...**\n\nCada processo será analisado individualmente com as instruções e minuta-gabarito do caso piloto.`,
+        model: 'sistema',
+      },
+    ]);
+
+    try {
+      const result = await replicateBatchPilot({
+        pilotInstructions,
+        pilotMinuta: batchPilotSession.pilotMinuta,
+        pilotSummary: null,
+        processes: batchPilotSession.processes,
+        model: globalSelectedModel.id,
+        llm: globalSelectedModel.llm || null,
+        agentPrompt: activeAgent?.prompt || null,
+      });
+
+      // Add results to chat
+      const resultMessages = result.results.map((r) => {
+        let raw = r.response;
+        if (typeof raw === 'object' && raw !== null) {
+          raw = raw.text || raw.content || raw.output || JSON.stringify(raw);
+        }
+        const safeText = typeof raw === 'string' ? raw : String(raw);
+        const alertsBadge = r.alerts_count > 0 ? ` (⚠️ ${r.alerts_count} alerta${r.alerts_count > 1 ? 's' : ''})` : '';
+
+        return {
+          role: 'assistant',
+          content: r.status === 'ok'
+            ? `## 📄 ${r.filename}${alertsBadge}\n\n${safeText}`
+            : `## ⚠️ ${r.filename}\n\n${safeText}`,
+          model: r.model,
+        };
+      });
+
+      const alertsInfo = result.total_alerts > 0
+        ? ` — ⚠️ ${result.total_alerts} alerta(s) de diferença encontrado(s)`
+        : ' — Todos os processos são similares ao piloto';
+
+      const summary = {
+        role: 'assistant',
+        content: `✅ **Lote piloto concluído:** ${result.ok_count}/${result.total} minutas geradas${alertsInfo}.`,
+        model: 'sistema',
+      };
+
+      setMessages((prev) => [...prev, summary, ...resultMessages]);
+      setBatchResults(result.results);
+      setBatchSelectedIndex(null);
+      setBatchPilotSession((prev) => ({ ...prev, phase: 'done' }));
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: `⚠️ **Erro na replicação piloto:** ${err.message}`, model: 'erro' },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [batchPilotSession, messages, globalSelectedModel, activeAgent]);
+
+  // ── Batch Pilot: dismiss replication (continue editing pilot) ──
+  const handlePilotDismiss = useCallback(() => {
+    setBatchPilotSession((prev) => ({ ...prev, phase: 'pilot' }));
+    // Remove the confirmation message
+    setMessages((prev) => prev.filter((m) => m.role !== 'batch-pilot-confirm'));
   }, []);
 
   // ── Files uploaded → run OCR immediately ─────────────────────────────
@@ -653,6 +800,7 @@ function MainApp() {
     setCanvasOpen(false);
     setCanvasContent('');
     setCanvasTitle('');
+    setBatchPilotSession(null);
   }, [messages, activeAgent, conversationId]);
 
   // ── Load chat from history ──────────────────────────────────────────
@@ -763,6 +911,7 @@ function MainApp() {
           report={xrayReport}
           onClose={() => setXrayReport(null)}
           onClusterAction={handleClusterAction}
+          onClusterPilotAction={handleClusterPilotAction}
         />
       );
     }
@@ -812,6 +961,8 @@ function MainApp() {
             setMessages((prev) => [...prev, importMsg]);
           }}
           onJurisSearch={handleJurisSearch}
+          onPilotReplicate={handlePilotReplicate}
+          onPilotDismiss={handlePilotDismiss}
         />
       );
     }

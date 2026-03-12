@@ -120,7 +120,7 @@ function SituationChart({ distribution }) {
 }
 
 /* ── Cluster Card ──────────────────────────────────────────────────── */
-function ClusterCard({ cluster, index, onActionClick }) {
+function ClusterCard({ cluster, index, onActionClick, onPilotClick }) {
     const color = PALETTE[index % PALETTE.length];
     return (
         <div className="xray-cluster-card" style={{ borderLeftColor: color }}>
@@ -148,15 +148,25 @@ function ClusterCard({ cluster, index, onActionClick }) {
                     </span>
                 ))}
             </div>
-            {onActionClick && (
-                <button
-                    className="xray-cluster-action"
-                    style={{ background: color }}
-                    onClick={() => onActionClick(cluster)}
-                >
-                    ⚡ Processar Grupo
-                </button>
-            )}
+            <div className="xray-cluster-actions">
+                {onActionClick && (
+                    <button
+                        className="xray-cluster-action"
+                        style={{ background: color }}
+                        onClick={() => onActionClick(cluster)}
+                    >
+                        ⚡ Processar Grupo
+                    </button>
+                )}
+                {onPilotClick && (cluster.arquivos || []).length >= 2 && (
+                    <button
+                        className="xray-cluster-action xray-pilot-btn"
+                        onClick={() => onPilotClick(cluster)}
+                    >
+                        🧪 Processar com Piloto
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
@@ -176,7 +186,7 @@ function StatCard(props) {
 }
 
 /* ── Main Dashboard ────────────────────────────────────────────────── */
-export default function XRayDashboard({ report, onClose, onClusterAction }) {
+export default function XRayDashboard({ report, onClose, onClusterAction, onClusterPilotAction }) {
     // Defensive array casting: LLMs may return string or dict instead of array for these keys
     let clusters = report?.clusters || [];
     if (!Array.isArray(clusters)) clusters = [clusters];
@@ -269,6 +279,7 @@ export default function XRayDashboard({ report, onClose, onClusterAction }) {
                         cluster={cluster}
                         index={i}
                         onActionClick={onClusterAction}
+                        onPilotClick={onClusterPilotAction}
                     />
                 ))}
             </div>
