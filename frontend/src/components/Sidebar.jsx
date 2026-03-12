@@ -31,6 +31,7 @@ const Sidebar = ({
     onCreateAgent,
     onDeleteAgent,
     onShareAgent,
+    onOpenMemory,
 }) => {
     const [agentsOpen, setAgentsOpen] = useState(true);
     const [customAgentsOpen, setCustomAgentsOpen] = useState(true);
@@ -219,7 +220,7 @@ const Sidebar = ({
             <div className="sidebar-bottom">
                 <div className="sidebar-divider" />
                 <div className="sidebar-bottom-icons">
-                    <button className="sidebar-icon-btn" aria-label="Configurações" id="btn-settings">
+                    <button className="sidebar-icon-btn" aria-label="Configurações" id="btn-settings" onClick={onOpenMemory}>
                         <FaGear />
                     </button>
                     <button className="sidebar-icon-btn" aria-label="Perfil" id="btn-profile">

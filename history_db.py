@@ -25,6 +25,16 @@ def init_db():
                 FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_key TEXT NOT NULL DEFAULT 'default',
+                content TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_key)
+            )
+        """)
         conn.commit()
 
 @contextmanager
@@ -81,6 +91,40 @@ def save_message(conversation_id: str, user_email: str, role: str, content: str,
             (conversation_id, role, content)
         )
         conn.commit()
+
+
+# ── User Memory (Preferences) ────────────────────────────────────────────────
+
+MAX_MEMORY_CHARS = 2000
+
+def get_memory(user_key: str = "default") -> dict:
+    """Retrieve user memory/preferences."""
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT content, enabled FROM user_memories WHERE user_key = ?",
+            (user_key,)
+        )
+        row = cur.fetchone()
+        if row:
+            return {"content": row["content"], "enabled": bool(row["enabled"])}
+        return {"content": "", "enabled": True}
+
+def save_memory(user_key: str = "default", content: str = "", enabled: bool = True):
+    """Save or update user memory/preferences. Content is truncated to MAX_MEMORY_CHARS."""
+    content = content[:MAX_MEMORY_CHARS]
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO user_memories (user_key, content, enabled, updated_at)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(user_key) DO UPDATE SET
+                 content = excluded.content,
+                 enabled = excluded.enabled,
+                 updated_at = CURRENT_TIMESTAMP""",
+            (user_key, content, int(enabled))
+        )
+        conn.commit()
+    return {"content": content, "enabled": enabled}
+
 
 # Create tables on import
 init_db()

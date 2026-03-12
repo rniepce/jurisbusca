@@ -207,6 +207,25 @@ async def debug_routes():
     return {"routes": routes}
 
 
+# ── User Memory (Preferences) ─────────────────────────────────────────────────
+
+class MemoryRequest(BaseModel):
+    content: str = ""
+    enabled: bool = True
+
+
+@app.get("/api/memory")
+async def get_memory_endpoint():
+    """Get user memory/preferences."""
+    return history_db.get_memory("default")
+
+
+@app.put("/api/memory")
+async def save_memory_endpoint(req: MemoryRequest):
+    """Save user memory/preferences (max 2000 chars)."""
+    return history_db.save_memory("default", req.content, req.enabled)
+
+
 @app.post("/api/chat")
 async def chat(req: ChatRequest, request: Request):
     """Process a chat message and return LLM response."""
@@ -242,6 +261,18 @@ async def chat(req: ChatRequest, request: Request):
 
         # System prompt: agent instructions + document context
         system_parts = []
+
+        # ── Inject user memory/preferences as first context block ──────
+        try:
+            user_mem = history_db.get_memory("default")
+            if user_mem["enabled"] and user_mem["content"].strip():
+                system_parts.append(
+                    f"🧠 **MEMÓRIA/PREFERÊNCIAS DO USUÁRIO (considere sempre):**\n"
+                    f"{user_mem['content'].strip()}\n---"
+                )
+        except Exception as mem_err:
+            print(f"⚠️ Erro ao carregar memória do usuário: {mem_err}")
+
         if req.agent_prompt:
             system_parts.append(req.agent_prompt)
 

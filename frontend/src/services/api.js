@@ -678,3 +678,38 @@ export async function getSlmStatus() {
         return { available: false, mode: 'none' };
     }
 }
+
+
+// ── User Memory (Preferences) ───────────────────────────────────────────────
+
+/**
+ * Get user memory/preferences.
+ * @returns {Promise<{content: string, enabled: boolean}>}
+ */
+export async function getMemory() {
+    const res = await fetch(`${API_BASE}/memory`, {
+        headers: await getAuthHeaders(),
+    }).catch(() => null);
+    if (!res || !res.ok) return { content: '', enabled: true };
+    return safeJson(res, 'Get Memory').catch(() => ({ content: '', enabled: true }));
+}
+
+/**
+ * Save user memory/preferences.
+ * @param {string} content - Memory text (max 2000 chars)
+ * @param {boolean} enabled - Whether memory injection is active
+ * @returns {Promise<{content: string, enabled: boolean}>}
+ */
+export async function saveMemory(content, enabled = true) {
+    const res = await fetch(`${API_BASE}/memory`, {
+        method: 'PUT',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ content, enabled }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Save Memory').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao salvar memória (${res.status})`);
+    }
+    return safeJson(res, 'Save Memory');
+}
+

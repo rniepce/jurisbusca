@@ -11,6 +11,7 @@ import JurisprudenciaPanel from './components/JurisprudenciaPanel';
 import ModelManagerPanel from './components/ModelManagerPanel';
 import AgentBuilderChat from './components/AgentBuilderChat';
 import CreateAgentDialog from './components/CreateAgentDialog';
+import MemoryPanel from './components/MemoryPanel';
 import ShareAgentDialog from './components/ShareAgentDialog';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
@@ -55,6 +56,8 @@ function MainApp() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState('');
   const [shareAgent, setShareAgent] = useState(null); // agent being shared
+  // Memory panel state
+  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   // Canvas state
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasContent, setCanvasContent] = useState('');
@@ -991,6 +994,7 @@ function MainApp() {
         onCreateAgent={handleOpenAgentBuilder}
         onDeleteAgent={handleDeleteAgent}
         onShareAgent={handleShareAgentOpen}
+        onOpenMemory={() => setShowMemoryPanel(true)}
       />
 
       <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
@@ -1063,6 +1067,12 @@ function MainApp() {
         onClose={() => setShareAgent(null)}
         onShare={handleShareAgentConfirm}
         agentName={shareAgent?.name || ''}
+      />
+
+      {/* Memory Panel */}
+      <MemoryPanel
+        isOpen={showMemoryPanel}
+        onClose={() => setShowMemoryPanel(false)}
       />
     </div>
   );
