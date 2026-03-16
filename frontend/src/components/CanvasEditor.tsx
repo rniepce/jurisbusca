@@ -6,6 +6,8 @@ import {
     FaRotateLeft, FaRotateRight, FaChevronDown,
     FaAlignLeft, FaAlignCenter, FaAlignJustify
 } from 'react-icons/fa6';
+import { Document, Paragraph, TextRun, Packer } from 'docx';
+import { saveAs } from 'file-saver';
 import './CanvasEditor.css';
 
 /**
@@ -86,17 +88,20 @@ const HEADING_OPTIONS = [
     { value: 'h4', label: 'Título 4', tag: 'H4' },
 ];
 
-const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, onFocusChat, isUpdating = false }) => {
+const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, onFocusChat, isUpdating = false, conversationId = null }) => {
     const [copied, setCopied] = useState(false);
     const [flashKey, setFlashKey] = useState(0);
     const [lastUpdated, setLastUpdated] = useState(null);
     const [headingDropdownOpen, setHeadingDropdownOpen] = useState(false);
     const [currentHeading, setCurrentHeading] = useState('Texto normal');
-    const [activeFormats, setActiveFormats] = useState({});
+    const [activeFormats, setActiveFormats] = useState<Record<string, boolean>>({});
     const [selectionFab, setSelectionFab] = useState(null); // { text, x, y }
+    const [autoSaveIndicator, setAutoSaveIndicator] = useState(false); // "Salvo ✓" badge
+    const [draftToast, setDraftToast] = useState(false); // "Rascunho restaurado ✓" toast
     const editorRef = useRef(null);
     const headingRef = useRef(null);
     const contentChangeTimer = useRef(null);
+    const autoSaveTimer = useRef(null);
     const lastLlmContent = useRef(''); // tracks LLM content to avoid overwriting user edits
 
     // Set content into the editor when it changes from LLM
@@ -108,10 +113,30 @@ const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, on
             if (editorRef.current.dataset.source !== 'user') {
                 editorRef.current.innerHTML = html;
             }
-            setFlashKey(prev => prev + 1);
-            setLastUpdated(new Date());
+            // Defer state updates to avoid cascading-render lint warning
+            const now = new Date();
+            setTimeout(() => {
+                setFlashKey(prev => prev + 1);
+                setLastUpdated(now);
+            }, 0);
         }
     }, [content]);
+
+    // On mount: restore draft from localStorage if available for this conversationId
+    useEffect(() => {
+        if (!conversationId || !editorRef.current) return;
+        const key = `canvas_draft_${conversationId}`;
+        const saved = localStorage.getItem(key);
+        if (saved && !content) {
+            editorRef.current.innerHTML = formatMarkdown(saved);
+            if (onContentChange) onContentChange(saved);
+            // Defer to avoid setState-in-effect lint error
+            setTimeout(() => {
+                setDraftToast(true);
+                setTimeout(() => setDraftToast(false), 3000);
+            }, 0);
+        }
+    }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Track text selection for floating action button
     useEffect(() => {
@@ -214,6 +239,17 @@ const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, on
                     onContentChange(editorRef.current.innerText);
                 }
             }, 1000);
+
+            // Auto-save to localStorage (debounced 2s)
+            clearTimeout(autoSaveTimer.current);
+            autoSaveTimer.current = setTimeout(() => {
+                if (editorRef.current && conversationId) {
+                    const textContent = editorRef.current.innerText;
+                    localStorage.setItem(`canvas_draft_${conversationId}`, textContent);
+                    setAutoSaveIndicator(true);
+                    setTimeout(() => setAutoSaveIndicator(false), 2000);
+                }
+            }, 2000);
         }
     };
 
@@ -253,32 +289,51 @@ const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, on
         URL.revokeObjectURL(url);
     };
 
-    // ── Download DOCX (HTML wrapper) ──
-    const handleDownloadDocx = () => {
+    // ── Download real DOCX using docx library ──
+    const handleDownloadDocx = async () => {
         const html = editorRef.current?.innerHTML || '';
         if (!html) return;
-        const docxHtml = `
-            <html xmlns:o="urn:schemas-microsoft-com:office:office"
-                  xmlns:w="urn:schemas-microsoft-com:office:word"
-                  xmlns="http://www.w3.org/TR/REC-html40">
-            <head><meta charset="utf-8"><style>
-                body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.8; margin: 2cm; }
-                h1 { font-size: 16pt; } h2 { font-size: 14pt; } h3 { font-size: 13pt; }
-                p { text-align: justify; margin: 0 0 8px; }
-                table { border-collapse: collapse; width: 100%; }
-                th, td { border: 1px solid #999; padding: 4px 8px; }
-            </style></head>
-            <body>${html}</body></html>`;
-        const blob = new Blob(['\ufeff', docxHtml], { type: 'application/msword' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const t = extractTitle(content).replace(/[^a-zA-Z0-9À-ÿ\s_-]/g, '').trim().replace(/\s+/g, '_');
-        a.download = `${t || 'minuta'}.doc`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+
+        // Parse HTML into plain text paragraphs
+        // Split on block-level boundaries: <br>, </p>, </div>, </h1>-</h6>, </li>
+        const rawText = html
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/p>/gi, '\n')
+            .replace(/<\/div>/gi, '\n')
+            .replace(/<\/h[1-6]>/gi, '\n')
+            .replace(/<\/li>/gi, '\n')
+            .replace(/<[^>]+>/g, ''); // strip remaining tags
+
+        // Decode HTML entities
+        const decoded = rawText
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&#39;/g, "'")
+            .replace(/&quot;/g, '"');
+
+        const lines = decoded.split('\n').map(l => l.trim()).filter(Boolean);
+
+        const docParagraphs = lines.map(line => new Paragraph({
+            children: [new TextRun({ text: line, size: 24, font: 'Times New Roman' })],
+            spacing: { after: 120 },
+        }));
+
+        const doc = new Document({
+            sections: [{
+                properties: {},
+                children: docParagraphs,
+            }],
+        });
+
+        try {
+            const blob = await Packer.toBlob(doc);
+            const t = extractTitle(content).replace(/[^a-zA-Z0-9À-ÿ\s_-]/g, '').trim().replace(/\s+/g, '_');
+            saveAs(blob, `${t || 'documento'}.docx`);
+        } catch (err) {
+            console.error('DOCX export failed:', err);
+        }
     };
 
     // ── Handle FAB actions ──
@@ -338,6 +393,13 @@ const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, on
 
     return (
         <div className="canvas-editor" id="canvas-editor">
+            {/* ── Draft restored toast ── */}
+            {draftToast && (
+                <div className="canvas-draft-toast" aria-live="polite">
+                    Rascunho restaurado ✓
+                </div>
+            )}
+
             {/* ── Top bar: title + file actions ── */}
             <div className="canvas-toolbar">
                 <div className="canvas-title-section">
@@ -349,21 +411,26 @@ const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, on
                             {timeStr}
                         </span>
                     )}
+                    {autoSaveIndicator && (
+                        <span className="canvas-autosave-badge" aria-live="polite">
+                            Salvo ✓
+                        </span>
+                    )}
                 </div>
                 <div className="canvas-toolbar-actions">
-                    <button className={`canvas-action-btn ${copied ? 'copied' : ''}`} onClick={handleCopy} title="Copiar conteúdo">
+                    <button className={`canvas-action-btn ${copied ? 'copied' : ''}`} onClick={handleCopy} title="Copiar conteúdo" aria-label="Copiar conteúdo">
                         {copied ? <FaCheck size={13} /> : <FaCopy size={13} />}
                     </button>
-                    <button className="canvas-action-btn" onClick={handleDownload} title="Baixar como .txt">
+                    <button className="canvas-action-btn" onClick={handleDownload} title="Baixar como .txt" aria-label="Baixar como TXT">
                         <FaDownload size={13} />
                     </button>
-                    <button className="canvas-action-btn" onClick={handleDownloadDocx} title="Baixar como .doc">
+                    <button className="canvas-action-btn" onClick={handleDownloadDocx} title="Baixar como .docx" aria-label="Baixar como DOCX">
                         <FaFileLines size={13} />
                     </button>
-                    <button className="canvas-action-btn" onClick={handlePrint} title="Imprimir">
+                    <button className="canvas-action-btn" onClick={handlePrint} title="Imprimir" aria-label="Imprimir documento">
                         <FaPrint size={13} />
                     </button>
-                    <button className="canvas-action-btn close-btn" onClick={onClose} title="Fechar Canvas">
+                    <button className="canvas-action-btn close-btn" onClick={onClose} title="Fechar Canvas" aria-label="Fechar Canvas">
                         <FaXmark size={14} />
                     </button>
                 </div>

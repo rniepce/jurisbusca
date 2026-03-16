@@ -55,7 +55,7 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
         try {
             const data = await listTemplates();
             setTemplates(data.templates || []);
-        } catch (err) {
+        } catch {
             setError('Erro ao carregar modelos.');
         } finally {
             setLoading(false);
@@ -88,7 +88,7 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
         e.target.value = '';
         setUploading(true); setError('');
         try {
-            const result = await uploadTemplates(selected);
+            const result = await uploadTemplates(selected as File[]);
             if (onRagStatusChange) {
                 onRagStatusChange({ indexed_chunks: result.indexed_chunks, has_dossier: result.has_dossier });
             }
@@ -168,7 +168,7 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
         try {
             const doc = await getJurisprudenciaDoc(docId);
             setSelectedDoc(doc);
-        } catch (err) {
+        } catch {
             setError('Erro ao carregar acórdão.');
         } finally {
             setLoadingDoc(false);

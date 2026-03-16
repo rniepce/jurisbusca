@@ -84,7 +84,7 @@ const MemoryPanel = ({ isOpen, onClose }) => {
     const charClass = charPercent >= 1 ? 'at-limit' : charPercent >= 0.85 ? 'near-limit' : '';
 
     return (
-        <div className="memory-overlay" onClick={handleOverlayClick}>
+        <div className="memory-overlay" onClick={handleOverlayClick} role="dialog" aria-modal="true" aria-label="Painel de Memória">
             <div className="memory-panel" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
                 <div className="memory-header">

@@ -80,8 +80,8 @@ Se você assimilou as 3 fases, o bloqueio do Hard Stop e a barreira de contamina
 *"ASSISTENTE INTEGRAL V 6.0 CARREGADO. AGUARDANDO O PDF DOS AUTOS PARA INICIAR A FASE 1 (RAIO-X)."*
 `;
 
-import { ARQUIVO_A_SOBRESTAMENTOS } from './arquivoASobrestamentos.js';
-import { ARQUIVO_B_SUMULAS } from './arquivoBSumulas.js';
-import { ARQUIVO_C_QUALIFICADOS } from './arquivoCQualificados.js';
+import { ARQUIVO_A_SOBRESTAMENTOS } from './arquivoASobrestamentos';
+import { ARQUIVO_B_SUMULAS } from './arquivoBSumulas';
+import { ARQUIVO_C_QUALIFICADOS } from './arquivoCQualificados';
 
 export default PROMPT_GABINETE_CIVEL + '\n\n' + ARQUIVO_A_SOBRESTAMENTOS + '\n\n' + ARQUIVO_B_SUMULAS + '\n\n' + ARQUIVO_C_QUALIFICADOS;

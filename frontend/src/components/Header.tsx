@@ -19,8 +19,11 @@ const Header = ({ onMenuClick, isOpen }) => {
     useEffect(() => {
         const stored = localStorage.getItem('azure_openai_key');
         if (stored) {
-            setKeyValue(stored);
-            setKeyStatus('valid');
+            // Defer state updates to avoid cascading-render lint warning
+            setTimeout(() => {
+                setKeyValue(stored);
+                setKeyStatus('valid');
+            }, 0);
         }
     }, []);
 
@@ -55,7 +58,7 @@ const Header = ({ onMenuClick, isOpen }) => {
                 setKeyMessage(result.message || 'Chave inválida.');
                 localStorage.removeItem('azure_openai_key');
             }
-        } catch (err) {
+        } catch {
             setKeyStatus('invalid');
             setKeyMessage('Erro de conexão. Backend rodando?');
         }
@@ -92,9 +95,17 @@ const Header = ({ onMenuClick, isOpen }) => {
                         className="key-button"
                         onClick={() => setKeyOpen(!keyOpen)}
                         title="Configurar chave Azure OpenAI"
+                        aria-label="Configurar chave Azure OpenAI"
+                        aria-expanded={keyOpen}
                     >
                         <FaKey size={14} />
-                        <span className={statusDot} />
+                        <span
+                            className={statusDot}
+                            aria-label={keyStatus === 'valid' ? 'Chave válida' : keyStatus === 'invalid' ? 'Chave inválida' : 'Status desconhecido'}
+                            role="img"
+                        />
+                        {keyStatus === 'valid' && <span className="key-status-label">(válida)</span>}
+                        {keyStatus === 'invalid' && <span className="key-status-label key-status-invalid">(inválida)</span>}
                     </button>
 
                     {keyOpen && (

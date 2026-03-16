@@ -18,7 +18,7 @@ export default function BatchPanel({ results, selectedIndex, onSelect, onClose }
                     <FiFileText size={16} />
                     <span>Processos ({results.length})</span>
                 </div>
-                <button className="batch-panel-close" onClick={onClose} title="Fechar painel">
+                <button className="batch-panel-close" onClick={onClose} title="Fechar painel" aria-label="Fechar painel de lote">
                     <FiX size={16} />
                 </button>
             </div>

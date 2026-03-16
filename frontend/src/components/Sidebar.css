@@ -366,6 +366,38 @@
     color: #666;
 }
 
+/* ===== SIDEBAR SEARCH ===== */
+.sidebar-search {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 7px 10px;
+    margin-bottom: 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 12px;
+    font-family: var(--font-family, 'Inter', system-ui, sans-serif);
+    color: #333;
+    background: #f9fafb;
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.sidebar-search:focus {
+    border-color: #2563eb;
+    background: #fff;
+}
+
+.sidebar-search::placeholder {
+    color: #aaa;
+}
+
+/* Remove default search input clear button for consistency */
+.sidebar-search::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+}
+
 /* Empty History State */
 .history-empty {
     padding-top: 4px;
@@ -376,6 +408,10 @@
     color: #bbb;
     padding: 8px 4px;
     font-style: italic;
+}
+
+.history-no-results {
+    color: #999;
 }
 
 /* ===== BOTTOM BAR ===== */

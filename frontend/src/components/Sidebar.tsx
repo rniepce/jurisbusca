@@ -21,6 +21,7 @@ const iconMap = {
 
 const Sidebar = ({
     isOpen,
+    onToggle,
     history = [],
     activeAgent,
     onAgentSelect,
@@ -32,10 +33,11 @@ const Sidebar = ({
     onDeleteAgent,
     onShareAgent,
     onOpenMemory,
-}) => {
+}: any) => {
     const [agentsOpen, setAgentsOpen] = useState(true);
     const [customAgentsOpen, setCustomAgentsOpen] = useState(true);
     const [menuOpenId, setMenuOpenId] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const handleAgentClick = (agent) => {
         if (onAgentSelect) onAgentSelect(agent);
@@ -189,9 +191,34 @@ const Sidebar = ({
             {/* History Section */}
             <div className="sidebar-history">
                 <span className="section-label-static">Histórico</span>
+
+                {/* Search input */}
+                {history.length > 0 && (
+                    <input
+                        type="search"
+                        className="sidebar-search"
+                        placeholder="Buscar conversa..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        aria-label="Buscar conversa no histórico"
+                    />
+                )}
+
                 {history.length > 0 ? (
-                    <>
-                        {history.map((group, gi) => (
+                    (() => {
+                        // Filter all items across groups
+                        const filteredGroups = history.map((group) => ({
+                            ...group,
+                            items: group.items.filter(
+                                (item) => !searchQuery || item.title?.toLowerCase().includes(searchQuery.toLowerCase())
+                            ),
+                        })).filter((g) => g.items.length > 0);
+
+                        if (filteredGroups.length === 0) {
+                            return <p className="history-empty-text history-no-results">Nenhuma conversa encontrada</p>;
+                        }
+
+                        return filteredGroups.map((group, gi) => (
                             <div key={gi} className="history-group">
                                 <span className="history-group-label">{group.label}</span>
                                 {group.items.map((item) => (
@@ -209,8 +236,8 @@ const Sidebar = ({
                                     </button>
                                 ))}
                             </div>
-                        ))}
-                    </>
+                        ));
+                    })()
                 ) : (
                     <p className="history-empty-text">Suas conversas aparecerão aqui</p>
                 )}

@@ -29,18 +29,20 @@ const OCR_ENGINES = [
     { id: 'deepseek', label: 'DeepSeek-OCR' },
 ];
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange, activeAgent = null, jurisEnabled = false, canvasOpen = false, canvasSelection = null, onCanvasToggle, chatTextareaRef }) => {
+const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle: _onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange: _onRagStatusChange, activeAgent: _activeAgent = null, jurisEnabled: _jurisEnabled = false, canvasOpen = false, canvasSelection = null, onCanvasToggle, chatTextareaRef }: any) => {
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(LLM_OPTIONS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
+    const [showOverflow, setShowOverflow] = useState(false);
+    const overflowRef = useRef(null);
 
     const [files, setFiles] = useState([]);
     const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[0].id);
     const [compressEnabled, setCompressEnabled] = useState(false);
     const [ragEnabled, setRagEnabled] = useState(false);
     const [ragAvailable, setRagAvailable] = useState(false);
-    const [indexing, setIndexing] = useState(false);
-    const [indexSuccess, setIndexSuccess] = useState(false);
+    const [_indexing, _setIndexing] = useState(false);
+    const [_indexSuccess, _setIndexSuccess] = useState(false);
     const [slmStatus, setSlmStatus] = useState({ available: false, mode: 'none' });
     const dropdownRef = useRef(null);
 
@@ -52,7 +54,9 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
             if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
                 setDropdownOpen(false);
             }
-
+            if (overflowRef.current && !overflowRef.current.contains(e.target)) {
+                setShowOverflow(false);
+            }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -129,9 +133,8 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
         setFiles((prev) => prev.filter((_, i) => i !== index));
     };
 
-    const _removeTemplate = (index) => {
-        setTemplateFiles((prev) => prev.filter((_, i) => i !== index));
-    };
+    // eslint-disable-next-line no-unused-vars
+    const _removeTemplate = (_index) => { /* placeholder — templateFiles state not yet used */ };
 
     const formatSize = (bytes) => {
         if (bytes < 1024) return `${bytes} B`;
@@ -201,20 +204,60 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport, onModelChan
                         onChange={handleFileChange}
                         style={{ display: 'none' }}
                     />
-                    <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={() => onOpenModelManager && onOpenModelManager()}>
-                        <FaBook />
-                    </button>
 
-                    <button className="toolbar-btn" aria-label="Prompts"><FaSlash /></button>
-                    <button
-                        className={`toolbar-btn canvas-toggle-btn ${canvasOpen ? 'canvas-active' : ''}`}
-                        aria-label={canvasOpen ? 'Fechar Canvas' : 'Abrir Canvas'}
-                        title={canvasOpen ? 'Fechar modo Canvas' : 'Abrir modo Canvas (editor de minuta)'}
-                        onClick={() => onCanvasToggle && onCanvasToggle()}
-                    >
-                        <FaTableColumns />
-                        {canvasOpen && <span className="canvas-indicator">Canvas</span>}
-                    </button>
+                    {/* Secondary toolbar buttons — hidden on mobile, shown in overflow menu */}
+                    <div className="toolbar-secondary-group">
+                        <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={() => onOpenModelManager && onOpenModelManager()}>
+                            <FaBook />
+                        </button>
+                        <button className="toolbar-btn" aria-label="Prompts"><FaSlash /></button>
+                        <button
+                            className={`toolbar-btn canvas-toggle-btn ${canvasOpen ? 'canvas-active' : ''}`}
+                            aria-label={canvasOpen ? 'Fechar Canvas' : 'Abrir Canvas'}
+                            title={canvasOpen ? 'Fechar modo Canvas' : 'Abrir modo Canvas (editor de minuta)'}
+                            onClick={() => onCanvasToggle && onCanvasToggle()}
+                        >
+                            <FaTableColumns />
+                            {canvasOpen && <span className="canvas-indicator">Canvas</span>}
+                        </button>
+                    </div>
+
+                    {/* Overflow menu button — visible on mobile only */}
+                    <div className="toolbar-overflow-wrapper" ref={overflowRef}>
+                        <button
+                            className="toolbar-btn toolbar-overflow-btn"
+                            aria-label="Mais opções"
+                            aria-expanded={showOverflow}
+                            onClick={() => setShowOverflow((v) => !v)}
+                        >
+                            ⋯
+                        </button>
+                        {showOverflow && (
+                            <div className="toolbar-overflow-menu">
+                                <button
+                                    className="toolbar-btn"
+                                    aria-label="Modelos de decisão"
+                                    onClick={() => { onOpenModelManager && onOpenModelManager(); setShowOverflow(false); }}
+                                >
+                                    <FaBook /> <span style={{ marginLeft: 6, fontSize: 12 }}>Modelos</span>
+                                </button>
+                                <button
+                                    className="toolbar-btn"
+                                    aria-label="Prompts"
+                                    onClick={() => setShowOverflow(false)}
+                                >
+                                    <FaSlash /> <span style={{ marginLeft: 6, fontSize: 12 }}>Prompts</span>
+                                </button>
+                                <button
+                                    className={`toolbar-btn canvas-toggle-btn ${canvasOpen ? 'canvas-active' : ''}`}
+                                    aria-label={canvasOpen ? 'Fechar Canvas' : 'Abrir Canvas'}
+                                    onClick={() => { onCanvasToggle && onCanvasToggle(); setShowOverflow(false); }}
+                                >
+                                    <FaTableColumns /> <span style={{ marginLeft: 6, fontSize: 12 }}>Canvas</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <div className="toolbar-right">
                     <button className="toolbar-btn" aria-label="Recarregar"><FaArrowRotateRight /></button>

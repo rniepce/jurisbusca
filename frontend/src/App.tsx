@@ -18,11 +18,12 @@ import SignupPage from './components/SignupPage';
 import { AuthProvider, useAuth } from './components/AuthContext';
 import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, replicateBatchPilot, uploadTemplates, triggerJurisprudenciaResearch, pollJurisprudenciaResearch, getCustomAgents, createCustomAgent, deleteCustomAgent, shareCustomAgent } from './services/api';
 import agentDefinitions from './config/agents';
+import { useUIStore } from './store/index';
 import './App.css';
 
 function MainApp() {
-  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
-  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+  // UI state from Zustand store
+  const { sidebarOpen, setSidebarOpen, toggleSidebar: toggleSidebarStore, selectedModel: globalSelectedModelStore, setSelectedModel } = useUIStore();
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [activeAgent, setActiveAgent] = useState(agentDefinitions[0]);
@@ -41,7 +42,9 @@ function MainApp() {
   const [ragStatus, setRagStatus] = useState(null);
   const [batchResults, setBatchResults] = useState([]);
   const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
-  const [globalSelectedModel, setGlobalSelectedModel] = useState({ id: 'gpt52', name: 'GPT-5.2', color: '#4285F4', llm: 'gpt-5.2-chat' });
+  // globalSelectedModel uses Zustand store; alias for backward compat
+  const globalSelectedModel = globalSelectedModelStore;
+  const setGlobalSelectedModel = setSelectedModel;
   const [showJurisprudencia, setShowJurisprudencia] = useState(false);
   const [showModelManager, setShowModelManager] = useState(false);
   // Jurisprudence toggle state — always enabled
@@ -61,7 +64,7 @@ function MainApp() {
   // Canvas state
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [canvasContent, setCanvasContent] = useState('');
-  const [canvasTitle, setCanvasTitle] = useState('');
+  const [_canvasTitle, _setCanvasTitle] = useState('');
   const [canvasSelection, setCanvasSelection] = useState(null); // selected text in canvas
   const chatTextareaRef = useRef(null); // ref to focus the chat input from canvas
   // Batch Pilot state
@@ -76,7 +79,7 @@ function MainApp() {
     getCustomAgents().then((data) => setCustomAgents(data.agents || [])).catch(() => { });
   }, []);
 
-  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
+  const toggleSidebar = () => toggleSidebarStore();
   const closeSidebarMobile = () => { if (window.innerWidth <= 768) setSidebarOpen(false); };
 
   // ── Send message handler ────────────────────────────────────────────
@@ -160,9 +163,9 @@ function MainApp() {
       // 2. Load agent prompt — use overridePrompt if provided (e.g. auto-review QA)
       let agentPrompt = overridePrompt || null;
 
-      if (!agentPrompt && activeAgent?.prompt && !activeAgent?.promptModule) {
+      if (!agentPrompt && (activeAgent as any)?.prompt && !activeAgent?.promptModule) {
         // Custom agent — use stored prompt directly
-        agentPrompt = activeAgent.prompt;
+        agentPrompt = (activeAgent as any).prompt;
       } else if (activeAgent?.promptModule) {
         // Agent explicitly selected from sidebar — load its prompt
         try {
@@ -361,7 +364,7 @@ function MainApp() {
 
     try {
       // Usa o globalSelectedModel que veio do ChatInput (incluindo engine e llm)
-      const result = await analyzeCluster(processes, activeAgent?.prompt || '', globalSelectedModel.id, globalSelectedModel.llm);
+      const result = await analyzeCluster(processes, (activeAgent as any)?.prompt || '', globalSelectedModel.id, globalSelectedModel.llm);
 
       // Add each individual result as a separate message
       const resultMessages = result.results.map((r) => {
@@ -400,7 +403,7 @@ function MainApp() {
     } finally {
       setIsLoading(false);
     }
-  }, [xrayTextCache, activeAgent]);
+  }, [xrayTextCache, activeAgent, globalSelectedModel.id, globalSelectedModel.llm]);
 
   // ── When user selects a batch card, show its content in chat ────────
   const handleBatchSelect = useCallback((index) => {
@@ -508,7 +511,7 @@ function MainApp() {
         processes: batchPilotSession.processes,
         model: globalSelectedModel.id,
         llm: globalSelectedModel.llm || null,
-        agentPrompt: activeAgent?.prompt || null,
+        agentPrompt: (activeAgent as any)?.prompt || null,
       });
 
       // Add results to chat
@@ -678,7 +681,7 @@ function MainApp() {
   // ── Auto-review handler (Revisor QA) ────────────────────────────────
   // Makes an ISOLATED API call (no conversation history) to avoid token limit overflow.
   // Only sends: QA prompt + OCR process text + minuta extracted from chat.
-  const handleAutoReview = useCallback(async (activationMsg) => {
+  const handleAutoReview = useCallback(async (_activationMsg) => {
     // 1. Find the last substantial assistant message (the minuta)
     const assistantMsgs = messages.filter(
       (m) => m.role === 'assistant' && m.content && m.content.length > 100
@@ -712,7 +715,7 @@ function MainApp() {
     // 2. Load the QA prompt
     let qaPrompt = null;
     try {
-      const mod = await import('./prompts/auditorQA.js');
+      const mod = await import('./prompts/auditorQA');
       qaPrompt = mod.default || null;
     } catch {
       console.warn('Could not load auditor QA prompt');
@@ -768,6 +771,15 @@ function MainApp() {
 
 
 
+  // ── Retry last human message ───────────────────────────────────────
+  const handleRetry = useCallback(() => {
+    // Find the last user message
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
+    if (!lastUserMsg) return;
+    // Re-send it with the current model
+    handleSend(lastUserMsg.content, globalSelectedModel, [], 'none', [], false);
+  }, [messages, globalSelectedModel, handleSend]);
+
   // ── New chat handler — saves current conversation to history ────────
   const handleNewChat = useCallback(() => {
     // Save current conversation to history (only if it has real messages)
@@ -802,7 +814,7 @@ function MainApp() {
     setJurisContext('');
     setCanvasOpen(false);
     setCanvasContent('');
-    setCanvasTitle('');
+    _setCanvasTitle('');
     setBatchPilotSession(null);
   }, [messages, activeAgent, conversationId]);
 
@@ -867,13 +879,13 @@ function MainApp() {
       }
       return next;
     });
-  }, []);
+  }, [setSidebarOpen]);
 
   const handleCanvasClose = useCallback(() => {
     setCanvasOpen(false);
     // Restore sidebar if not mobile
     if (window.innerWidth > 768) setSidebarOpen(true);
-  }, []);
+  }, [setSidebarOpen]);
 
   // Build sidebar history format
   const sidebarHistory = chatHistory.length > 0
@@ -931,15 +943,15 @@ function MainApp() {
           styleAnalyzing={styleAnalyzing}
           xrayLoading={xrayLoading}
           xrayProgress={xrayProgress}
-          onAutoAction={handleAutoReview}
-          onQAReview={handleAutoReview}
+          onAutoAction={handleAutoReview as any}
+          onQAReview={handleAutoReview as any}
           hasUploadedText={!!uploadedText}
           jurisResearch={jurisResearch}
           jurisResearchLoading={jurisResearchLoading}
           jurisResearchProgress={jurisResearchProgress}
           onJurisImport={(data) => {
             // Format imported jurisprudence with explicit ementa + citation for LLM
-            const parts = data.research.map((r) => {
+            const parts = (data as any).research.map((r: any) => {
               const resultsText = (r.results || []).map((res) => {
                 const ementa = (res.ementa || '').trim();
                 const processo = res.numero_processo || '?';
@@ -958,7 +970,7 @@ function MainApp() {
             // Also show visual confirmation in chat
             const importMsg = {
               role: 'assistant',
-              content: `✅ **Jurisprudência incluída na fundamentação.** A próxima minuta gerada incluirá a ementa com a citação \"Assim entende o TJMG:\".`,
+              content: `✅ **Jurisprudência incluída na fundamentação.** A próxima minuta gerada incluirá a ementa com a citação "Assim entende o TJMG:".`,
               model: 'pesquisador',
             };
             setMessages((prev) => [...prev, importMsg]);
@@ -966,6 +978,7 @@ function MainApp() {
           onJurisSearch={handleJurisSearch}
           onPilotReplicate={handlePilotReplicate}
           onPilotDismiss={handlePilotDismiss}
+          onRetry={handleRetry}
         />
       );
     }
@@ -1019,6 +1032,7 @@ function MainApp() {
                 }
               }}
               isUpdating={isLoading}
+              conversationId={conversationId}
             />
           )}
           {showBatchPanel && (

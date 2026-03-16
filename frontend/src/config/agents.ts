@@ -7,7 +7,7 @@ const agents = [
         name: 'Gabinete 2.0',
         desc: 'Assessor completo: raio-x → deliberação → minuta mimetizada + auditoria',
         color: '#10B981',
-        promptModule: () => import('../prompts/gabineteCivelV2.js'),
+        promptModule: () => import('../prompts/gabineteCivelV2'),
     },
     {
         id: 'auditor-qa',
@@ -15,7 +15,7 @@ const agents = [
         name: 'Revisor (QA)',
         desc: 'Auditor de conformidade fática e eficiência em minutas',
         color: '#EF4444',
-        promptModule: () => import('../prompts/auditorQA.js'),
+        promptModule: () => import('../prompts/auditorQA'),
         autoAction: {
             label: '🔍 Revisar Minuta',
             requiresMinuta: true,

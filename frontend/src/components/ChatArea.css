@@ -1437,3 +1437,61 @@
         justify-content: center;
     }
 }
+
+/* ===== RETRY BUTTON ===== */
+.retry-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 5px 12px;
+    border: 1px solid #f87171;
+    background: #fef2f2;
+    color: #dc2626;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    font-family: var(--font-family, 'Inter', system-ui, sans-serif);
+}
+
+.retry-btn:hover {
+    background: #fee2e2;
+    border-color: #dc2626;
+}
+
+/* ===== ELAPSED TIMER ===== */
+.elapsed-timer {
+    display: block;
+    margin-top: 6px;
+    font-size: 11px;
+    color: #9ca3af;
+    text-align: right;
+}
+
+/* ===== LOAD EARLIER MESSAGES ===== */
+.load-earlier-container {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0 16px;
+}
+
+.load-earlier-btn {
+    padding: 6px 18px;
+    border: 1px solid #e0e0e0;
+    background: #f9f9f9;
+    color: #666;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    font-family: var(--font-family, 'Inter', system-ui, sans-serif);
+}
+
+.load-earlier-btn:hover {
+    background: #f0f0f0;
+    border-color: #bbb;
+    color: #333;
+}

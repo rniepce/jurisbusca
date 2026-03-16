@@ -315,3 +315,20 @@
         font-size: 0.7rem;
     }
 }
+
+/* ===== KEY STATUS LABEL (accessibility) ===== */
+.key-status-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: #4caf50;
+}
+
+.key-status-label.key-status-invalid {
+    color: #f44336;
+}
+
+@media (max-width: 768px) {
+    .key-status-label {
+        display: none;
+    }
+}

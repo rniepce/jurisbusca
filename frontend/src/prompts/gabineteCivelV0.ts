@@ -500,8 +500,8 @@ Sua primeira resposta deve ser **exclusivamente** o resultado da **ETAPA 1 (Tria
 `;
 
 
-import { ARQUIVO_A_SOBRESTAMENTOS } from './arquivoASobrestamentos.js';
-import { ARQUIVO_B_SUMULAS } from './arquivoBSumulas.js';
-import { ARQUIVO_C_QUALIFICADOS } from './arquivoCQualificados.js';
+import { ARQUIVO_A_SOBRESTAMENTOS } from './arquivoASobrestamentos';
+import { ARQUIVO_B_SUMULAS } from './arquivoBSumulas';
+import { ARQUIVO_C_QUALIFICADOS } from './arquivoCQualificados';
 
 export default PROMPT_GABINETE_CIVEL_V0 + '\n\n' + ARQUIVO_A_SOBRESTAMENTOS + '\n\n' + ARQUIVO_B_SUMULAS + '\n\n' + ARQUIVO_C_QUALIFICADOS;

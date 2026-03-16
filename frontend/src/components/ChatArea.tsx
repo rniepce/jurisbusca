@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, memo, useCallback, CSSProperties } from 'react';
 import {
     FaUser,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
@@ -8,6 +8,45 @@ import OcrPreview from './OcrPreview';
 import JurisprudenciaInsightsCard from './JurisprudenciaInsightsCard';
 import logoSvg from '../assets/logo.svg';
 import './ChatArea.css';
+
+// Allow CSS custom properties in style objects
+interface CSSPropertiesWithVars extends CSSProperties {
+    [key: `--${string}`]: string | number;
+}
+
+interface MessageRowProps {
+    msg: any;
+    i: number;
+    isLoading: boolean;
+    onRetry?: () => void;
+    onAutoAction?: (msg: any) => void;
+    onPilotReplicate?: () => void;
+    onPilotDismiss?: () => void;
+}
+
+interface ChatAreaProps {
+    messages: any[];
+    isLoading: boolean;
+    selectedModel: any;
+    activeAgent: any;
+    ocrProcessing?: boolean;
+    ocrEngineName?: string;
+    ocrProgress?: { progress: string; percent: number };
+    styleAnalyzing?: boolean;
+    xrayLoading?: boolean;
+    xrayProgress?: string;
+    onAutoAction?: (msg: any) => void;
+    onQAReview?: () => void;
+    hasUploadedText?: boolean;
+    jurisResearch?: any;
+    jurisResearchLoading?: boolean;
+    jurisResearchProgress?: string;
+    onJurisImport?: (text: string) => void;
+    onJurisSearch?: () => void;
+    onPilotReplicate?: () => void;
+    onPilotDismiss?: () => void;
+    onRetry?: () => void;
+}
 
 // ── Analysis phases for the style animation ──
 const STYLE_PHASES = [
@@ -182,7 +221,7 @@ const iconMap = {
 };
 
 /** Collapsible card for V2 engine sections (triage/audit) */
-function V2CollapsibleCard({ icon, title, content }) {
+function V2CollapsibleCard({ icon, title, content }: { icon: string; title: string; content: string }) {
     const [open, setOpen] = useState(false);
 
     return (
@@ -203,12 +242,240 @@ function V2CollapsibleCard({ icon, title, content }) {
     );
 }
 
-const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessing = false, ocrEngineName = 'none', ocrProgress = { progress: '', percent: 0 }, styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, onQAReview, hasUploadedText = false, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, onPilotReplicate, onPilotDismiss }) => {
+// ── Memoized individual message rows ──
+const MessageRow = memo(function MessageRow({ msg, i, isLoading, onRetry, onAutoAction, onPilotReplicate, onPilotDismiss }: MessageRowProps) {
+    // ── Agent Activation Card ──
+    if (msg.role === 'agent-activation') {
+        const IconComp = iconMap[msg.agentIcon as keyof typeof iconMap] || FaScaleBalanced;
+        return (
+            <div key={i} className="agent-activation-card" style={{ '--agent-color': msg.agentColor } as CSSPropertiesWithVars}>
+                <div className="activation-icon-ring">
+                    <IconComp size={22} />
+                </div>
+                <div className="activation-info">
+                    <span className="activation-title">
+                        🎯 Agente <strong>{msg.agentName}</strong> ativado
+                    </span>
+                    <span className="activation-desc">
+                        {msg.agentDesc}
+                    </span>
+                    <span className="activation-hint">
+                        Todas as mensagens usarão o prompt especializado deste agente.
+                    </span>
+                    {msg.autoAction && (
+                        <button
+                            className="auto-action-btn"
+                            style={{
+                                '--agent-color': msg.agentColor,
+                                marginTop: '10px',
+                                padding: '8px 18px',
+                                background: `linear-gradient(135deg, ${msg.agentColor}, ${msg.agentColor}dd)`,
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: isLoading ? 'not-allowed' : 'pointer',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                letterSpacing: '0.3px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                opacity: isLoading ? 0.6 : 1,
+                                transition: 'all 0.2s ease',
+                                boxShadow: `0 2px 8px ${msg.agentColor}44`,
+                            } as CSSPropertiesWithVars}
+                            onClick={() => onAutoAction && onAutoAction(msg)}
+                            disabled={isLoading}
+                        >
+                            {msg.autoAction.label}
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // ── OCR Preview Card ──
+    if (msg.role === 'ocr') {
+        return (
+            <OcrPreview
+                key={i}
+                filename={msg.filename}
+                text={msg.text}
+                engine={msg.engine}
+                charCount={msg.charCount}
+            />
+        );
+    }
+
+    // ── Batch Pilot Confirmation Card ──
+    if (msg.role === 'batch-pilot-confirm') {
+        return (
+            <div key={i} className="batch-pilot-confirm-card">
+                <div className="pilot-confirm-icon">🧪</div>
+                <div className="pilot-confirm-body">
+                    <div
+                        className="pilot-confirm-text markdown"
+                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
+                    />
+                    <div className="pilot-confirm-actions">
+                        <button
+                            className="pilot-confirm-btn pilot-confirm-yes"
+                            onClick={() => onPilotReplicate && onPilotReplicate()}
+                            disabled={isLoading}
+                        >
+                            ⚡ Sim, Replicar
+                        </button>
+                        <button
+                            className="pilot-confirm-btn pilot-confirm-no"
+                            onClick={() => onPilotDismiss && onPilotDismiss()}
+                            disabled={isLoading}
+                        >
+                            ✏️ Não, continuar editando
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // ── V2 Structured Response with collapsible cards ──
+    if (msg.role === 'assistant' && msg.v2Sections) {
+        const isError = msg.content && (msg.content.includes('⚠️') || msg.content.includes('Erro'));
+        return (
+            <div key={i} className={`message-row assistant`}>
+                <div className="message-avatar">
+                    <img src={logoSvg} alt="Assistente" style={{ width: 14, height: 14, borderRadius: '2px' }} />
+                </div>
+                <div className={`message-bubble assistant`}>
+                    {/* Main content: the minuta/draft */}
+                    <div
+                        className="message-content markdown"
+                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.v2Sections.draft || msg.content) }}
+                    />
+
+                    {/* Collapsible cards */}
+                    <div className="v2-cards-row">
+                        {msg.v2Sections.triage && (
+                            <V2CollapsibleCard
+                                icon="🔍"
+                                title="Relatório de Triagem"
+                                content={msg.v2Sections.triage}
+                            />
+                        )}
+                        {msg.v2Sections.audit && (
+                            <V2CollapsibleCard
+                                icon="🛡️"
+                                title="Auditoria (QA)"
+                                content={msg.v2Sections.audit}
+                            />
+                        )}
+                    </div>
+
+                    {msg.model && (
+                        <span className="message-model">{msg.model}</span>
+                    )}
+
+                    {/* Retry button for error messages */}
+                    {isError && onRetry && !isLoading && (
+                        <button className="retry-btn" onClick={onRetry} aria-label="Tentar novamente">
+                            ↺ Tentar novamente
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // ── Normal messages ──
+    const isErrorMsg = msg.role === 'assistant' && msg.content && (
+        msg.content.startsWith('⚠️') || msg.content.includes('⚠️ **Erro')
+    );
+
+    return (
+        <div key={i} className={`message-row ${msg.role}`}>
+            <div className="message-avatar">
+                {msg.role === 'user' ? (
+                    <FaUser size={14} />
+                ) : (
+                    <img src={logoSvg} alt="Assistente" style={{ width: 14, height: 14, borderRadius: '2px' }} />
+                )}
+            </div>
+            <div className={`message-bubble ${msg.role}`}>
+                {msg.role === 'assistant' ? (
+                    <div
+                        className="message-content markdown"
+                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
+                    />
+                ) : (
+                    <div className="message-content">{msg.content}</div>
+                )}
+                {msg.model && (
+                    <span className="message-model">{msg.model}</span>
+                )}
+                {/* Retry button for error messages */}
+                {isErrorMsg && onRetry && !isLoading && (
+                    <button className="retry-btn" onClick={onRetry} aria-label="Tentar novamente">
+                        ↺ Tentar novamente
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+});
+
+const VISIBLE_INCREMENT = 50;
+
+const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessing = false, ocrEngineName = 'none', ocrProgress = { progress: '', percent: 0 }, styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, onQAReview, hasUploadedText = false, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, onPilotReplicate, onPilotDismiss, onRetry }: ChatAreaProps) => {
     const endRef = useRef(null);
+    const [visibleCount, setVisibleCount] = useState(VISIBLE_INCREMENT);
+    // Elapsed timer for loading state
+    const [elapsed, setElapsed] = useState(0);
+    const elapsedRef = useRef(null);
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isLoading, styleAnalyzing, xrayLoading]);
+
+    // Reset visibleCount when messages are cleared/reset
+    useEffect(() => {
+        if (messages.length === 0) {
+            setTimeout(() => setVisibleCount(VISIBLE_INCREMENT), 0);
+        }
+    }, [messages.length]);
+
+    // Elapsed timer: start when loading, reset when not loading
+    useEffect(() => {
+        if (isLoading) {
+            // Defer initial setState to avoid cascading-render lint warning
+            const resetTimer = setTimeout(() => setElapsed(0), 0);
+            elapsedRef.current = setInterval(() => {
+                setElapsed(prev => prev + 1);
+            }, 1000);
+            return () => {
+                clearTimeout(resetTimer);
+                clearInterval(elapsedRef.current);
+                elapsedRef.current = null;
+            };
+        } else {
+            const resetTimer = setTimeout(() => setElapsed(0), 0);
+            if (elapsedRef.current) {
+                clearInterval(elapsedRef.current);
+                elapsedRef.current = null;
+            }
+            return () => clearTimeout(resetTimer);
+        }
+    }, [isLoading]);
+
+    const handleLoadEarlier = useCallback(() => {
+        setVisibleCount(prev => prev + VISIBLE_INCREMENT);
+    }, []);
+
+    // Slice to visible messages
+    const totalMessages = messages.length;
+    const startIndex = Math.max(0, totalMessages - visibleCount);
+    const visibleMessages = messages.slice(startIndex);
+    const hasMore = startIndex > 0;
 
     return (
         <div className="chat-area">
@@ -223,169 +490,28 @@ const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessi
             )}
 
             {/* Messages */}
-            <div className="messages-list">
-                {messages.map((msg, i) => {
-                    // ── Agent Activation Card ──
-                    if (msg.role === 'agent-activation') {
-                        const IconComp = iconMap[msg.agentIcon] || FaScaleBalanced;
-                        return (
-                            <div key={i} className="agent-activation-card" style={{ '--agent-color': msg.agentColor }}>
-                                <div className="activation-icon-ring">
-                                    <IconComp size={22} />
-                                </div>
-                                <div className="activation-info">
-                                    <span className="activation-title">
-                                        🎯 Agente <strong>{msg.agentName}</strong> ativado
-                                    </span>
-                                    <span className="activation-desc">
-                                        {msg.agentDesc}
-                                    </span>
-                                    <span className="activation-hint">
-                                        Todas as mensagens usarão o prompt especializado deste agente.
-                                    </span>
-                                    {msg.autoAction && (
-                                        <button
-                                            className="auto-action-btn"
-                                            style={{
-                                                '--agent-color': msg.agentColor,
-                                                marginTop: '10px',
-                                                padding: '8px 18px',
-                                                background: `linear-gradient(135deg, ${msg.agentColor}, ${msg.agentColor}dd)`,
-                                                color: '#fff',
-                                                border: 'none',
-                                                borderRadius: '8px',
-                                                cursor: isLoading ? 'not-allowed' : 'pointer',
-                                                fontSize: '13px',
-                                                fontWeight: 600,
-                                                letterSpacing: '0.3px',
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                gap: '6px',
-                                                opacity: isLoading ? 0.6 : 1,
-                                                transition: 'all 0.2s ease',
-                                                boxShadow: `0 2px 8px ${msg.agentColor}44`,
-                                            }}
-                                            onClick={() => onAutoAction && onAutoAction(msg)}
-                                            disabled={isLoading}
-                                        >
-                                            {msg.autoAction.label}
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    }
+            <div className="messages-list" aria-live="polite">
+                {/* Load earlier button */}
+                {hasMore && (
+                    <div className="load-earlier-container">
+                        <button className="load-earlier-btn" onClick={handleLoadEarlier}>
+                            Carregar mensagens anteriores
+                        </button>
+                    </div>
+                )}
 
-                    // ── OCR Preview Card ──
-                    if (msg.role === 'ocr') {
-                        return (
-                            <OcrPreview
-                                key={i}
-                                filename={msg.filename}
-                                text={msg.text}
-                                engine={msg.engine}
-                                charCount={msg.charCount}
-                            />
-                        );
-                    }
-
-                    // ── Batch Pilot Confirmation Card ──
-                    if (msg.role === 'batch-pilot-confirm') {
-                        return (
-                            <div key={i} className="batch-pilot-confirm-card">
-                                <div className="pilot-confirm-icon">🧪</div>
-                                <div className="pilot-confirm-body">
-                                    <div
-                                        className="pilot-confirm-text markdown"
-                                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
-                                    />
-                                    <div className="pilot-confirm-actions">
-                                        <button
-                                            className="pilot-confirm-btn pilot-confirm-yes"
-                                            onClick={() => onPilotReplicate && onPilotReplicate()}
-                                            disabled={isLoading}
-                                        >
-                                            ⚡ Sim, Replicar
-                                        </button>
-                                        <button
-                                            className="pilot-confirm-btn pilot-confirm-no"
-                                            onClick={() => onPilotDismiss && onPilotDismiss()}
-                                            disabled={isLoading}
-                                        >
-                                            ✏️ Não, continuar editando
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    }
-
-                    // ── Normal messages ──
-                    // ── V2 Structured Response with collapsible cards ──
-                    if (msg.role === 'assistant' && msg.v2Sections) {
-                        return (
-                            <div key={i} className={`message-row assistant`}>
-                                <div className="message-avatar">
-                                    <img src={logoSvg} alt="Assistente" style={{ width: 14, height: 14, borderRadius: '2px' }} />
-                                </div>
-                                <div className={`message-bubble assistant`}>
-                                    {/* Main content: the minuta/draft */}
-                                    <div
-                                        className="message-content markdown"
-                                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.v2Sections.draft || msg.content) }}
-                                    />
-
-                                    {/* Collapsible cards */}
-                                    <div className="v2-cards-row">
-                                        {msg.v2Sections.triage && (
-                                            <V2CollapsibleCard
-                                                icon="🔍"
-                                                title="Relatório de Triagem"
-                                                content={msg.v2Sections.triage}
-                                            />
-                                        )}
-                                        {msg.v2Sections.audit && (
-                                            <V2CollapsibleCard
-                                                icon="🛡️"
-                                                title="Auditoria (QA)"
-                                                content={msg.v2Sections.audit}
-                                            />
-                                        )}
-                                    </div>
-
-                                    {msg.model && (
-                                        <span className="message-model">{msg.model}</span>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    }
-
-                    return (
-                        <div key={i} className={`message-row ${msg.role}`}>
-                            <div className="message-avatar">
-                                {msg.role === 'user' ? (
-                                    <FaUser size={14} />
-                                ) : (
-                                    <img src={logoSvg} alt="Assistente" style={{ width: 14, height: 14, borderRadius: '2px' }} />
-                                )}
-                            </div>
-                            <div className={`message-bubble ${msg.role}`}>
-                                {msg.role === 'assistant' ? (
-                                    <div
-                                        className="message-content markdown"
-                                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
-                                    />
-                                ) : (
-                                    <div className="message-content">{msg.content}</div>
-                                )}
-                                {msg.model && (
-                                    <span className="message-model">{msg.model}</span>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
+                {visibleMessages.map((msg, i) => (
+                    <MessageRow
+                        key={startIndex + i}
+                        msg={msg}
+                        i={startIndex + i}
+                        isLoading={isLoading}
+                        onRetry={onRetry}
+                        onAutoAction={onAutoAction}
+                        onPilotReplicate={onPilotReplicate}
+                        onPilotDismiss={onPilotDismiss}
+                    />
+                ))}
 
                 {/* OCR + Vectorization Progress Animation */}
                 {ocrProcessing && (
@@ -419,7 +545,7 @@ const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessi
 
                 {/* Raio-X Processing Animation — Multi-step */}
                 {xrayLoading && (
-                    <XRayProcessingAnimation progress={xrayProgress} />
+                    <XRayProcessingAnimation />
                 )}
 
                 {/* Style Analysis Processing Animation — Multi-step */}
@@ -496,6 +622,9 @@ const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessi
                                     <span className="dot" />
                                 </div>
                             )}
+                            {selectedModel?.id !== 'local' && elapsed > 0 && (
+                                <span className="elapsed-timer" aria-live="polite">⏱ {elapsed}s</span>
+                            )}
                         </div>
                     </div>
                 )}
@@ -506,7 +635,7 @@ const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessi
     );
 };
 
-function formatMarkdown(text) {
+function formatMarkdown(text: any): string {
     // Robust type coercion: handle non-string inputs (objects, arrays, null, etc.)
     if (text === null || text === undefined) return '';
 

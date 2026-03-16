@@ -63,7 +63,7 @@ const JurisprudenciaPanel = ({ onClose }) => {
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
-            handleSearch(1);
+            handleSearch();
         }
     };
 
@@ -85,7 +85,7 @@ const JurisprudenciaPanel = ({ onClose }) => {
             await navigator.clipboard.writeText(selectedDoc.texto_completo);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
-        } catch (err) {
+        } catch {
             // Fallback
             const ta = document.createElement('textarea');
             ta.value = selectedDoc.texto_completo;
@@ -201,7 +201,7 @@ const JurisprudenciaPanel = ({ onClose }) => {
                     />
                     <button
                         className="jurisprudencia-search-btn"
-                        onClick={() => handleSearch(1)}
+                        onClick={() => handleSearch()}
                         disabled={loading || !query.trim()}
                         id="jurisprudencia-search-btn"
                     >

@@ -5,11 +5,48 @@ import { supabase } from './supabase';
 
 const API_BASE = '/api';
 
+// ── TypeScript Interfaces ───────────────────────────────────────────────────
+
+export interface JurisprudenciaFilters {
+    anoInicio?: number;
+    anoFim?: number;
+    tipo?: string;
+    page?: number;
+    pageSize?: number;
+}
+
+export interface SendMessageParams {
+    message: string;
+    model: string;
+    llm?: string | null;
+    agentPrompt?: string | null;
+    conversationId?: string | null;
+    uploadedText?: string | null;
+    styleDossier?: string | null;
+    useRag?: boolean;
+    jurisprudenceContext?: string | null;
+}
+
+export interface ReplicateBatchPilotParams {
+    pilotInstructions: string;
+    pilotMinuta: string;
+    pilotSummary?: string | null;
+    processes: Array<{ filename: string; text: string }>;
+    model?: string;
+    llm?: string | null;
+    agentPrompt?: string | null;
+}
+
+export interface UploadProgressInfo {
+    progress: string;
+    percent: number;
+}
+
 /**
  * Get headers for API requests.
  * Includes Azure OpenAI key if stored, and Supabase JWT.
  */
-async function getAuthHeaders(existingHeaders = {}) {
+async function getAuthHeaders(existingHeaders: Record<string, string> = {}): Promise<Record<string, string>> {
     const azureKey = localStorage.getItem('azure_openai_key');
     const headers = { ...existingHeaders };
     if (azureKey) headers['X-Azure-Key'] = azureKey;
@@ -28,7 +65,7 @@ async function getAuthHeaders(existingHeaders = {}) {
  * @param {string} key
  * @returns {Promise<{valid: boolean, message: string}>}
  */
-export async function validateAzureKey(key) {
+export async function validateAzureKey(key: string) {
     const res = await fetch(`${API_BASE}/validate-key`, {
         method: 'POST',
         headers: { 'X-Azure-Key': key },
@@ -41,7 +78,7 @@ export async function validateAzureKey(key) {
  * Detects HTML responses (common when backend is down and SPA catch-all serves index.html)
  * and provides actionable error messages.
  */
-async function safeJson(res, context) {
+async function safeJson(res: Response, context: string) {
     const contentType = res.headers.get('content-type') || '';
 
     // If response was redirected, the POST may have become a GET → served HTML
@@ -69,7 +106,7 @@ async function safeJson(res, context) {
  * @param {string} ocrEngine
  * @returns {Promise<{filename: string, text: string, char_count: number}>}
  */
-export async function uploadFile(file, ocrEngine = 'mistral_doc_ai', compress = true, vectorize = true, onProgress = null) {
+export async function uploadFile(file: File, ocrEngine = 'mistral_doc_ai', compress = true, vectorize = true, onProgress: ((info: UploadProgressInfo) => void) | null = null) {
     const form = new FormData();
     form.append('file', file);
     form.append('ocr_engine', ocrEngine);
@@ -142,7 +179,7 @@ export async function uploadFile(file, ocrEngine = 'mistral_doc_ai', compress = 
  * @param {string|null} params.uploadedText
  * @returns {Promise<{conversation_id: string, response: string, model: string}>}
  */
-export async function sendMessage({ message, model, llm, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false, jurisprudenceContext = null }) {
+export async function sendMessage({ message, model, llm, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false, jurisprudenceContext = null }: SendMessageParams) {
     const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -180,7 +217,7 @@ export async function sendMessage({ message, model, llm, agentPrompt, conversati
  * @param {function} [onProgress] - Optional callback for progress updates (receives progress string)
  * @returns {Promise<{report: object, file_count: number}>}
  */
-export async function uploadBatchXray(files, onProgress = null) {
+export async function uploadBatchXray(files: File[], onProgress: ((progress: string) => void) | null = null) {
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
 
@@ -245,7 +282,7 @@ export async function uploadBatchXray(files, onProgress = null) {
  * @param {string} [llm] - LLM ID
  * @returns {Promise<{results: Array, total: number, ok_count: number}>}
  */
-export async function analyzeCluster(processes, agentPrompt = '', model = 'claude', llm = null) {
+export async function analyzeCluster(processes: Array<{ filename: string; text: string }>, agentPrompt = '', model = 'claude', llm: string | null = null) {
     const res = await fetch(`${API_BASE}/cluster-analyze`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -273,7 +310,7 @@ export async function analyzeCluster(processes, agentPrompt = '', model = 'claud
  * @param {string} [params.agentPrompt] - Agent system prompt (optional)
  * @returns {Promise<{results: Array, total: number, ok_count: number, total_alerts: number}>}
  */
-export async function replicateBatchPilot({ pilotInstructions, pilotMinuta, pilotSummary, processes, model, llm, agentPrompt }) {
+export async function replicateBatchPilot({ pilotInstructions, pilotMinuta, pilotSummary, processes, model, llm, agentPrompt }: ReplicateBatchPilotParams) {
     const res = await fetch(`${API_BASE}/batch-pilot/replicate`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -303,7 +340,7 @@ export async function replicateBatchPilot({ pilotInstructions, pilotMinuta, pilo
  * @param {File[]} files - Template files (PDF/DOCX/TXT)
  * @returns {Promise<{dossier: string, glossary: string, cloning_prompt: string, full_response: string, file_count: number}>}
  */
-export async function generateStyleReport(files) {
+export async function generateStyleReport(files: File[]) {
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
 
@@ -332,7 +369,7 @@ export async function generateStyleReport(files) {
  * @param {File[]} files - Template files (PDF/DOCX/TXT)
  * @returns {Promise<{indexed_chunks: number, file_count: number, has_dossier: boolean, cloning_prompt: string}>}
  */
-export async function uploadTemplates(files) {
+export async function uploadTemplates(files: File[]) {
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
 
@@ -395,7 +432,7 @@ export async function listTemplates() {
  * @param {string} filename - Source filename to delete
  * @returns {Promise<{status: string, removed_chunks: number, remaining_templates: number}>}
  */
-export async function deleteTemplate(filename) {
+export async function deleteTemplate(filename: string) {
     const res = await fetch(`${API_BASE}/templates/${encodeURIComponent(filename)}`, {
         method: 'DELETE',
         headers: await getAuthHeaders(),
@@ -412,7 +449,7 @@ export async function deleteTemplate(filename) {
  * @param {string} query - Natural language search query
  * @returns {Promise<{summary: string, results: Array, total: number, query: string}>}
  */
-export async function askTemplates(query) {
+export async function askTemplates(query: string) {
     const res = await fetch(`${API_BASE}/templates/ask`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -446,7 +483,7 @@ export async function extractThemes() {
  * @param {string} theme - Theme title to verify
  * @returns {Promise<{status: string, theme: string, majority_understanding: string, model_approach: string, comparison: string, alert: object|null, acordaos: Array}>}
  */
-export async function verifyTheme(theme) {
+export async function verifyTheme(theme: string) {
     const res = await fetch(`${API_BASE}/templates/verify-theme`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -473,13 +510,13 @@ export async function verifyTheme(theme) {
  * @param {number} [filters.pageSize] - Results per page
  * @returns {Promise<{results: Array, total: number, page: number, pages: number}>}
  */
-export async function searchJurisprudencia(query, filters = {}) {
+export async function searchJurisprudencia(query: string, filters: JurisprudenciaFilters = {}) {
     const params = new URLSearchParams({ q: query });
-    if (filters.anoInicio) params.set('ano_inicio', filters.anoInicio);
-    if (filters.anoFim) params.set('ano_fim', filters.anoFim);
+    if (filters.anoInicio) params.set('ano_inicio', String(filters.anoInicio));
+    if (filters.anoFim) params.set('ano_fim', String(filters.anoFim));
     if (filters.tipo) params.set('tipo', filters.tipo);
-    if (filters.page) params.set('page', filters.page);
-    if (filters.pageSize) params.set('page_size', filters.pageSize);
+    if (filters.page) params.set('page', String(filters.page));
+    if (filters.pageSize) params.set('page_size', String(filters.pageSize));
 
     const res = await fetch(`${API_BASE}/jurisprudencia/search?${params}`, {
         headers: await getAuthHeaders(),
@@ -498,7 +535,7 @@ export async function searchJurisprudencia(query, filters = {}) {
  * @param {number} docId
  * @returns {Promise<{id: number, numero_processo: string, texto_completo: string, ...}>}
  */
-export async function getJurisprudenciaDoc(docId) {
+export async function getJurisprudenciaDoc(docId: number) {
     const res = await fetch(`${API_BASE}/jurisprudencia/doc/${docId}`, {
         headers: await getAuthHeaders(),
     });
@@ -530,8 +567,8 @@ export async function getJurisprudenciaStats() {
  * @param {object} [filters] - Optional filters
  * @returns {Promise<{summary: string, results: Array, total: number, query: string, mode: string}>}
  */
-export async function askJurisprudencia(query, filters = {}) {
-    const body = { query };
+export async function askJurisprudencia(query: string, filters: JurisprudenciaFilters = {}) {
+    const body: Record<string, string | number> = { query };
     if (filters.anoInicio) body.ano_inicio = filters.anoInicio;
     if (filters.anoFim) body.ano_fim = filters.anoFim;
     if (filters.tipo) body.tipo = filters.tipo;
@@ -556,7 +593,7 @@ export async function askJurisprudencia(query, filters = {}) {
  * @param {string} analysisText - Latest assistant analysis text (for theme extraction)
  * @returns {Promise<{task_id: string, status: string}>}
  */
-export async function triggerJurisprudenciaResearch(uploadedText, analysisText = '') {
+export async function triggerJurisprudenciaResearch(uploadedText: string, analysisText = '') {
     const res = await fetch(`${API_BASE}/jurisprudencia/research`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -580,7 +617,7 @@ export async function triggerJurisprudenciaResearch(uploadedText, analysisText =
  * @param {string} taskId - Task ID returned from research trigger
  * @returns {Promise<{status: string, result?: object, error?: string, progress?: string}>}
  */
-export async function pollJurisprudenciaResearch(taskId) {
+export async function pollJurisprudenciaResearch(taskId: string) {
     const res = await fetch(`${API_BASE}/jurisprudencia/research/${taskId}`, {
         headers: await getAuthHeaders(),
     }).catch(() => null);
@@ -597,7 +634,7 @@ export async function pollJurisprudenciaResearch(taskId) {
  * @param {{ name: string, prompt: string, color: string }} agent
  * @returns {Promise<{ id: string, name: string, prompt: string, color: string }>}
  */
-export async function createCustomAgent(agent) {
+export async function createCustomAgent(agent: { name: string; prompt: string; color: string }) {
     const res = await fetch(`${API_BASE}/custom-agents`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -628,7 +665,7 @@ export async function getCustomAgents() {
  * @param {string} agentId
  * @returns {Promise<{ status: string }>}
  */
-export async function deleteCustomAgent(agentId) {
+export async function deleteCustomAgent(agentId: string) {
     const res = await fetch(`${API_BASE}/custom-agents/${encodeURIComponent(agentId)}`, {
         method: 'DELETE',
         headers: await getAuthHeaders(),
@@ -646,7 +683,7 @@ export async function deleteCustomAgent(agentId) {
  * @param {string} email
  * @returns {Promise<{ status: string }>}
  */
-export async function shareCustomAgent(agentId, email) {
+export async function shareCustomAgent(agentId: string, email: string) {
     const res = await fetch(`${API_BASE}/custom-agents/${encodeURIComponent(agentId)}/share`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -700,7 +737,7 @@ export async function getMemory() {
  * @param {boolean} enabled - Whether memory injection is active
  * @returns {Promise<{content: string, enabled: boolean}>}
  */
-export async function saveMemory(content, enabled = true) {
+export async function saveMemory(content: string, enabled = true) {
     const res = await fetch(`${API_BASE}/memory`, {
         method: 'PUT',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),

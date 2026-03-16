@@ -133,8 +133,8 @@ Se você assimilou as regras de auditoria estrita, o isolamento de função e o 
 *"SISTEMA DE AUDITORIA E COMPLIANCE (QA V 2.0) CARREGADO. MODO CARA-CRACHÁ ATIVADO. AGUARDANDO OS [DADOS DO PROCESSO] E A [MINUTA] NO FORMATO SANDUÍCHE DUPLO."*
 `;
 
-import { ARQUIVO_A_SOBRESTAMENTOS } from './arquivoASobrestamentos.js';
-import { ARQUIVO_B_SUMULAS } from './arquivoBSumulas.js';
-import { ARQUIVO_C_QUALIFICADOS } from './arquivoCQualificados.js';
+import { ARQUIVO_A_SOBRESTAMENTOS } from './arquivoASobrestamentos';
+import { ARQUIVO_B_SUMULAS } from './arquivoBSumulas';
+import { ARQUIVO_C_QUALIFICADOS } from './arquivoCQualificados';
 
 export default PROMPT_AUDITOR_QA + '\n\n' + ARQUIVO_A_SOBRESTAMENTOS + '\n\n' + ARQUIVO_B_SUMULAS + '\n\n' + ARQUIVO_C_QUALIFICADOS;
