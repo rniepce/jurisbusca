@@ -10,10 +10,7 @@ cmds = [
 [phases.build]
 cmds = ["cd frontend && npm run build"]
 
-[variables]
-VITE_SUPABASE_URL = "https://egrjeeiwqnqaeopgvinl.supabase.co"
-VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVncmplZWl3cW5xYWVvcGd2aW5sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMTY2OTIsImV4cCI6MjA4Nzc5MjY5Mn0.C7rFJmummGDSWWZwyBq3WNvMDaDvgeZwrODhPDR4fgI"
-SUPABASE_URL = "https://egrjeeiwqnqaeopgvinl.supabase.co"
+# Variables are injected via Railway env vars — never hardcode keys here
 
 [start]
 cmd = "bash start.sh"

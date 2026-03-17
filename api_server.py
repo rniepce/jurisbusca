@@ -6,6 +6,7 @@ import os
 import json
 import uuid
 import hashlib
+import logging
 import tempfile
 import traceback
 import threading
@@ -18,27 +19,40 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
+from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+import jwt  # PyJWT
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 import backend as be
 import history_db
+
+# ── Structured Logging (COARF §XI — logs as event stream to stdout) ───────────
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    level=logging.INFO,
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger("jurisbusca")
 
 # ── Local SLM Engine (Apple Silicon only) ─────────────────────────────────────
 try:
     import slm_engine
     HAS_SLM = slm_engine.is_available()
     if HAS_SLM:
-        print("🧠 SLM Engine disponível (MLX). Opção 'SLMs Locais' ativa.")
+        logger.info("SLM Engine disponível (MLX). Opção 'SLMs Locais' ativa.")
     else:
-        print("⚠️ MLX não instalado. SLM Engine desabilitado.")
+        logger.warning("MLX não instalado. SLM Engine desabilitado.")
 except ImportError:
     HAS_SLM = False
     slm_engine = None
-    print("⚠️ slm_engine.py não encontrado. SLM Engine desabilitado.")
+    logger.warning("slm_engine.py não encontrado. SLM Engine desabilitado.")
 
 # ── SLM Orchestrator (Pipeline multi-modelo) ───────────────────────────────
 try:
@@ -46,11 +60,11 @@ try:
     HAS_SLM_ORCHESTRATOR = HAS_SLM  # só funciona se MLX estiver disponível
     _slm_orchestrator = None  # lazy init
     if HAS_SLM_ORCHESTRATOR:
-        print("📦 SLM Orchestrator disponível. Engine 'V3 Local' ativa.")
+        logger.info("SLM Orchestrator disponível. Engine 'V3 Local' ativa.")
 except ImportError:
     HAS_SLM_ORCHESTRATOR = False
     _slm_orchestrator = None
-    print("⚠️ slm_orchestrator.py não encontrado.")
+    logger.warning("slm_orchestrator.py não encontrado.")
 
 # ── Remote SLM Server (Hybrid: Railway → MacBook via Tunnel) ───────────────
 import httpx
@@ -59,7 +73,7 @@ SLM_SERVER_URL = os.environ.get("SLM_SERVER_URL", "").rstrip("/")  # ex: https:/
 SLM_SERVER_KEY = os.environ.get("SLM_SERVER_KEY", "")
 HAS_REMOTE_SLM = bool(SLM_SERVER_URL)
 if HAS_REMOTE_SLM:
-    print(f"🌐 SLM Server remoto configurado: {SLM_SERVER_URL}")
+    logger.info("SLM Server remoto configurado: %s", SLM_SERVER_URL)
 
 
 def _call_remote_slm(processo_text: str, estilo: str = "") -> dict:
@@ -100,25 +114,71 @@ def _check_remote_slm_health() -> dict:
 
 @asynccontextmanager
 async def lifespan(app):
-    print("\n🚀 Registered routes:")
+    logger.info("🚀 Registered routes:")
     for route in app.routes:
         methods = getattr(route, 'methods', None)
         path = getattr(route, 'path', getattr(route, 'path_regex', '?'))
-        print(f"   {methods or 'MOUNT'} {path}")
-    print()
+        logger.info("   %s %s", methods or 'MOUNT', path)
     yield
 
 app = FastAPI(title="Jurisbusca API", version="1.0.0", lifespan=lifespan)
 
-# (startup logging moved to lifespan context manager above)
+# ── Rate Limiting (CESEC §2.2 — rate limiting após tentativas excessivas) ─────
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
 
-# CORS — allow Vite dev server
+@app.exception_handler(RateLimitExceeded)
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    logger.warning("Rate limit exceeded: ip=%s path=%s", get_remote_address(request), request.url.path)
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Limite de requisições excedido. Tente novamente em breve."},
+    )
+
+# ── CORS — dynamic origins (CESEC §5.2) ──────────────────────────────────────
+_cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+_extra_origins = os.getenv("CORS_ORIGINS", "")
+if _extra_origins:
+    _cors_origins.extend([o.strip() for o in _extra_origins.split(",") if o.strip()])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+logger.info("CORS origins: %s", _cors_origins)
+
+# ── JWT Authentication (CESEC §2.2 — verificação de assinatura) ──────────────
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+_security_scheme = HTTPBearer(auto_error=False)
+
+
+def verify_jwt(token: str) -> dict:
+    """Verify Supabase JWT signature and return decoded payload."""
+    if not SUPABASE_JWT_SECRET:
+        logger.warning("SUPABASE_JWT_SECRET not set — JWT verification disabled")
+        # Graceful degradation: decode without verification (dev only)
+        return jwt.decode(token, options={"verify_signature": False})
+    return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
+
+
+async def require_auth(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Security(_security_scheme),
+) -> dict:
+    """FastAPI dependency: requires valid JWT. Returns decoded payload."""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Token não fornecido. Faça login.")
+    try:
+        payload = verify_jwt(credentials.credentials)
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expirado. Faça login novamente.")
+    except jwt.InvalidTokenError as e:
+        logger.warning("Invalid JWT from %s: %s", get_remote_address(request), str(e)[:100])
+        raise HTTPException(status_code=401, detail="Token inválido.")
+
 
 # ── In-memory conversation store (fallback) ──────────────────────────────
 conversations_fallback: dict[str, list[dict]] = {}
@@ -130,8 +190,6 @@ conversations_fallback: dict[str, list[dict]] = {}
 # Key: task_id, Value: {"status": str, "result": dict|None, "error": str|None, "progress": str}
 _bg_tasks: dict[str, dict] = {}
 _process_rag_cache: dict[str, tuple] = {}
-
-# ── Auth (disabled — open access) ─────────────────────────────────────────
 
 
 class ChatRequest(BaseModel):
@@ -178,6 +236,7 @@ async def health():
 
 
 @app.post("/api/validate-key")
+@limiter.limit("5/minute")
 async def validate_key(request: Request):
     """Test if an Azure OpenAI API key is valid by making a minimal LLM call."""
     key = request.headers.get("X-Azure-Key", "").strip()
@@ -215,19 +274,20 @@ class MemoryRequest(BaseModel):
 
 
 @app.get("/api/memory")
-async def get_memory_endpoint():
+async def get_memory_endpoint(_auth: dict = Depends(require_auth)):
     """Get user memory/preferences."""
     return history_db.get_memory("default")
 
 
 @app.put("/api/memory")
-async def save_memory_endpoint(req: MemoryRequest):
+async def save_memory_endpoint(req: MemoryRequest, _auth: dict = Depends(require_auth)):
     """Save user memory/preferences (max 2000 chars)."""
     return history_db.save_memory("default", req.content, req.enabled)
 
 
 @app.post("/api/chat")
-async def chat(req: ChatRequest, request: Request):
+@limiter.limit("30/minute")
+async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require_auth)):
     """Process a chat message and return LLM response."""
     try:
         # Resolve LLM deployment: prefer explicit llm field, fallback to MODEL_MAP
@@ -242,9 +302,9 @@ async def chat(req: ChatRequest, request: Request):
         if model_name != "local-slm":
             try:
                 llm = be.get_llm(model_name=model_name, temperature=0.3, api_key=azure_key)
-                print(f"✅ LLM instanciado: {model_name}")
+                logger.info("LLM instanciado: %s", model_name)
             except Exception as llm_err:
-                print(f"⚠️ Falha ao instanciar {model_name}: {llm_err}. Fallback para gpt-5.2-chat.")
+                logger.warning("Falha ao instanciar %s: %s. Fallback para gpt-5.2-chat.", model_name, llm_err)
                 model_name = "gpt-5.2-chat"
                 llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
 
@@ -271,7 +331,7 @@ async def chat(req: ChatRequest, request: Request):
                     f"{user_mem['content'].strip()}\n---"
                 )
         except Exception as mem_err:
-            print(f"⚠️ Erro ao carregar memória do usuário: {mem_err}")
+            logger.warning("Erro ao carregar memória do usuário: %s", mem_err)
 
         if req.agent_prompt:
             system_parts.append(req.agent_prompt)
@@ -298,7 +358,7 @@ async def chat(req: ChatRequest, request: Request):
                             f"{chunks_text}\n---"
                         )
                         total_tokens_approx = sum(len(d.page_content) for d in relevant_chunks) // 4
-                        print(f"🎯 RAG Processo: {len(relevant_chunks)} chunks recuperados (~{total_tokens_approx} tokens vs full text)")
+                        logger.info("RAG Processo: %d chunks recuperados (~%d tokens)", len(relevant_chunks), total_tokens_approx)
                     else:
                         # Fallback to full text if no chunks found
                         system_parts.append(
@@ -310,7 +370,7 @@ async def chat(req: ChatRequest, request: Request):
                         f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
                     )
             except Exception as e:
-                print(f"⚠️ Process RAG falhou, usando texto completo: {e}")
+                logger.warning("Process RAG falhou, usando texto completo: %s", e)
                 system_parts.append(
                     f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{req.uploaded_text}\n---"
                 )
@@ -380,7 +440,7 @@ async def chat(req: ChatRequest, request: Request):
                                 system_parts.append(style_block)
                             break
             except Exception as e:
-                print(f"⚠️ RAG auto-retrieval failed (non-blocking): {e}")
+                logger.warning("RAG auto-retrieval failed (non-blocking): %s", e)
 
         if system_parts:
             messages.append(SystemMessage(content="\n".join(system_parts)))
@@ -669,7 +729,7 @@ async def chat(req: ChatRequest, request: Request):
 
 
 @app.get("/api/history")
-async def get_history():
+async def get_history(_auth: dict = Depends(require_auth)):
     """Fetch conversation history (currently returns empty — no auth)."""
     return {"conversations": []}
 
@@ -706,7 +766,7 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
             cache_key = hashlib.md5(f"{filename}:{len(full_text)}".encode()).hexdigest()
             _process_rag_cache[cache_key] = (retriever, full_text, len(full_text))
             rag_available = True
-            print(f"🎯 Process RAG cached: key={cache_key[:8]}")
+            logger.info("Process RAG cached: key=%s", cache_key[:8])
 
         _bg_tasks[task_id]["status"] = "done"
         _bg_tasks[task_id]["result"] = {
@@ -723,10 +783,13 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
 
 
 @app.post("/api/upload")
+@limiter.limit("10/minute")
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     ocr_engine: str = Form("paddle"),
     compress: bool = Form(True),
+    _auth: dict = Depends(require_auth),
 ):
     """Upload and extract text from a file. Returns task_id for polling."""
     try:
@@ -816,7 +879,7 @@ def _run_xray_background(task_id: str, file_data: list[tuple[str, bytes]]):
 
 
 @app.post("/api/xray")
-async def batch_xray(files: list[UploadFile] = File(...)):
+async def batch_xray(files: list[UploadFile] = File(...), _auth: dict = Depends(require_auth)):
     """
     Batch X-Ray: upload files and start background MAP-REDUCE clustering.
     Returns a task_id immediately — poll GET /api/xray/{task_id} for results.
@@ -879,7 +942,7 @@ async def xray_status(task_id: str):
 
 
 @app.post("/api/style-report")
-async def style_report(files: list[UploadFile] = File(...)):
+async def style_report(files: list[UploadFile] = File(...), _auth: dict = Depends(require_auth)):
     """
     Generate a Style Dossier (Dossiê de Identidade Decisional) from template files.
     Uses the existing generate_style_dossier pipeline in backend.py.
@@ -1006,7 +1069,7 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
 
 
 @app.post("/api/cluster-analyze")
-async def cluster_analyze(req: ClusterAnalyzeRequest):
+async def cluster_analyze(req: ClusterAnalyzeRequest, _auth: dict = Depends(require_auth)):
     """
     Process all files in a cluster individually, in parallel.
     Returns a list of individual analysis results.
@@ -1212,7 +1275,7 @@ def _replicate_single_process(
 
 
 @app.post("/api/batch-pilot/replicate")
-async def batch_pilot_replicate(req: BatchPilotReplicateRequest):
+async def batch_pilot_replicate(req: BatchPilotReplicateRequest, _auth: dict = Depends(require_auth)):
     """
     Replicate pilot case instructions + draft to remaining processes.
     Each process gets its own isolated LLM call with the pilot context.
@@ -1281,6 +1344,7 @@ async def batch_pilot_replicate(req: BatchPilotReplicateRequest):
 async def upload_templates(
     files: list[UploadFile] = File(...),
     request: Request = None,
+    _auth: dict = Depends(require_auth),
 ):
     """
     Upload and index template files in ChromaDB for persistent RAG.
@@ -1363,7 +1427,7 @@ async def templates_status(request: Request = None):
 
 
 @app.delete("/api/templates")
-async def clear_templates(request: Request = None):
+async def clear_templates(request: Request = None, _auth: dict = Depends(require_auth)):
     """Clear all indexed templates."""
     try:
         user_id = _extract_user_id(request) or "default"
@@ -1383,7 +1447,7 @@ async def clear_templates(request: Request = None):
 
 
 @app.get("/api/templates/list")
-async def list_templates_endpoint(request: Request = None):
+async def list_templates_endpoint(request: Request = None, _auth: dict = Depends(require_auth)):
     """List all indexed templates grouped by source filename."""
     try:
         user_id = _extract_user_id(request) or "default"
@@ -1396,7 +1460,7 @@ async def list_templates_endpoint(request: Request = None):
 
 
 @app.delete("/api/templates/{filename:path}")
-async def delete_template_endpoint(filename: str, request: Request = None):
+async def delete_template_endpoint(filename: str, request: Request = None, _auth: dict = Depends(require_auth)):
     """Delete all chunks from a specific source file."""
     try:
         user_id = _extract_user_id(request) or "default"
@@ -1413,7 +1477,7 @@ class AskTemplatesRequest(BaseModel):
 
 
 @app.post("/api/templates/ask")
-async def ask_templates_endpoint(req: AskTemplatesRequest, request: Request = None):
+async def ask_templates_endpoint(req: AskTemplatesRequest, request: Request = None, _auth: dict = Depends(require_auth)):
     """RAG query: search templates + generate LLM summary."""
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query é obrigatória.")
@@ -1452,7 +1516,7 @@ async def ask_templates_endpoint(req: AskTemplatesRequest, request: Request = No
 
 @app.post("/api/templates/themes")
 @app.post("/api/templates/extract-themes")
-async def extract_themes_endpoint(request: Request = None):
+async def extract_themes_endpoint(request: Request = None, _auth: dict = Depends(require_auth)):
     """Extract legal themes from indexed templates for verification."""
     try:
         user_id = _extract_user_id(request) or "default"
@@ -1515,7 +1579,7 @@ class VerifyThemeRequest(BaseModel):
 
 
 @app.post("/api/templates/verify-theme")
-async def verify_theme_endpoint(req: VerifyThemeRequest, request: Request = None):
+async def verify_theme_endpoint(req: VerifyThemeRequest, request: Request = None, _auth: dict = Depends(require_auth)):
     """Verify a legal theme against TJMG jurisprudence."""
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
@@ -1830,7 +1894,7 @@ class JurisResearchTriggerRequest(BaseModel):
 
 
 @app.post("/api/jurisprudencia/research")
-async def trigger_jurisprudencia_research(req: JurisResearchTriggerRequest):
+async def trigger_jurisprudencia_research(req: JurisResearchTriggerRequest, _auth: dict = Depends(require_auth)):
     """Trigger background jurisprudence research for a process."""
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
@@ -1894,7 +1958,7 @@ class ShareAgentRequest(BaseModel):
 
 
 @app.get("/api/custom-agents")
-async def list_custom_agents(request: Request = None):
+async def list_custom_agents(request: Request = None, _auth: dict = Depends(require_auth)):
     """List custom agents for the authenticated user."""
     # Extract user_id from JWT
     user_id = _extract_user_id(request)
@@ -1909,13 +1973,13 @@ async def list_custom_agents(request: Request = None):
             if resp.ok:
                 return {"agents": resp.json()}
         except Exception as e:
-            print(f"⚠️ Failed to list custom agents: {e}")
+            logger.error("Failed to list custom agents: %s", e)
 
     return {"agents": []}
 
 
 @app.post("/api/custom-agents")
-async def create_custom_agent(req: CreateAgentRequest, request: Request = None):
+async def create_custom_agent(req: CreateAgentRequest, request: Request = None, _auth: dict = Depends(require_auth)):
     """Create a custom agent."""
     user_id = _extract_user_id(request)
     if not user_id:
@@ -1939,13 +2003,13 @@ async def create_custom_agent(req: CreateAgentRequest, request: Request = None):
                 created = resp.json()
                 return created[0] if isinstance(created, list) else created
         except Exception as e:
-            print(f"⚠️ Failed to create agent: {e}")
+            logger.error("Failed to create agent: %s", e)
 
     return agent
 
 
 @app.delete("/api/custom-agents/{agent_id}")
-async def delete_custom_agent(agent_id: str, request: Request = None):
+async def delete_custom_agent(agent_id: str, request: Request = None, _auth: dict = Depends(require_auth)):
     """Delete a custom agent."""
     user_id = _extract_user_id(request)
     if not user_id:
@@ -1959,20 +2023,20 @@ async def delete_custom_agent(agent_id: str, request: Request = None):
             if resp.ok:
                 return {"status": "ok"}
         except Exception as e:
-            print(f"⚠️ Failed to delete agent: {e}")
+            logger.error("Failed to delete agent: %s", e)
 
     return {"status": "ok"}
 
 
 @app.post("/api/custom-agents/{agent_id}/share")
-async def share_custom_agent(agent_id: str, req: ShareAgentRequest, request: Request = None):
+async def share_custom_agent(agent_id: str, req: ShareAgentRequest, request: Request = None, _auth: dict = Depends(require_auth)):
     """Share a custom agent with another user by email."""
     # Placeholder — copies agent data for target user
     return {"status": "ok", "message": f"Compartilhamento de {agent_id} para {req.email} registrado."}
 
 
 def _extract_user_id(request) -> str:
-    """Extract user_id from JWT in Authorization header."""
+    """Extract user_id from JWT in Authorization header (with signature verification)."""
     if not request:
         return ""
     auth = request.headers.get("Authorization", "")
@@ -1980,13 +2044,8 @@ def _extract_user_id(request) -> str:
         return ""
     token = auth[7:]
     try:
-        import base64
-        # Decode JWT payload (middle part)
-        payload = token.split(".")[1]
-        # Add padding
-        payload += "=" * (4 - len(payload) % 4)
-        decoded = json.loads(base64.urlsafe_b64decode(payload))
-        return decoded.get("sub", "")
+        payload = verify_jwt(token)
+        return payload.get("sub", "")
     except Exception:
         return ""
 
@@ -2007,13 +2066,13 @@ try:
     import jurisprudence_search as jsearch
     HAS_JURISPRUDENCIA = jsearch.is_available()
     if HAS_JURISPRUDENCIA:
-        print("📚 Banco de jurisprudência disponível.")
+        logger.info("Banco de jurisprudência disponível.")
     else:
-        print("⚠️ Banco de jurisprudência não encontrado. Execute: python jurisprudence_indexer.py")
+        logger.warning("Banco de jurisprudência não encontrado. Execute: python jurisprudence_indexer.py")
 except ImportError:
     HAS_JURISPRUDENCIA = False
     jsearch = None
-    print("⚠️ Módulo jurisprudence_search não disponível.")
+    logger.warning("Módulo jurisprudence_search não disponível.")
 
 
 @app.get("/api/jurisprudencia/search")
@@ -2025,6 +2084,7 @@ async def jurisprudencia_search(
     page: int = 1,
     page_size: int = 20,
     mode: str = "semantic",
+    _auth: dict = Depends(require_auth),
 ):
     """Full-text or semantic search across TJMG case law database.
     
@@ -2113,7 +2173,7 @@ class JurisprudenciaAskRequest(BaseModel):
     tipo: str = ""
 
 @app.post("/api/jurisprudencia/ask")
-async def jurisprudencia_ask(req: JurisprudenciaAskRequest):
+async def jurisprudencia_ask(req: JurisprudenciaAskRequest, _auth: dict = Depends(require_auth)):
     """
     RAG: busca semântica + resumo por LLM.
     Retorna um resumo inteligente dos acórdãos mais relevantes + os resultados brutos.
@@ -2209,7 +2269,7 @@ async def jurisprudencia_ask(req: JurisprudenciaAskRequest):
 
 
 @app.get("/api/jurisprudencia/doc/{doc_id}")
-async def jurisprudencia_doc(doc_id: int):
+async def jurisprudencia_doc(doc_id: int, _auth: dict = Depends(require_auth)):
     """Retrieve full text of a specific case law document."""
     if not HAS_JURISPRUDENCIA:
         raise HTTPException(status_code=503, detail="Banco de jurisprudência não disponível.")
