@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaKey } from 'react-icons/fa';
+import { FaKey, FaBook, FaCircleQuestion } from 'react-icons/fa6';
 import { LuPanelLeftClose, LuPanelLeftOpen } from 'react-icons/lu';
 import { validateAzureKey } from '../services/api';
 import { useAuth } from './AuthContext';
@@ -7,7 +7,7 @@ import { FaUserCircle } from 'react-icons/fa';
 import logoSvg from '../assets/logo.svg';
 import './Header.css';
 
-const Header = ({ onMenuClick, isOpen }) => {
+const Header = ({ onMenuClick, isOpen, onOpenModelManager }) => {
     const [keyOpen, setKeyOpen] = useState(false);
     const [keyValue, setKeyValue] = useState('');
     const [keyStatus, setKeyStatus] = useState('unknown'); // 'unknown' | 'valid' | 'invalid' | 'checking'
@@ -136,13 +136,20 @@ const Header = ({ onMenuClick, isOpen }) => {
                     )}
                 </div>
 
+                <div className="header-actions">
+                    <button className="gestor-modelos-btn" onClick={() => onOpenModelManager && onOpenModelManager()}>
+                        <FaBook size={14} />
+                        Gestor de Modelos
+                    </button>
+                    <button className="header-icon-btn" aria-label="Ajuda">
+                        <FaCircleQuestion size={18} />
+                    </button>
+                </div>
+
                 {/* User Profile */}
                 {user && (
                     <div className="user-profile">
-                        <div className="user-info">
-                            <FaUserCircle className="user-avatar" size={20} />
-                            <span className="user-name">{user.user_metadata?.full_name || user.email}</span>
-                        </div>
+                        <span className="user-name">{user.user_metadata?.full_name || user.email}</span>
                         <button className="logout-btn" onClick={signOut} title="Sair da conta">
                             Sair
                         </button>

@@ -10,17 +10,17 @@
 }
 
 .welcome-title {
-    font-size: 1.4rem;
+    font-size: 2rem;
     font-weight: 700;
     color: #1e293b;
-    margin: 0;
+    margin: 0 0 8px 0;
 }
 
 .welcome-hint {
-    font-size: 0.92rem;
+    font-size: 1.1rem;
     color: #64748b;
     margin: 0;
-    max-width: 420px;
+    max-width: 500px;
 }
 
 /* ── Action Cards ────────────────────────────────────────────────── */
@@ -36,26 +36,29 @@
 .welcome-action-card {
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 16px 24px;
+    justify-content: center;
+    gap: 16px;
+    padding: 20px 32px;
     background: #fff;
-    border: 1.5px solid #e2e8f0;
-    border-radius: 12px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 100px;
     cursor: pointer;
     transition: all 0.25s ease;
     text-align: left;
     font-family: inherit;
-    min-width: 280px;
+    min-width: 320px;
+    margin: 0 auto;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 }
 
 .welcome-action-card:hover {
-    border-color: #818cf8;
-    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.12);
-    transform: translateY(-2px);
+    border-color: var(--primary-color, #3b82f6);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    transform: translateY(-4px);
 }
 
 .welcome-action-icon {
-    color: #6366f1;
+    color: var(--primary-color, #3b82f6);
     flex-shrink: 0;
 }
 

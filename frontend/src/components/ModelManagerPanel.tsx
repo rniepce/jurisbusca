@@ -521,7 +521,7 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
                             {uploading ? (
                                 <><FaSpinner size={13} className="spin" /> Indexando...</>
                             ) : (
-                                <><FaPlus size={13} /> Adicionar</>
+                                <><FaPlus size={13} /> Adicionar Modelo</>
                             )}
                         </button>
                         {onClose && (

@@ -220,29 +220,61 @@
     background: #fff3e0;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-right: 16px;
+}
+
+.gestor-modelos-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #fff;
+    color: var(--primary-color, #3b82f6);
+    border: 1px solid var(--primary-color, #3b82f6);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.gestor-modelos-btn:hover {
+    background: var(--primary-color, #3b82f6);
+    color: #fff;
+}
+
+.header-icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+}
+
+.header-icon-btn:hover {
+    color: #3b82f6;
+}
+
 /* User Profile Options */
 .user-profile {
     display: flex;
     align-items: center;
     gap: 1rem;
     padding-left: 1rem;
-    border-left: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.user-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--text-secondary);
-}
-
-.user-avatar {
-    color: var(--primary);
+    border-left: 1px solid var(--border-color, #e0e0e0);
 }
 
 .user-name {
-    font-size: 0.85rem;
+    font-size: 14px;
     font-weight: 500;
+    color: var(--text-color, #1a1a1a);
     max-width: 150px;
     white-space: nowrap;
     overflow: hidden;
@@ -250,20 +282,20 @@
 }
 
 .logout-btn {
-    background: transparent;
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: #fff;
+    border: 1px solid #e2e8f0;
     color: #ef4444;
-    padding: 0.3rem 0.75rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .logout-btn:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.5);
+    background: #fef2f2;
+    border-color: #fecaca;
 }
 
 /* ===== MOBILE ===== */

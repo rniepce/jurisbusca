@@ -1011,7 +1011,7 @@ function MainApp() {
       />
 
       <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
-        <Header onMenuClick={toggleSidebar} isOpen={sidebarOpen} />
+        <Header onMenuClick={toggleSidebar} isOpen={sidebarOpen} onOpenModelManager={() => setShowModelManager(true)} />
 
         <div className={`main-content ${showBatchPanel ? 'with-batch' : ''} ${canvasOpen ? 'with-canvas' : ''}`}>
           <div className={canvasOpen ? 'canvas-chat-pane' : undefined}>
