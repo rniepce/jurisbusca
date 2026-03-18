@@ -210,7 +210,6 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
                         <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={() => onOpenModelManager && onOpenModelManager()}>
                             <FaBook />
                         </button>
-                        <button className="toolbar-btn" aria-label="Prompts"><FaSlash /></button>
                         <button
                             className={`toolbar-btn canvas-toggle-btn ${canvasOpen ? 'canvas-active' : ''}`}
                             aria-label={canvasOpen ? 'Fechar Canvas' : 'Abrir Canvas'}

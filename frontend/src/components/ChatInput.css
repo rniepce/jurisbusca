@@ -14,7 +14,8 @@
 }
 
 .toolbar-left,
-.toolbar-right {
+.toolbar-right,
+.toolbar-secondary-group {
     display: flex;
     align-items: center;
     gap: 8px;
