@@ -1452,9 +1452,7 @@ def _load_template_store(user_id: str = "default", token: str = ""):
                     print(f"✅ Templates carregados do Supabase: {len(rows)} chunks (user {user_id[:8]})")
                     return
                 else:
-                    print(f"📭 Nenhum template no Supabase para user {user_id[:8]}")
-                    _template_store[user_id] = []
-                    return
+                    print(f"📭 Nenhum template no Supabase para user {user_id[:8]}, tentando JSON local...")
             else:
                 print(f"⚠️ Supabase load failed ({resp.status_code}): {resp.text[:200]}")
         except Exception as e:
