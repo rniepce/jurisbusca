@@ -22,7 +22,6 @@ try:
 except ImportError as e:
     print(f"⚠️ ocr_engine não disponível (ImportError): {e}")
 except Exception as e:
-    import traceback
     print(f"⚠️ Erro ao importar ocr_engine: {e}")
     traceback.print_exc()
 
@@ -73,10 +72,7 @@ except Exception as e:
 
 
 from langchain_community.vectorstores import Chroma
-# from langchain_huggingface import HuggingFaceEmbeddings # Não usado (Railway usa Google Embeddings)
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-# from langchain_ollama import ChatOllama # Removido para deploy Gemini Only
-# from langchain_openai import ChatOpenAI, OpenAIEmbeddings # Removido para deploy Gemini Only
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 import json
 import gc
@@ -109,12 +105,8 @@ except ImportError:
 
 # Legacy flag kept for compatibility checks elsewhere
 HAS_ANTHROPIC = HAS_AZURE_OPENAI
-# from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_ANALISE_MATERIAL, PROMPT_RELATOR_FINAL
-# (Re-enabling imports for V2 Ensemble)
 from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_JUIZ_DEEPSEEK, PROMPT_REDATOR_CLAUDE, PROMPT_AUDITOR_GPT
 from prompts_claude import PROMPT_CLAUDE_INTEGRAL, PROMPT_GPT_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH, PROMPT_GPT_FIXER
-# V1 Imports
-# (Already imported above)
 
 # V2 Imports (Agentic)
 try:
@@ -132,7 +124,6 @@ _style_dossier_cache = {}
 
 def _template_cache_key(template_files, user_id="default"):
     """Gera chave de cache baseada nos nomes dos arquivos de template + user_id."""
-    import hashlib
     names = sorted([getattr(f, 'name', str(f)) for f in template_files])
     return hashlib.md5('|'.join(names).encode()).hexdigest()
 
@@ -243,9 +234,8 @@ def clean_text(text: str) -> str:
     # 1. Normalização de quebras de linha
     text = text.replace('\r', '')
     
-    # 2. Remove cabeçalhos de numeração de processo (ex: "Processo nº 1234..." repetido)
-    text = re.sub(r'(?i)(fls\.?\s*\d+|processo\s*nº?[:\s]*[\d\.\-]+)', '', text)
-    
+    # 2. (Preservado) Números de processo e folhas são juridicamente essenciais — não remover
+
     # 3. Remove rodapés de escritório/sistema e assinaturas digitais
     # Padrão comum: "PJe - Assinado eletronicamente" ou "Documento assinado digitalmente"
     text = re.sub(r'(?i)(assinado\s+eletronicamente|documento\s+assinado|pje|assinatura\s+digital).*', '', text) 
@@ -446,29 +436,24 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
         try:
             _progress(f"🔗 Vetorizando {len(splits)} chunks com embeddings...", 80)
             embedding_function = get_embedding_function(api_key=api_key)
-            
-            import signal
-            
-            # Timeout para a vetorização inteira (5 min max)
+
+            # Timeout para a vetorização inteira (5 min max) — usa thread, compatível com background tasks
             RAG_TIMEOUT = 300
-            
-            def _timeout_handler(signum, frame):
-                raise TimeoutError(f"Vetorização excedeu {RAG_TIMEOUT}s")
-            
-            # Configura timeout (apenas em Unix/Mac)
-            old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(RAG_TIMEOUT)
-            
-            try:
-                vectorstore = Chroma.from_documents(
+
+            def _do_vectorize():
+                vs = Chroma.from_documents(
                     documents=splits,
                     embedding=embedding_function,
                     collection_name="temp_process_analysis"
                 )
-                retriever = vectorstore.as_retriever(search_kwargs={"k": 15})
-            finally:
-                signal.alarm(0)  # Cancela o alarm
-                signal.signal(signal.SIGALRM, old_handler)  # Restaura handler
+                return vs.as_retriever(search_kwargs={"k": 15})
+
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _executor:
+                    _future = _executor.submit(_do_vectorize)
+                    retriever = _future.result(timeout=RAG_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                raise TimeoutError(f"Vetorização excedeu {RAG_TIMEOUT}s")
             
             _progress(f"✅ RAG indexado: {len(splits)} chunks vetorizados", 95)
             return full_text, retriever
@@ -481,7 +466,6 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
             return full_text, None
         
     except Exception as e:
-        import traceback
         traceback.print_exc()
         return f"Erro ao processar arquivo: {str(e)}", None
     finally:
@@ -817,7 +801,6 @@ def generate_style_dossier(template_files, api_key):
         
     except Exception as e:
         print(f"❌ Erro ao gerar Dossiê de Estilo: {e}")
-        import traceback
         traceback.print_exc()
         return {"error": f"Erro ao gerar dossiê: {str(e)}"}
 
@@ -1303,7 +1286,7 @@ def extract_legal_themes(process_text: str) -> str:
     Returns a concise theme string for retriever queries.
     """
     try:
-        llm = get_llm("gpt-4.1-mini", temperature=0.0, max_tokens=200)
+        llm = get_llm("gpt-5.4-mini", temperature=0.0, max_tokens=200)
         messages = [
             SystemMessage(content=(
                 "Você é um classificador jurídico. Dado o texto de um processo, extraia os 3 a 5 temas jurídicos centrais "
@@ -1658,10 +1641,10 @@ def search_templates(user_id: str, query: str, k: int = 5, token: str = "") -> l
 def generate_style_report(documents, api_key):
     """
     Usa um modelo rápido para ler os templates e criar um perfil de estilo.
-    Migrado para Azure OpenAI (gpt-4.1-mini).
+    Migrado para Azure OpenAI (gpt-5.4-mini).
     """
     try:
-        llm_flash = get_llm("gpt-4.1-mini", temperature=0.3)
+        llm_flash = get_llm("gpt-5.4-mini", temperature=0.3)
         
         
         # Concatena amostras dos documentos (Random Sampling)
@@ -1745,7 +1728,7 @@ def map_process_individual(text_content, filename, api_key=None):
 
     for attempt in range(MAX_RETRIES + 1):
         try:
-            llm = get_llm("gpt-4.1-mini", temperature=0.1)
+            llm = get_llm("gpt-5.4-mini", temperature=0.1)
             
             # Força strict JSON no prompt
             map_prompt = PROMPT_XRAY_MAP + "\n\nCRÍTICO: Retorne APENAS UM JSON (Strict JSON). Nenhuma palavra fora das chaves {}."
@@ -1769,7 +1752,7 @@ def map_process_individual(text_content, filename, api_key=None):
                 print(f"⚠️ Rate limit (429) no Map de {filename}, retry {attempt + 1}/{MAX_RETRIES} após {delay}s...")
                 _time.sleep(delay)
                 continue
-            print(f"Falha total no Map de {filename} com gpt-4.1-mini (Azure). Erro: {e}")
+            print(f"Falha total no Map de {filename} com gpt-5.4-mini (Azure). Erro: {e}")
             return {
                 "filename": filename, 
                 "error": f"Falha na leitura (GPT-4.1-mini). Err: {str(e)}", 
@@ -1886,7 +1869,7 @@ def generate_batch_xray(files, api_key, template_files=None, progress_callback=N
 
         for reduce_attempt in range(MAX_REDUCE_RETRIES + 1):
             try:
-                llm_reduce = get_llm("gpt-4.1-mini", temperature=0.1)
+                llm_reduce = get_llm("gpt-5.4-mini", temperature=0.1)
                 
                 # Força JSON
                 reduce_prompt = PROMPT_XRAY_BATCH + "\n\nCRÍTICO: Retorne APENAS UM JSON VÁLIDO. Sem Markdown, sem formatação extra, inicie com { e termine com }."

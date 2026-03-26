@@ -55,7 +55,7 @@ if __name__ == "__main__":
     print("=" * 50)
     print("TESTE 2: GPT-4.1-mini (com temperature)")
     print("=" * 50)
-    ok2 = test_model("gpt-4.1-mini", use_temp=True)
+    ok2 = test_model("gpt-5.4-mini", use_temp=True)
 
     print("=" * 50)
     if ok1 and ok2:

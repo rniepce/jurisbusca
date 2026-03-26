@@ -66,6 +66,14 @@ except ImportError:
     _slm_orchestrator = None
     logger.warning("slm_orchestrator.py não encontrado.")
 
+# ── Jurisprudência Search ──────────────────────────────────────────────────
+try:
+    from jurisprudence_search import search_jurisprudencia  # noqa: F401
+    HAS_JURISPRUDENCIA = True
+    logger.info("Módulo jurisprudence_search disponível.")
+except ImportError:
+    HAS_JURISPRUDENCIA = False
+
 # ── Remote SLM Server (Hybrid: Railway → MacBook via Tunnel) ───────────────
 import httpx
 
@@ -144,8 +152,8 @@ if _extra_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Azure-Key", "Accept"],
 )
 logger.info("CORS origins: %s", _cors_origins)
 
@@ -157,9 +165,8 @@ _security_scheme = HTTPBearer(auto_error=False)
 def verify_jwt(token: str) -> dict:
     """Verify Supabase JWT signature and return decoded payload."""
     if not SUPABASE_JWT_SECRET:
-        logger.warning("SUPABASE_JWT_SECRET not set — JWT verification disabled")
-        # Graceful degradation: decode without verification (dev only)
-        return jwt.decode(token, options={"verify_signature": False})
+        logger.error("SUPABASE_JWT_SECRET não configurada — autenticação bloqueada")
+        raise HTTPException(status_code=401, detail="Autenticação indisponível: servidor não configurado.")
     return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
 
 
@@ -181,15 +188,44 @@ async def require_auth(
 
 
 # ── In-memory conversation store (fallback) ──────────────────────────────
-conversations_fallback: dict[str, list[dict]] = {}
+import time as _time
+from collections import OrderedDict
 
-# ── In-memory process RAG cache (retriever per session) ──────────────────
-# Key: hash of uploaded filename+size, Value: (retriever, full_text, char_count)
+_CONVERSATIONS_FALLBACK_MAXSIZE = 500
+conversations_fallback: OrderedDict[str, list[dict]] = OrderedDict()
+
+def _conversations_set(conv_id: str, value: list):
+    """Bounded setter — evicts oldest entry when limit is reached."""
+    if conv_id in conversations_fallback:
+        conversations_fallback.move_to_end(conv_id)
+    else:
+        if len(conversations_fallback) >= _CONVERSATIONS_FALLBACK_MAXSIZE:
+            conversations_fallback.popitem(last=False)
+    conversations_fallback[conv_id] = value
+
+# ── In-memory process RAG cache (LRU, max 50 entries) ────────────────────
+_RAG_CACHE_MAXSIZE = 50
+_process_rag_cache: OrderedDict[str, tuple] = OrderedDict()
+
+def _rag_cache_set(key: str, value: tuple):
+    if key in _process_rag_cache:
+        _process_rag_cache.move_to_end(key)
+    else:
+        if len(_process_rag_cache) >= _RAG_CACHE_MAXSIZE:
+            _process_rag_cache.popitem(last=False)
+    _process_rag_cache[key] = value
 
 # ── In-memory background task store (shared: upload + xray) ───────────────
-# Key: task_id, Value: {"status": str, "result": dict|None, "error": str|None, "progress": str}
+# Key: task_id, Value: {"status": str, "result": dict|None, "error": str|None, "progress": str, "created_at": float}
 _bg_tasks: dict[str, dict] = {}
-_process_rag_cache: dict[str, tuple] = {}
+_BG_TASK_TTL = 3600  # 1 hour
+
+def _bg_tasks_cleanup():
+    """Remove tasks older than TTL that were never polled."""
+    now = _time.time()
+    expired = [k for k, v in _bg_tasks.items() if now - v.get("created_at", now) > _BG_TASK_TTL]
+    for k in expired:
+        del _bg_tasks[k]
 
 
 class ChatRequest(BaseModel):
@@ -256,7 +292,7 @@ async def validate_key(request: Request):
 
 
 @app.get("/api/debug-routes")
-async def debug_routes():
+async def debug_routes(_auth: dict = Depends(require_auth)):
     """Diagnostic: list all registered routes."""
     routes = []
     for route in app.routes:
@@ -276,13 +312,15 @@ class MemoryRequest(BaseModel):
 @app.get("/api/memory")
 async def get_memory_endpoint(_auth: dict = Depends(require_auth)):
     """Get user memory/preferences."""
-    return history_db.get_memory("default")
+    user_key = _auth.get("email") or _auth.get("sub", "default")
+    return history_db.get_memory(user_key)
 
 
 @app.put("/api/memory")
 async def save_memory_endpoint(req: MemoryRequest, _auth: dict = Depends(require_auth)):
     """Save user memory/preferences (max 2000 chars)."""
-    return history_db.save_memory("default", req.content, req.enabled)
+    user_key = _auth.get("email") or _auth.get("sub", "default")
+    return history_db.save_memory(user_key, req.content, req.enabled)
 
 
 @app.post("/api/chat")
@@ -313,7 +351,7 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
         # Fetch history (in-memory fallback, no auth)
         past_messages = []
         if conv_id not in conversations_fallback:
-            conversations_fallback[conv_id] = []
+            _conversations_set(conv_id, [])
         past_messages = conversations_fallback[conv_id]
 
         # ── Build LangChain message list with full history ──────────────
@@ -324,7 +362,8 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
 
         # ── Inject user memory/preferences as first context block ──────
         try:
-            user_mem = history_db.get_memory("default")
+            _user_key = _auth.get("email") or _auth.get("sub", "default")
+            user_mem = history_db.get_memory(_user_key)
             if user_mem["enabled"] and user_mem["content"].strip():
                 system_parts.append(
                     f"🧠 **MEMÓRIA/PREFERÊNCIAS DO USUÁRIO (considere sempre):**\n"
@@ -710,6 +749,7 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
                 "result": None,
                 "error": None,
                 "progress": "Extraindo temas jurídicos do processo...",
+                "created_at": _time.time(),
             }
             thread = threading.Thread(
                 target=_run_jurisprudence_research_background,
@@ -746,12 +786,13 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
             tmp_path = tmp.name
 
         try:
-            full_text, retriever = be.process_uploaded_file(
-                open(tmp_path, "rb"),
-                filename,
-                ocr_engine_choice=ocr_engine,
-                compress=compress,
-            )
+            with open(tmp_path, "rb") as f:
+                full_text, retriever = be.process_uploaded_file(
+                    f,
+                    filename,
+                    ocr_engine_choice=ocr_engine,
+                    compress=compress,
+                )
         finally:
             os.unlink(tmp_path)
 
@@ -764,7 +805,7 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
         rag_available = False
         if retriever:
             cache_key = hashlib.md5(f"{filename}:{len(full_text)}".encode()).hexdigest()
-            _process_rag_cache[cache_key] = (retriever, full_text, len(full_text))
+            _rag_cache_set(cache_key, (retriever, full_text, len(full_text)))
             rag_available = True
             logger.info("Process RAG cached: key=%s", cache_key[:8])
 
@@ -797,11 +838,13 @@ async def upload_file(
         filename = file.filename or "documento.pdf"
 
         task_id = str(uuid.uuid4())
+        _bg_tasks_cleanup()
         _bg_tasks[task_id] = {
             "status": "pending",
             "result": None,
             "error": None,
             "progress": f"Processando {filename}...",
+            "created_at": _time.time(),
         }
 
         thread = threading.Thread(
@@ -819,7 +862,7 @@ async def upload_file(
 
 
 @app.get("/api/upload/{task_id}")
-async def upload_status(task_id: str):
+async def upload_status(task_id: str, _auth: dict = Depends(require_auth)):
     """Poll the status of a background upload task."""
     task = _bg_tasks.get(task_id)
     if not task:
@@ -892,11 +935,13 @@ async def batch_xray(files: list[UploadFile] = File(...), _auth: dict = Depends(
             file_data.append((f.filename or "documento.pdf", content))
 
         task_id = str(uuid.uuid4())
+        _bg_tasks_cleanup()
         _bg_tasks[task_id] = {
             "status": "pending",
             "result": None,
             "error": None,
             "progress": "Tarefa criada, aguardando início...",
+            "created_at": _time.time(),
         }
 
         # Spawn background thread
@@ -915,7 +960,7 @@ async def batch_xray(files: list[UploadFile] = File(...), _auth: dict = Depends(
 
 
 @app.get("/api/xray/{task_id}")
-async def xray_status(task_id: str):
+async def xray_status(task_id: str, _auth: dict = Depends(require_auth)):
     """
     Poll the status of a background X-Ray task.
     Returns status ('pending', 'running', 'done', 'error') and result when done.
@@ -1496,7 +1541,7 @@ async def ask_templates_endpoint(req: AskTemplatesRequest, request: Request = No
         ])
 
         # 3. LLM summary
-        summary_llm = be.get_llm("gpt-4.1-mini", temperature=0.3, max_tokens=800)
+        summary_llm = be.get_llm("gpt-5.4-mini", temperature=0.3, max_tokens=800)
         from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
         summary_response = summary_llm.invoke([
             SM(content=(
@@ -1543,7 +1588,7 @@ async def extract_themes_endpoint(request: Request = None, _auth: dict = Depends
         ])
 
         # LLM: extract themes
-        llm = be.get_llm("gpt-4.1-mini", temperature=0.1, max_tokens=1000)
+        llm = be.get_llm("gpt-5.4-mini", temperature=0.1, max_tokens=1000)
         from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
         response = llm.invoke([
             SM(content=(
@@ -1621,7 +1666,7 @@ async def verify_theme_endpoint(req: VerifyThemeRequest, request: Request = None
         ])
 
         # 4. LLM comparison
-        llm = be.get_llm("gpt-4.1-mini", temperature=0.2, max_tokens=1200)
+        llm = be.get_llm("gpt-5.4-mini", temperature=0.2, max_tokens=1200)
         from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
         comparison_response = llm.invoke([
             SM(content=(
@@ -1775,7 +1820,7 @@ def _run_jurisprudence_research_background(task_id: str, uploaded_text: str, ana
         _bg_tasks[task_id]["progress"] = "Extraindo temas jurídicos do processo..."
 
         # 1. Extract key legal themes using a lightweight LLM call
-        extraction_llm = be.get_llm(model_name="gpt-4.1-mini", temperature=0.1, max_tokens=500)
+        extraction_llm = be.get_llm(model_name="gpt-5.4-mini", temperature=0.1, max_tokens=500)
         extraction_prompt = (
             "Você é um assistente de pesquisa jurídica. "
             "Analise o texto processual abaixo e extraia EXATAMENTE 3 temas/questões jurídicas "
@@ -1851,7 +1896,7 @@ def _run_jurisprudence_research_background(task_id: str, uploaded_text: str, ana
             context = "\n\n---\n\n".join(context_parts)
 
             # LLM summary for this theme
-            summary_llm = be.get_llm(model_name="gpt-4.1-mini", temperature=0.3, max_tokens=800)
+            summary_llm = be.get_llm(model_name="gpt-5.4-mini", temperature=0.3, max_tokens=800)
             summary_prompt = (
                 "Você é um assistente de pesquisa jurisprudencial do TJMG. "
                 "Resuma em 3-5 parágrafos o entendimento predominante dos acórdãos abaixo "
@@ -2250,7 +2295,7 @@ async def jurisprudencia_ask(req: JurisprudenciaAskRequest, _auth: dict = Depend
         )
 
         # 4. Call LLM
-        llm = be.get_llm(model_name="gpt-4.1-mini", temperature=0.3)
+        llm = be.get_llm(model_name="gpt-5.4-mini", temperature=0.3)
         from langchain_core.messages import SystemMessage as SM, HumanMessage as HM
         response = llm.invoke([SM(content=system_prompt), HM(content=user_prompt)])
         summary = be.safe_content(response)
