@@ -158,7 +158,7 @@ app.add_middleware(
 logger.info("CORS origins: %s", _cors_origins)
 
 # ── JWT Authentication (CESEC §2.2 — verificação de assinatura) ──────────────
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
 _security_scheme = HTTPBearer(auto_error=False)
 
 
@@ -167,7 +167,7 @@ def verify_jwt(token: str) -> dict:
     if not SUPABASE_JWT_SECRET:
         logger.error("SUPABASE_JWT_SECRET não configurada — autenticação bloqueada")
         raise HTTPException(status_code=401, detail="Autenticação indisponível: servidor não configurado.")
-    return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
+    return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
 
 
 async def require_auth(
@@ -183,8 +183,8 @@ async def require_auth(
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado. Faça login novamente.")
     except jwt.InvalidTokenError as e:
-        logger.warning("Invalid JWT from %s: %s", get_remote_address(request), str(e)[:100])
-        raise HTTPException(status_code=401, detail="Token inválido.")
+        logger.warning("Invalid JWT from %s: %s (secret_len=%d)", get_remote_address(request), str(e)[:100], len(SUPABASE_JWT_SECRET))
+        raise HTTPException(status_code=401, detail=f"Token inválido: {str(e)}")
 
 
 # ── In-memory conversation store (fallback) ──────────────────────────────
