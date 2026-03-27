@@ -1427,7 +1427,7 @@ async def upload_templates(
         # 1. Index templates (100% local — no ChromaDB, no embeddings)
         t0 = _time.time()
         collection_name = "rag_templates_persistent"
-        retriever, docs = be.process_templates(file_objects, None, collection_name=collection_name, user_id=user_id, token=token)
+        retriever, docs = await asyncio.to_thread(be.process_templates, file_objects, None, collection_name=collection_name, user_id=user_id, token=token)
         indexed_count = len(docs) if docs else 0
         print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks, user {user_id[:8]})")
 
@@ -1449,7 +1449,8 @@ async def upload_templates(
             except Exception as e:
                 print(f"⚠️ Erro ao gerar dossiê em background: {e}")
 
-        asyncio.create_task(_gen_dossier_bg(dossier_buffers))
+        _bg_task = asyncio.create_task(_gen_dossier_bg(dossier_buffers))
+        _bg_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
         return {
             "indexed_chunks": indexed_count,

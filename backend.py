@@ -1522,7 +1522,7 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
             if file.name.endswith(".pdf"):
                 reader = pypdf.PdfReader(tmp_path)
                 for page in reader.pages:
-                    text += page.extract_text() + "\n"
+                    text += (page.extract_text() or "") + "\n"
             elif file.name.endswith(".docx"):
                 doc = docx.Document(tmp_path)
                 text = "\n".join([p.text for p in doc.paragraphs])
