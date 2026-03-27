@@ -1414,6 +1414,7 @@ async def upload_templates(
         # Extract user identity from JWT for Supabase persistence
         user_id = _extract_user_id(request) or "default"
         token = _extract_token(request)
+        logger.info("upload_templates: user=%s files=%d", user_id[:8] if user_id else "?", len(files))
 
         # Convert UploadFiles into file-like objects
         file_objects = []
@@ -1423,13 +1424,15 @@ async def upload_templates(
             buf.name = f.filename or "template.pdf"
             buf.seek(0)
             file_objects.append(buf)
+            logger.info("  arquivo: %s (%d bytes)", f.filename, len(content))
 
         # 1. Index templates (100% local — no ChromaDB, no embeddings)
         t0 = _time.time()
         collection_name = "rag_templates_persistent"
+        logger.info("Iniciando process_templates para user %s...", user_id[:8] if user_id else "?")
         retriever, docs = await asyncio.to_thread(be.process_templates, file_objects, None, collection_name=collection_name, user_id=user_id, token=token)
         indexed_count = len(docs) if docs else 0
-        print(f"⏱️ Indexação: {_time.time()-t0:.1f}s ({indexed_count} chunks, user {user_id[:8]})")
+        logger.info("⏱️ Indexação: %.1fs (%d chunks, user %s)", _time.time()-t0, indexed_count, user_id[:8] if user_id else "?")
 
         # 2. Auto-generate style dossier in BACKGROUND (don't block response)
         # The dossier calls GPT-5.2 which adds 10-30s; run it async instead.
@@ -1449,8 +1452,12 @@ async def upload_templates(
             except Exception as e:
                 print(f"⚠️ Erro ao gerar dossiê em background: {e}")
 
-        _bg_task = asyncio.create_task(_gen_dossier_bg(dossier_buffers))
-        _bg_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        try:
+            _bg_task = asyncio.create_task(_gen_dossier_bg(dossier_buffers))
+            _bg_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        except RuntimeError as bg_err:
+            # No running event loop in some deployment contexts — skip background task
+            logger.warning("Background dossier task skipped: %s", bg_err)
 
         return {
             "indexed_chunks": indexed_count,
