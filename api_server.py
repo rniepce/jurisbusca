@@ -147,11 +147,21 @@ async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
 _cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 _extra_origins = os.getenv("CORS_ORIGINS", "")
 if _extra_origins:
-    _cors_origins.extend([o.strip() for o in _extra_origins.split(",") if o.strip()])
+    for o in _extra_origins.split(","):
+        o = o.strip()
+        if not o:
+            continue
+        # Auto-add https:// if no protocol specified (common Railway config mistake)
+        if o and not o.startswith("http://") and not o.startswith("https://"):
+            _cors_origins.append(f"https://{o}")
+            _cors_origins.append(f"http://{o}")  # Also allow http for flexibility
+        else:
+            _cors_origins.append(o)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Azure-Key", "Accept"],
 )

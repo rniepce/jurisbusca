@@ -377,11 +377,24 @@ export async function uploadTemplates(files: File[]) {
         method: 'POST',
         headers: await getAuthHeaders(),
         body: form,
+        redirect: 'error',
+    }).catch((err) => {
+        throw new Error(
+            `Indexação: requisição bloqueada ou redirecionada. (${err.message})`
+        );
     });
 
     if (!res.ok) {
-        const err = await safeJson(res, 'Upload Templates').catch(() => ({}));
-        throw new Error(err.detail || `Erro ao indexar modelos (${res.status})`);
+        // Preserve the actual error details instead of discarding them
+        let detail = `Erro ao indexar modelos (${res.status})`;
+        try {
+            const err = await safeJson(res, 'Upload Templates');
+            detail = err.detail || detail;
+        } catch (parseErr: unknown) {
+            // safeJson throws when response is not JSON — use its message (has content-type + preview)
+            detail = (parseErr instanceof Error ? parseErr.message : String(parseErr)) || detail;
+        }
+        throw new Error(detail);
     }
 
     return safeJson(res, 'Upload Templates');
