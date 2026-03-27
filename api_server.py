@@ -278,7 +278,17 @@ def _build_prompt(message: str, agent_prompt: Optional[str], uploaded_text: Opti
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "routes": len(app.routes)}
+    import subprocess as _sp, datetime as _dt
+    try:
+        git_hash = _sp.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=_sp.DEVNULL).decode().strip()
+    except Exception:
+        git_hash = "unknown"
+    return {
+        "status": "ok",
+        "routes": len(app.routes),
+        "commit": git_hash,
+        "server_time": _dt.datetime.utcnow().isoformat(),
+    }
 
 
 @app.post("/api/validate-key")
