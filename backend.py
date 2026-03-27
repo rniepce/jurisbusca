@@ -1381,13 +1381,21 @@ P.R.I.
 
 
 # ── Supabase-backed save/load (primary) with local JSON fallback ─────────
+import re as _re
+
+_UUID_RE = _re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _re.I)
+
+def _is_valid_uuid(value: str) -> bool:
+    """Return True only if value is a well-formed UUID (required by Supabase UUID column)."""
+    return bool(value and _UUID_RE.match(value))
+
 
 def _save_template_store(user_id: str = "default", token: str = ""):
     """Persist template store: try Supabase first, then local JSON fallback."""
     user_data = _template_store.get(user_id, [])
     
-    # Strategy 1: Supabase REST
-    if _SUPA_URL and _SUPA_ANON_KEY and token:
+    # Strategy 1: Supabase REST (only when user_id is a well-formed UUID)
+    if _SUPA_URL and _SUPA_ANON_KEY and token and _is_valid_uuid(user_id):
         try:
             # Delete existing chunks for this user, then insert new ones
             del_url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_SUPA_TABLE}?user_id=eq.{user_id}"
@@ -1437,8 +1445,8 @@ def _load_template_store(user_id: str = "default", token: str = ""):
     """Load template store: try Supabase first, then local JSON fallback."""
     global _template_store
     
-    # Strategy 1: Supabase REST
-    if _SUPA_URL and _SUPA_ANON_KEY and token:
+    # Strategy 1: Supabase REST (only when user_id is a well-formed UUID)
+    if _SUPA_URL and _SUPA_ANON_KEY and token and _is_valid_uuid(user_id):
         try:
             url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_SUPA_TABLE}?user_id=eq.{user_id}&select=source,text,upload_date"
             resp = _requests_lib.get(url, headers=_supa_headers(token), timeout=10)
@@ -1482,7 +1490,7 @@ def _load_template_store(user_id: str = "default", token: str = ""):
 
 def _delete_templates_supabase(user_id: str, source: str = "", token: str = "") -> bool:
     """Delete templates from Supabase. If source is given, deletes only that source. Returns True on success."""
-    if not (_SUPA_URL and _SUPA_ANON_KEY and token):
+    if not (_SUPA_URL and _SUPA_ANON_KEY and token and _is_valid_uuid(user_id)):
         return False
     try:
         url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_SUPA_TABLE}?user_id=eq.{user_id}"
