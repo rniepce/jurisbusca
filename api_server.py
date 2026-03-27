@@ -167,6 +167,21 @@ app.add_middleware(
 )
 logger.info("CORS origins: %s", _cors_origins)
 
+
+# ── Global catch-all: convert Starlette text/plain 500 into JSON with diagnostics ──
+from starlette.responses import JSONResponse as _JSONResponse
+
+@app.exception_handler(Exception)
+async def _catch_all_handler(request: Request, exc: Exception):
+    """Catch unhandled exceptions that would otherwise produce text/plain 500."""
+    tb = traceback.format_exc()
+    logger.error("‼️ Unhandled exception on %s %s:\n%s", request.method, request.url.path, tb)
+    return _JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {str(exc)}"},
+    )
+
+
 # ── JWT Authentication (CESEC §2.2 — verificação de assinatura) ──────────────
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
 _security_scheme = HTTPBearer(auto_error=False)
