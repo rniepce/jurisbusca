@@ -27,6 +27,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import jwt  # PyJWT
 from slowapi import Limiter
+from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
@@ -134,6 +135,7 @@ app = FastAPI(title="Jurisbusca API", version="1.0.0", lifespan=lifespan)
 # ── Rate Limiting (CESEC §2.2 — rate limiting após tentativas excessivas) ─────
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
 
 @app.exception_handler(RateLimitExceeded)
 async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
@@ -1462,8 +1464,8 @@ async def upload_templates(
     except HTTPException:
         raise
     except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro ao indexar modelos: {str(e)}")
+        logger.error("❌ upload_templates falhou: %s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erro ao indexar modelos: {type(e).__name__}: {str(e)}")
 
 
 @app.get("/api/templates/status")
