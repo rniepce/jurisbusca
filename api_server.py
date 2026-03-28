@@ -184,18 +184,42 @@ async def _catch_all_handler(request: Request, exc: Exception):
 
 # ── JWT Authentication (CESEC §2.2 — verificação de assinatura) ──────────────
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
+_SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip() or os.getenv("VITE_SUPABASE_URL", "").strip()
 _security_scheme = HTTPBearer(auto_error=False)
+
+# JWKS client for RS256 tokens (modern Supabase projects)
+_jwks_client = None
+if _SUPABASE_URL:
+    try:
+        _jwks_url = f"{_SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        _jwks_client = jwt.PyJWKClient(_jwks_url, cache_keys=True, lifespan=3600)
+        logger.info("JWKS client ready: %s", _jwks_url)
+    except Exception as e:
+        logger.warning("JWKS client init failed: %s", e)
 
 
 def verify_jwt(token: str) -> dict:
-    """Verify Supabase JWT signature and return decoded payload."""
-    if not SUPABASE_JWT_SECRET:
-        logger.error("SUPABASE_JWT_SECRET não configurada — autenticação bloqueada")
-        raise HTTPException(status_code=401, detail="Autenticação indisponível: servidor não configurado.")
-    # Supabase always uses HS256. NEVER trust the token's claimed algorithm
-    # (prevents Algorithm Confusion Attack where RS256 in header causes
-    # PyJWT to parse the HMAC secret as a PEM key → "Unable to load PEM file")
-    return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
+    """Verify Supabase JWT signature. Supports both HS256 and RS256."""
+    # Strategy 1: HS256 with shared secret (legacy Supabase / service tokens)
+    if SUPABASE_JWT_SECRET:
+        try:
+            return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
+        except jwt.exceptions.InvalidAlgorithmError:
+            pass  # Token uses RS256 — fall through to JWKS
+        except jwt.InvalidTokenError:
+            raise  # Expired, malformed, etc — re-raise as-is
+
+    # Strategy 2: RS256 with JWKS public key (modern Supabase)
+    if _jwks_client:
+        try:
+            signing_key = _jwks_client.get_signing_key_from_jwt(token)
+            return jwt.decode(token, signing_key.key, algorithms=["RS256"], options={"verify_aud": False})
+        except jwt.InvalidTokenError:
+            raise  # Re-raise for the caller to handle
+
+    # No strategy worked
+    logger.error("JWT verification impossible: no SUPABASE_JWT_SECRET and no JWKS client")
+    raise HTTPException(status_code=401, detail="Autenticação indisponível: servidor não configurado.")
 
 
 async def require_auth(
