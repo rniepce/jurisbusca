@@ -199,27 +199,32 @@ if _SUPABASE_URL:
 
 
 def verify_jwt(token: str) -> dict:
-    """Verify Supabase JWT signature. Supports both HS256 and RS256."""
-    # Strategy 1: HS256 with shared secret (legacy Supabase / service tokens)
-    if SUPABASE_JWT_SECRET:
-        try:
-            return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
-        except jwt.exceptions.InvalidAlgorithmError:
-            pass  # Token uses RS256 — fall through to JWKS
-        except jwt.InvalidTokenError:
-            raise  # Expired, malformed, etc — re-raise as-is
+    """Verify Supabase JWT. Reads alg from header, then dispatches to correct strategy."""
+    # 1. Read algorithm from token header (safe — no signature check yet)
+    try:
+        header = jwt.get_unverified_header(token)
+    except Exception as e:
+        logger.error("JWT header unreadable: %s", e)
+        raise jwt.InvalidTokenError(f"JWT header inválido: {e}")
 
-    # Strategy 2: RS256 with JWKS public key (modern Supabase)
-    if _jwks_client:
-        try:
-            signing_key = _jwks_client.get_signing_key_from_jwt(token)
-            return jwt.decode(token, signing_key.key, algorithms=["RS256"], options={"verify_aud": False})
-        except jwt.InvalidTokenError:
-            raise  # Re-raise for the caller to handle
+    alg = header.get("alg", "HS256")
+    logger.info("JWT alg=%s, jwks_client=%s, secret_len=%d", alg, bool(_jwks_client), len(SUPABASE_JWT_SECRET))
 
-    # No strategy worked
-    logger.error("JWT verification impossible: no SUPABASE_JWT_SECRET and no JWKS client")
-    raise HTTPException(status_code=401, detail="Autenticação indisponível: servidor não configurado.")
+    # 2. HS256 → verify with shared secret
+    if alg == "HS256":
+        if not SUPABASE_JWT_SECRET:
+            raise jwt.InvalidTokenError("HS256 token mas SUPABASE_JWT_SECRET não configurada")
+        return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
+
+    # 3. RS256/RS384/RS512 → verify with JWKS public key from Supabase
+    if alg.startswith("RS") or alg.startswith("ES") or alg.startswith("PS"):
+        if not _jwks_client:
+            raise jwt.InvalidTokenError(f"Token usa {alg} mas JWKS client não disponível (SUPABASE_URL={bool(_SUPABASE_URL)})")
+        signing_key = _jwks_client.get_signing_key_from_jwt(token)
+        return jwt.decode(token, signing_key.key, algorithms=[alg], options={"verify_aud": False})
+
+    # 4. Unknown algorithm
+    raise jwt.InvalidTokenError(f"Algoritmo JWT não suportado: {alg}")
 
 
 async def require_auth(
@@ -234,9 +239,11 @@ async def require_auth(
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado. Faça login novamente.")
-    except jwt.InvalidTokenError as e:
-        logger.warning("Invalid JWT from %s: %s (secret_len=%d)", get_remote_address(request), str(e)[:100], len(SUPABASE_JWT_SECRET))
+    except Exception as e:
+        # Catch ALL JWT errors (InvalidAlgorithmError is NOT a subclass of InvalidTokenError in PyJWT)
+        logger.warning("JWT auth failed for %s: %s: %s", get_remote_address(request), type(e).__name__, str(e)[:200])
         raise HTTPException(status_code=401, detail=f"Token inválido: {str(e)}")
+
 
 
 # ── In-memory conversation store (fallback) ──────────────────────────────
