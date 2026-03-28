@@ -192,17 +192,10 @@ def verify_jwt(token: str) -> dict:
     if not SUPABASE_JWT_SECRET:
         logger.error("SUPABASE_JWT_SECRET não configurada — autenticação bloqueada")
         raise HTTPException(status_code=401, detail="Autenticação indisponível: servidor não configurado.")
-    # Detect algorithm from token header before verifying
-    try:
-        import base64 as _b64, json as _json
-        raw = token.split('.')[0]
-        raw += '=' * (4 - len(raw) % 4)
-        header = _json.loads(_b64.urlsafe_b64decode(raw))
-        alg = header.get("alg", "HS256")
-    except Exception:
-        alg = "HS256"
-    logger.info("JWT alg detected: %s", alg)
-    return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=[alg], options={"verify_aud": False})
+    # Supabase always uses HS256. NEVER trust the token's claimed algorithm
+    # (prevents Algorithm Confusion Attack where RS256 in header causes
+    # PyJWT to parse the HMAC secret as a PEM key → "Unable to load PEM file")
+    return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], options={"verify_aud": False})
 
 
 async def require_auth(
