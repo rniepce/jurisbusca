@@ -884,34 +884,7 @@ if uploaded_files:
                 try:
                     # Pipeline de Execução (V1 / V2 / V3)
                     
-                    if st.session_state.app_mode == "v3":
-                        # V3: AGENTE AUTÔNOMO (Agentic RLM)
-                        # Nota: Placeholder enquanto V3 não está 100% implementado
-                        from backend import run_hybrid_orchestration
-                        keys = {
-                            "openai": st.session_state.openai_key,
-                            "anthropic": st.session_state.anthropic_key,
-                            "deepseek": st.session_state.deepseek_key,
-                            "google": google_api_key
-                        }
-                        if run_hybrid_orchestration:
-                            results = run_hybrid_orchestration(st.session_state.process_text, keys)
-                            
-                            # Type guard: V3/LangGraph sometimes returns list instead of dict
-                            if isinstance(results, list):
-                                results = {"final_report": "\n".join([str(x) for x in results]), "logs": []}
-                            elif not isinstance(results, dict):
-                                results = {"final_report": str(results), "logs": []}
-                            
-                            # Adaptação de output do agente
-                            if "final_output" in results: results["final_report"] = results["final_output"]
-                            if "audit_report" in results: results["auditor_dashboard"] = results["audit_report"]
-                            if "logs" in results: results["steps"] = results["logs"]
-                        else:
-                             st.error("Engine V3 não encontrada.")
-                             st.stop()
-                             
-                    elif st.session_state.app_mode == "v2":
+                    if st.session_state.app_mode == "v2":
                         # V2: LINHA DE MONTAGEM (ENSEMBLE)
                         # Requer keys carregadas
                         keys = {

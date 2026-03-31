@@ -108,15 +108,6 @@ HAS_ANTHROPIC = HAS_AZURE_OPENAI
 from prompts import PROMPT_FATOS, PROMPT_ANALISE_FORMAL, PROMPT_JUIZ_DEEPSEEK, PROMPT_REDATOR_CLAUDE, PROMPT_AUDITOR_GPT
 from prompts_claude import PROMPT_CLAUDE_INTEGRAL, PROMPT_GPT_AUDITOR, PROMPT_STYLE_ANALYZER, PROMPT_XRAY_BATCH, PROMPT_GPT_FIXER
 
-# V2 Imports (Agentic)
-try:
-    from v2_engine.orchestrator_v2 import run_hybrid_orchestration
-    from v3_engine.orchestrator_v3 import run_autonomous_magistrate
-except ImportError as e:
-    # Se falhar (ex: falta langgraph), apenas V2 ficará indisponível
-    print(f"Erro ao importar V2/V3 Engine: {e}")
-    run_hybrid_orchestration = None
-    run_autonomous_magistrate = None
 
 # ── Module-level cache for style dossier (avoids re-running expensive analysis) ──
 # Keyed by (user_id, file_hash) for per-user isolation
@@ -2096,38 +2087,7 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
             }
 
         # 2. Run Pipeline (Legacy / Fallback)
-        if mode == "v3" and keys:
-            # V3: Autonomous Agent (Hybrid LangGraph Agents)
-            if run_autonomous_magistrate is None:
-                return {"error": "ERRO DE INSTALAÇÃO (V3): Engine Agente não disponível.", "filename": filename}
-            
-            # --- MIRROR STRATEGY FOR V3 (com Dossiê Forense) ---
-            mirror_context = ""
-            if template_files:
-                 _dossier = generate_style_dossier(template_files, keys.get('google') or api_key)
-                 mirror_context = retrieve_mirror_context(clean_content, keys.get('google') or api_key, template_files, style_dossier=_dossier)
-
-            # Normalizar output para o formato esperado pelo front
-            # returns (final_json, logs_list)
-            v3_json, v3_logs = run_autonomous_magistrate(clean_content, keys)
-            
-            # Extract content safely
-            final_minuta = v3_json.get("minuta_final", "Minuta não gerada.")
-            reasoning = v3_json.get("fundamentacao_logica", "Raciocínio não disponível.")
-            
-            # Format reasoning string if it's a dict
-            if isinstance(reasoning, dict):
-                 reasoning = "\n".join([f"**{k}:** {v}" for k,v in reasoning.items()])
-            
-            results = {
-                "final_report": final_minuta,
-                "auditor_dashboard": "Auditoria Integrada ao Processo V3 (Ver Logs)",
-                "style_report": "Gerado via Agentic Style Guide (V3)",
-                "steps": {"logs": v3_logs},
-                "diagnostic_reasoning": reasoning  # <--- NEW FIELD
-            }
-            
-        elif mode == "v2" and keys:
+        if mode == "v2" and keys:
             # V2: Ensemble Pipeline (Assembly Line)
             # Gemini -> DeepSeek -> Claude
             ensemble_output = run_ensemble_orchestration(clean_content, keys, template_files=template_files)

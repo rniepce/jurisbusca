@@ -13,7 +13,7 @@ python-multipart
 langchain-google-genai
 google-generativeai
 
-# V2: Multi-Agent Orchestration
+# Multi-model support
 langgraph
 langchain-openai
 langchain-anthropic
@@ -26,6 +26,7 @@ chromadb
 langchain-chroma
 tiktoken
 
+numpy<2.0
 scikit-learn
 paddlepaddle
 paddleocr

@@ -223,7 +223,6 @@ function MainApp() {
           role: 'assistant',
           content: safeResponse,
           model: result.model,
-          v2Sections: result.v2_sections || null,
           modelContext: result.model_context || null,
         };
         setMessages((prev) => [...prev, assistantMsg]);

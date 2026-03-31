@@ -83,8 +83,6 @@ Browser → FastAPI (api_server.py)
 ### AI Engines (selectable per request)
 
 - **V1 (Gemini)** — Single-LLM, ChromaDB RAG. Runs entirely in `backend.py`.
-- **V2 (Multi-Agent, LangGraph)** — `v2_engine/orchestrator_v2.py`. Three sequential Claude agents: Triage → Drafting → Revision.
-- **V3 (Autonomous Magistrate, LangGraph MoE)** — `v3_engine/orchestrator_v3.py`. Mixture of Experts: Kimi K2.5 (facts extraction) → DeepSeek (drafting with tool loop via `LegalREPL`) → Claude/GPT (QA).
 - **SLM Local** — MLX models on Apple Silicon via `slm_engine.py`. Disabled on Railway.
 - **Remote SLM** — `SLM_SERVER_URL` points Railway to a local MacBook SLM server over a tunnel.
 
@@ -98,9 +96,8 @@ Browser → FastAPI (api_server.py)
 ### Prompts
 
 All LLM prompts live in dedicated root-level files:
-- `prompts.py` — V1/V2 base prompts
+- `prompts.py` — V1 base prompts
 - `prompts_claude.py` — Claude-specific prompts (integral analysis, auditor, X-Ray, style)
-- `prompts_magistrate_v3.py` — V3 magistrate core prompt
 - `prompts_auditor.py`, `prompts_slm.py` — auditor/SLM-specific prompts
 
 ### Persistence
@@ -114,9 +111,9 @@ All LLM prompts live in dedicated root-level files:
 # LLM Providers
 GOOGLE_API_KEY          # Gemini (V1 default)
 OPENAI_API_KEY          # OpenAI direct
-AZURE_OPENAI_API_KEY    # Azure OpenAI (V2/V3)
-ANTHROPIC_API_KEY       # Claude (V2/V3)
-DEEPSEEK_API_KEY        # V3 drafting expert
+AZURE_OPENAI_API_KEY    # Azure OpenAI
+ANTHROPIC_API_KEY       # Claude
+DEEPSEEK_API_KEY        # DeepSeek
 
 # Auth
 SUPABASE_URL
