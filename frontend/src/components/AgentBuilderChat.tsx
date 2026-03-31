@@ -127,7 +127,7 @@ const AgentBuilderChat = ({ onClose, onPromptReady }) => {
                 const result = await sendMessage({
                     message: 'Olá, quero criar um novo agente.',
                     model: 'v0',
-                    llm: 'gpt-5.2-chat',
+                    llm: 'gpt-5.3-chat',
                     agentPrompt: ENGINEER_SYSTEM_PROMPT,
                     conversationId: null,
                     uploadedText: null,
@@ -184,7 +184,7 @@ const AgentBuilderChat = ({ onClose, onPromptReady }) => {
             const result = await sendMessage({
                 message: text,
                 model: 'v0',
-                llm: 'gpt-5.2-chat',
+                llm: 'gpt-5.3-chat',
                 agentPrompt: ENGINEER_SYSTEM_PROMPT,
                 conversationId,
                 uploadedText: null,

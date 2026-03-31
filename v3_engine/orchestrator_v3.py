@@ -42,7 +42,7 @@ def node_kimi_reader(state: MagistrateState):
     """
     EXPERT 1: O Investigador (Kimi K2.5)
     Lê os autos massivos e extrai o suprassumo fático.
-    Falls back to GPT-5.2 if Kimi is unavailable.
+    Falls back to GPT-5.3 if Kimi is unavailable.
     """
     sys_prompt = """Você é um Investigador Jurídico Senior com memória massiva.
 Sua missão é ler centenas de páginas de um processo judicial e extrair APENAS os fatos relevantes, os pedidos do autor e as defesas/contestações do réu.
@@ -55,15 +55,15 @@ Formate com markdown claro, usando tópicos: "1. Fatos Principais", "2. Pedidos 
         HumanMessage(content=f"AUTOS TOTAIS DO PROCESSO:\n{state['raw_text']}")
     ]
 
-    # Try Kimi first, fallback to GPT-5.2
+    # Try Kimi first, fallback to GPT-5.3
     model_used = "Kimi-K2.5"
     try:
         llm = be.get_llm(model_name="Kimi-K2.5", temperature=0.0)
         response = llm.invoke(messages)
     except Exception as e:
-        model_used = "gpt-5.2-chat (fallback)"
+        model_used = "gpt-5.3-chat (fallback)"
         try:
-            llm = be.get_llm(model_name="gpt-5.2-chat")
+            llm = be.get_llm(model_name="gpt-5.3-chat")
             response = llm.invoke(messages)
         except Exception as e2:
             return {
@@ -83,7 +83,7 @@ def node_deepseek_reasoner(state: MagistrateState):
     """
     EXPERT 2: O Juiz Relator (DeepSeek V3.2)
     Recebe os fatos resumidos e pensa a decisão. Pode usar o REPL para cálculos.
-    Falls back to GPT-5.2 if DeepSeek is unavailable.
+    Falls back to GPT-5.3 if DeepSeek is unavailable.
     """
     @tool
     def run_python_code(code: str) -> str:
@@ -114,9 +114,9 @@ Não gere a minuta em JSON final, apenas redija o VOTO / DECISÃO DE FORMA CLARA
 
         response = llm_with_tools.invoke(messages)
     except Exception as e:
-        model_used = "gpt-5.2-chat (fallback)"
+        model_used = "gpt-5.3-chat (fallback)"
         try:
-            llm = be.get_llm(model_name="gpt-5.2-chat")
+            llm = be.get_llm(model_name="gpt-5.3-chat")
             sys_msg = SystemMessage(content=sys_prompt_text + knowledge_section)
             messages = [sys_msg, HumanMessage(content="Use sua perícia lógica para julgar estes fatos.")]
             response = llm.invoke(messages)
@@ -189,12 +189,12 @@ def node_computer(state: MagistrateState):
 
 def node_gpt_formatter(state: MagistrateState):
     """
-    EXPERT 3: O Assessor Sênior (GPT-5.2)
+    EXPERT 3: O Assessor Sênior (GPT-5.3)
     Formata o rascunho de decisão no JSON estrito.
     """
-    llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.0)
+    llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.0)
     
-    sys_prompt = f"""Você é um Assessor Sênior rigoroso e formal (GPT-5.2).
+    sys_prompt = f"""Você é um Assessor Sênior rigoroso e formal (GPT-5.3).
 Sua ÚNICA missão é envelopar a Decisão do Juiz Relator num formato JSON estritamente tipado.
 NÃO invente novos fatos nem mude o mérito. 
 
@@ -216,7 +216,7 @@ Seu JSON deve seguir exatamente a seguinte estrutura:
     
     return {
         "draft_decision": content,  # Reuse just to carry over final text to extract
-        "logs": state["logs"] + ["🤖 [GPT-5.2] Formatação JSON e conformidade de estilo concluída."]
+        "logs": state["logs"] + ["🤖 [GPT-5.3] Formatação JSON e conformidade de estilo concluída."]
     }
 
 

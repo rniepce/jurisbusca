@@ -388,7 +388,7 @@ with st.sidebar:
                  "Gemini Flash (Rápido)": {"provider": "google", "model": "gemini-3-flash-preview"},
                  "DeepSeek R1 (Lógica Extrema)": {"provider": "deepseek", "model": "deepseek-reasoner"}, # Via DeepSeek API (OpenAI compat)
                  "GPT-5.1 Preview (Simulado/GPT-4o)": {"provider": "openai", "model": "gpt-4o"},
-                 "GPT-5.2 (Azure OpenAI)": {"provider": "azure_openai", "model": "gpt-5.2-chat"},
+                 "GPT-5.3 (Azure OpenAI)": {"provider": "azure_openai", "model": "gpt-5.3-chat"},
                  "Amazônia IA (Soberano BR)": {"provider": "amazonia", "model": "rodrigomalossi/amazonia-a"}
              }
              

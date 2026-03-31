@@ -1,5 +1,5 @@
 """
-Quick test: validates Azure OpenAI GPT-5.2-chat and GPT-4.1-mini connections.
+Quick test: validates Azure OpenAI GPT-5.3-chat and GPT-4.1-mini connections.
 Usage: python3 test_azure_gpt.py
 """
 import os
@@ -48,9 +48,9 @@ def test_model(deployment, use_temp=False):
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("TESTE 1: GPT-5.2-chat (sem temperature)")
+    print("TESTE 1: GPT-5.3-chat (sem temperature)")
     print("=" * 50)
-    ok1 = test_model("gpt-5.2-chat", use_temp=False)
+    ok1 = test_model("gpt-5.3-chat", use_temp=False)
 
     print("=" * 50)
     print("TESTE 2: GPT-4.1-mini (com temperature)")
@@ -61,8 +61,8 @@ if __name__ == "__main__":
     if ok1 and ok2:
         print("🎉 Todos os modelos validados com sucesso!")
     elif ok1:
-        print("⚠️ GPT-5.2 OK, mas GPT-4.1-mini falhou.")
+        print("⚠️ GPT-5.3 OK, mas GPT-4.1-mini falhou.")
     elif ok2:
-        print("⚠️ GPT-4.1-mini OK, mas GPT-5.2 falhou.")
+        print("⚠️ GPT-4.1-mini OK, mas GPT-5.3 falhou.")
     else:
         print("❌ Nenhum modelo conectou.")

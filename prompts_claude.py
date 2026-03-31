@@ -1,4 +1,4 @@
-# PROMPTS OTIMIZADOS PARA CLAUDE SONNET 4.6 e GPT-5.2
+# PROMPTS OTIMIZADOS PARA CLAUDE SONNET 4.6 e GPT-5.3
 # Foco: Raciocínio Profundo, Lógica Jurídica Complexa e Auditoria Extrema
 
 # 1. ANALISTA JURÍDICO (ANÁLISE INTEGRAL + MINUTA) — V4.6 BLINDADO
@@ -105,7 +105,7 @@ Inicie sempre com:
 
 # 2. AUDITOR (O "CRITIC" LÓGICO)
 PROMPT_GPT_AUDITOR = """
-# PROMPT: AUDITOR JURÍDICO (QA) - STRICT JSON (GPT-5.2)
+# PROMPT: AUDITOR JURÍDICO (QA) - STRICT JSON (GPT-5.3)
 
 ## 1. SUA MISSÃO
 Você é um Auditor de Qualidade implacável.

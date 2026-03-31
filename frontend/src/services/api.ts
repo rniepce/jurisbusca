@@ -319,7 +319,7 @@ export async function replicateBatchPilot({ pilotInstructions, pilotMinuta, pilo
             pilot_minuta: pilotMinuta,
             pilot_summary: pilotSummary || null,
             processes,
-            model: model || 'gpt52',
+            model: model || 'gpt53',
             llm: llm || null,
             agent_prompt: agentPrompt || null,
         }),

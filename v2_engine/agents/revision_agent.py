@@ -84,11 +84,11 @@ Sua resposta deve seguir estritamente a estrutura de blocos abaixo:
 
 def run_revision_agent(triage_report: str, draft_text: str, api_key: str = None, knowledge_base: str = "") -> str:
     """
-    Agente Revisor (Stage 3) - Powered by Azure OpenAI (GPT-5.2)
+    Agente Revisor (Stage 3) - Powered by Azure OpenAI (GPT-5.3)
     Gera o dashboard de QA Visual.
     """
     try:
-        llm = be.get_llm("gpt-5.2-chat", temperature=0.1)
+        llm = be.get_llm("gpt-5.3-chat", temperature=0.1)
         
         system_message = SystemMessage(content=PROMPT_REVISION_AGENT)
         

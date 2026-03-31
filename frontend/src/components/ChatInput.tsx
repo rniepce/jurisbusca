@@ -12,7 +12,7 @@ import './ChatInput.css';
 
 
 const LLM_OPTIONS = [
-    { id: 'gpt52', name: 'GPT-5.2', color: '#4285F4', deployment: 'gpt-5.2-chat' },
+    { id: 'gpt53', name: 'GPT-5.3', color: '#4285F4', deployment: 'gpt-5.3-chat' },
     { id: 'gemini', name: 'Gemini 3.1 Pro', color: '#34A853', deployment: 'gemini-3.1-pro' },
     { id: 'claude', name: 'Claude Sonnet 4.6', color: '#D97706', deployment: 'claude-sonnet-4-6' },
     { id: 'local', name: 'SLMs Locais', color: '#F97316', deployment: 'local-slm' },

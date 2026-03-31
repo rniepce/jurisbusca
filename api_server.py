@@ -290,7 +290,7 @@ def _bg_tasks_cleanup():
 class ChatRequest(BaseModel):
     message: str
     model: str = "v1"
-    llm: Optional[str] = None  # LLM deployment name (e.g. 'gpt-5.2-chat', 'DeepSeek-V3.2-Speciale')
+    llm: Optional[str] = None  # LLM deployment name (e.g. 'gpt-5.3-chat', 'DeepSeek-V3.2-Speciale')
     conversation_id: Optional[str] = None
     agent_prompt: Optional[str] = None
     ocr_engine: str = "paddle"
@@ -302,13 +302,13 @@ class ChatRequest(BaseModel):
 
 # ── Model mapping (Azure AI Foundry) ──────────────────────────────────────────
 MODEL_MAP = {
-    "gemini": "gpt-5.2-chat",
-    "claude": "gpt-5.2-chat",
-    "gpt":    "gpt-5.2-chat",
-    "v0":     "gpt-5.2-chat",
-    "v0.5":   "gpt-5.2-chat",
-    "v1":     "gpt-5.2-chat",
-    "v2":     "gpt-5.2-chat",
+    "gemini": "gpt-5.3-chat",
+    "claude": "gpt-5.3-chat",
+    "gpt":    "gpt-5.3-chat",
+    "v0":     "gpt-5.3-chat",
+    "v0.5":   "gpt-5.3-chat",
+    "v1":     "gpt-5.3-chat",
+    "v2":     "gpt-5.3-chat",
     "v3-local": "local-slm",
     "local-slm": "local-slm",
 }
@@ -398,7 +398,7 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
     """Process a chat message and return LLM response."""
     try:
         # Resolve LLM deployment: prefer explicit llm field, fallback to MODEL_MAP
-        model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.2-chat")
+        model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.3-chat")
 
         # Read Azure key from header (frontend sends it), fallback to env var
         azure_key = request.headers.get("X-Azure-Key", "").strip() or None
@@ -411,9 +411,9 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
                 llm = be.get_llm(model_name=model_name, temperature=0.3, api_key=azure_key)
                 logger.info("LLM instanciado: %s", model_name)
             except Exception as llm_err:
-                logger.warning("Falha ao instanciar %s: %s. Fallback para gpt-5.2-chat.", model_name, llm_err)
-                model_name = "gpt-5.2-chat"
-                llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
+                logger.warning("Falha ao instanciar %s: %s. Fallback para gpt-5.3-chat.", model_name, llm_err)
+                model_name = "gpt-5.3-chat"
+                llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.3, api_key=azure_key)
 
         conv_id = req.conversation_id or str(uuid.uuid4())
 
@@ -639,10 +639,10 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
                         response_text = f"{minuta}\n\n---\n**🔍 Logs V3:**\n{logs_text}"
 
                 except concurrent.futures.TimeoutError:
-                    print(f"⚠️ V3 MoE pipeline timed out after {V3_TIMEOUT}s. Falling back to single-model GPT-5.2.")
-                    # Fallback: single GPT-5.2 call with the full document
+                    print(f"⚠️ V3 MoE pipeline timed out after {V3_TIMEOUT}s. Falling back to single-model GPT-5.3.")
+                    # Fallback: single GPT-5.3 call with the full document
                     try:
-                        fallback_llm = be.get_llm(model_name="gpt-5.2-chat")
+                        fallback_llm = be.get_llm(model_name="gpt-5.3-chat")
                         fb_messages = [
                             SystemMessage(content=(
                                 "Você é um Magistrado Autônomo de alto nível. "
@@ -656,15 +656,15 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
                             HumanMessage(content=f"AUTOS DO PROCESSO:\n{full_text}")
                         ]
                         fb_response = fallback_llm.invoke(fb_messages)
-                        response_text = f"{be.safe_content(fb_response)}\n\n---\n⚠️ *V3 MoE excedeu o tempo limite. Resultado gerado por GPT-5.2 (modelo único).*"
+                        response_text = f"{be.safe_content(fb_response)}\n\n---\n⚠️ *V3 MoE excedeu o tempo limite. Resultado gerado por GPT-5.3 (modelo único).*"
                     except Exception as fb_err:
-                        response_text = f"⚠️ **V3 timeout ({V3_TIMEOUT}s) e fallback GPT-5.2 também falhou:** {str(fb_err)}"
+                        response_text = f"⚠️ **V3 timeout ({V3_TIMEOUT}s) e fallback GPT-5.3 também falhou:** {str(fb_err)}"
 
                 except Exception as e:
                     traceback.print_exc()
-                    # Fallback: single GPT-5.2 call
+                    # Fallback: single GPT-5.3 call
                     try:
-                        fallback_llm = be.get_llm(model_name="gpt-5.2-chat")
+                        fallback_llm = be.get_llm(model_name="gpt-5.3-chat")
                         fb_messages = [
                             SystemMessage(content=(
                                 "Você é um Magistrado Autônomo de alto nível. "
@@ -677,9 +677,9 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
                             HumanMessage(content=f"AUTOS DO PROCESSO:\n{full_text}")
                         ]
                         fb_response = fallback_llm.invoke(fb_messages)
-                        response_text = f"{be.safe_content(fb_response)}\n\n---\n⚠️ *V3 MoE falhou ({str(e)[:100]}). Resultado gerado por GPT-5.2 (modelo único).*"
+                        response_text = f"{be.safe_content(fb_response)}\n\n---\n⚠️ *V3 MoE falhou ({str(e)[:100]}). Resultado gerado por GPT-5.3 (modelo único).*"
                     except Exception as fb_err:
-                        response_text = f"⚠️ **Erro no V3 Engine:** {str(e)}\n\n**Fallback GPT-5.2 também falhou:** {str(fb_err)}"
+                        response_text = f"⚠️ **Erro no V3 Engine:** {str(e)}\n\n**Fallback GPT-5.3 também falhou:** {str(fb_err)}"
             else:
                 response_text = "Erro: V3 Engine (run_autonomous_magistrate) não foi importada. Verifique se langgraph está instalado."
         elif req.model == "v3-local" and (HAS_REMOTE_SLM or HAS_SLM_ORCHESTRATOR):
@@ -767,31 +767,31 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
                 )
                 model_name = slm_engine.MODELS["main"]["name"]
             except Exception as slm_err:
-                print(f"⚠️ SLM local falhou: {slm_err}. Fallback para GPT-5.2.")
+                print(f"⚠️ SLM local falhou: {slm_err}. Fallback para GPT-5.3.")
                 traceback.print_exc()
                 try:
-                    fallback_llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
+                    fallback_llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.3, api_key=azure_key)
                     response = fallback_llm.invoke(messages)
-                    response_text = f"{be.safe_content(response)}\n\n---\n⚠️ *SLM local falhou ({str(slm_err)[:100]}). Resultado gerado por GPT-5.2.*"
-                    model_name = "gpt-5.2-chat"
+                    response_text = f"{be.safe_content(response)}\n\n---\n⚠️ *SLM local falhou ({str(slm_err)[:100]}). Resultado gerado por GPT-5.3.*"
+                    model_name = "gpt-5.3-chat"
                 except Exception as fb_err:
-                    response_text = f"⚠️ **Erro:** SLM local falhou ({str(slm_err)[:150]}). Fallback GPT-5.2 também falhou: {str(fb_err)[:150]}"
+                    response_text = f"⚠️ **Erro:** SLM local falhou ({str(slm_err)[:150]}). Fallback GPT-5.3 também falhou: {str(fb_err)[:150]}"
         else:
             # Default V0/V1 - just invoke LLM (Chat-based logic)
             try:
                 response = llm.invoke(messages)
                 response_text = be.safe_content(response)
             except Exception as invoke_err:
-                # If model fails at invocation, retry with GPT-5.2
-                if original_model != "gpt-5.2-chat":
-                    print(f"⚠️ {original_model} invoke falhou: {invoke_err}. Retrying com GPT-5.2.")
+                # If model fails at invocation, retry with GPT-5.3
+                if original_model != "gpt-5.3-chat":
+                    print(f"⚠️ {original_model} invoke falhou: {invoke_err}. Retrying com GPT-5.3.")
                     try:
-                        fallback_llm = be.get_llm(model_name="gpt-5.2-chat", temperature=0.3, api_key=azure_key)
+                        fallback_llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.3, api_key=azure_key)
                         response = fallback_llm.invoke(messages)
-                        response_text = f"{be.safe_content(response)}\n\n---\n⚠️ *Modelo {original_model} indisponível. Resultado gerado por GPT-5.2.*"
-                        model_name = "gpt-5.2-chat"
+                        response_text = f"{be.safe_content(response)}\n\n---\n⚠️ *Modelo {original_model} indisponível. Resultado gerado por GPT-5.3.*"
+                        model_name = "gpt-5.3-chat"
                     except Exception as fb_err:
-                        response_text = f"⚠️ **Erro:** {original_model} falhou ({str(invoke_err)[:150]}). Fallback GPT-5.2 também falhou: {str(fb_err)[:150]}"
+                        response_text = f"⚠️ **Erro:** {original_model} falhou ({str(invoke_err)[:150]}). Fallback GPT-5.3 também falhou: {str(fb_err)[:150]}"
                 else:
                     raise invoke_err
 
@@ -1192,7 +1192,7 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, _auth: dict = Depends(requ
 
     try:
         # Resolve LLM deployment: prefer explicit llm field, fallback to MODEL_MAP
-        model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.2-chat")
+        model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.3-chat")
 
         if not req.processes:
             raise HTTPException(status_code=400, detail="Nenhum processo para analisar.")
@@ -1245,7 +1245,7 @@ class BatchPilotReplicateRequest(BaseModel):
     pilot_minuta: str                # Draft decision generated during pilot (template/gabarito)
     pilot_summary: Optional[str] = None  # Summary of pilot case facts for comparison
     processes: list[dict]            # [{filename: str, text: str}] — remaining processes
-    model: str = "gpt52"
+    model: str = "gpt53"
     llm: Optional[str] = None
     agent_prompt: Optional[str] = None
 
@@ -1398,7 +1398,7 @@ async def batch_pilot_replicate(req: BatchPilotReplicateRequest, _auth: dict = D
     import concurrent.futures
 
     try:
-        model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.2-chat")
+        model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.3-chat")
 
         if not req.processes:
             raise HTTPException(status_code=400, detail="Nenhum processo para replicar.")
@@ -1494,7 +1494,7 @@ async def upload_templates(
         logger.info("⏱️ Indexação: %.1fs (%d chunks, user %s)", _time.time()-t0, indexed_count, user_id[:8] if user_id else "?")
 
         # 2. Auto-generate style dossier in BACKGROUND (don't block response)
-        # The dossier calls GPT-5.2 which adds 10-30s; run it async instead.
+        # The dossier calls GPT-5.3 which adds 10-30s; run it async instead.
         # Make copies of the byte buffers so background task has its own data.
         dossier_buffers = []
         for f in file_objects:

@@ -473,12 +473,12 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key: str = None, **kwargs):
+def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key: str = None, **kwargs):
     """
     Factory centralizada — suporta Azure OpenAI, Google Gemini e Anthropic Claude.
-    model_name: 'gpt-5.2-chat' (Azure), 'gemini-3.1-pro' (Google), 'claude-sonnet-4-6' (Anthropic).
+    model_name: 'gpt-5.3-chat' (Azure), 'gemini-3.1-pro' (Google), 'claude-sonnet-4-6' (Anthropic).
     """
-    deployment = model_name or os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.2-chat")
+    deployment = model_name or os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.3-chat")
 
     # ── Google Gemini (native API) ──
     if deployment.startswith("gemini"):
@@ -559,7 +559,7 @@ def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key:
             **kwargs,
         )
 
-    # ── Standard Azure OpenAI models (GPT-5.2, etc.) ──
+    # ── Standard Azure OpenAI models (GPT-5.3, etc.) ──
     if not HAS_AZURE_OPENAI:
         raise ImportError("langchain-openai não instalado. Execute: pip install langchain-openai")
 
@@ -575,8 +575,8 @@ def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key:
     if 'max_tokens' in kwargs:
         kwargs['max_completion_tokens'] = kwargs.pop('max_tokens')
 
-    # GPT-5.2 is a reasoning model — configure reasoning_effort and output budget
-    reasoning_models = {"gpt-5.2-chat"}
+    # GPT-5.3 is a reasoning model — configure reasoning_effort and output budget
+    reasoning_models = {"gpt-5.3-chat"}
     if deployment in reasoning_models:
         # Enable full reasoning power
         if 'reasoning_effort' not in kwargs:
@@ -586,8 +586,8 @@ def get_llm(model_name: str = "gpt-5.2-chat", temperature: float = 0.2, api_key:
             kwargs['max_completion_tokens'] = 16384
         print(f"🧠 Reasoning model: {deployment} | effort={kwargs['reasoning_effort']} | max_tokens={kwargs['max_completion_tokens']}")
 
-    # GPT-5.2 doesn't support custom temperature — only default (1)
-    models_no_temp = {"gpt-5.2-chat"}
+    # GPT-5.3 doesn't support custom temperature — only default (1)
+    models_no_temp = {"gpt-5.3-chat"}
     use_temperature = temperature if deployment not in models_no_temp else None
 
     llm_kwargs = dict(
@@ -610,7 +610,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
     """
     try:
         # Usa Claude Sonnet via Azure para auditoria
-        auditor_llm = get_llm("gpt-5.2-chat", temperature=0.0)
+        auditor_llm = get_llm("gpt-5.3-chat", temperature=0.0)
         
         # 1. Auditoria
         # Precisamos parsear o draft. Se for JSON, extraímos a 'minuta_final'.
@@ -653,7 +653,7 @@ def run_reflexion_loop(draft_text, source_text, api_key):
             print(f"❌ Auditoria Reprovou. Erros: {errors}. Iniciando Auto-Correção...")
             
             # 3. Fixer (Usa o mesmo modelo)
-            fixer_llm = get_llm("gpt-5.2-chat", temperature=0.1)
+            fixer_llm = get_llm("gpt-5.3-chat", temperature=0.1)
             
             msg_fix = PROMPT_GPT_FIXER.format(
                 draft=draft_content,
@@ -775,7 +775,7 @@ def generate_style_dossier(template_files, api_key):
                 break
         
         # 3. Chamar LLM com o prompt forense de 5 pilares
-        llm = get_llm("gpt-5.2-chat", temperature=0.3, max_tokens=8000)
+        llm = get_llm("gpt-5.3-chat", temperature=0.3, max_tokens=8000)
         
         messages = [
             SystemMessage(content=PROMPT_STYLE_ANALYZER),
@@ -912,8 +912,8 @@ def run_standard_orchestration(text: str, main_llm_config: dict, style_llm_confi
 
     try:
         # Instancia LLMs via Azure AI Foundry
-        main_llm = get_llm("gpt-5.2-chat", temperature=0.2)
-        style_llm = get_llm("gpt-5.2-chat", temperature=0.3)
+        main_llm = get_llm("gpt-5.3-chat", temperature=0.2)
+        style_llm = get_llm("gpt-5.3-chat", temperature=0.3)
     except Exception as e:
         return {"final_report": f"Erro na inicialização dos modelos: {str(e)}", "steps": {}}
 
@@ -1027,11 +1027,11 @@ def run_ensemble_orchestration(text: str, keys: dict, status_callback=None, temp
     # 1. Setup Models
     try:
         # Todos os modelos via Azure AI Foundry (Claude Sonnet 4.6)
-        analista_fatos = get_llm("gpt-5.2-chat", temperature=0.1)
+        analista_fatos = get_llm("gpt-5.3-chat", temperature=0.1)
 
-        juiz_logico = get_llm("gpt-5.2-chat", temperature=0.3)
+        juiz_logico = get_llm("gpt-5.3-chat", temperature=0.3)
               
-        redator_final = get_llm("gpt-5.2-chat", temperature=0.2)
+        redator_final = get_llm("gpt-5.3-chat", temperature=0.2)
              
     except Exception as e:
         return {"final_report": f"Erro ao inicializar Banca Digital: {e}", "steps": {}}
