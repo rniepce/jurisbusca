@@ -843,7 +843,7 @@ async def get_history(_auth: dict = Depends(require_auth)):
     return {"conversations": []}
 
 
-def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_engine: str, compress: bool):
+def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_engine: str, compress: bool, vectorize: bool = True):
     """Background worker: extracts text from uploaded file and stores result."""
     try:
         _bg_tasks[task_id]["status"] = "running"
@@ -861,6 +861,7 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
                     filename,
                     ocr_engine_choice=ocr_engine,
                     compress=compress,
+                    vectorize=vectorize,
                 )
         finally:
             os.unlink(tmp_path)
@@ -889,7 +890,14 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
     except Exception as e:
         traceback.print_exc()
         _bg_tasks[task_id]["status"] = "error"
-        _bg_tasks[task_id]["error"] = f"Erro no upload: {str(e)}"
+        err_type = type(e).__name__
+        err_msg = str(e)
+        if "AZURE_OPENAI" in err_msg:
+            _bg_tasks[task_id]["error"] = f"Erro de configuração: variáveis Azure OpenAI não configuradas. O texto foi extraído mas a vetorização falhou."
+        elif "TimeoutError" in err_type or "timeout" in err_msg.lower():
+            _bg_tasks[task_id]["error"] = f"Timeout: o processamento do arquivo excedeu o tempo limite. Tente um arquivo menor ou desative a vetorização."
+        else:
+            _bg_tasks[task_id]["error"] = f"Erro no upload ({err_type}): {err_msg}"
 
 
 @app.post("/api/upload")
@@ -899,6 +907,7 @@ async def upload_file(
     file: UploadFile = File(...),
     ocr_engine: str = Form("paddle"),
     compress: bool = Form(True),
+    vectorize: bool = Form(True),
     _auth: dict = Depends(require_auth),
 ):
     """Upload and extract text from a file. Returns task_id for polling."""
@@ -918,7 +927,7 @@ async def upload_file(
 
         thread = threading.Thread(
             target=_run_upload_background,
-            args=(task_id, content, filename, ocr_engine, compress),
+            args=(task_id, content, filename, ocr_engine, compress, vectorize),
             daemon=True,
         )
         thread.start()

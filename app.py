@@ -841,15 +841,20 @@ if uploaded_files:
                 uploaded_file.seek(0)
                 
                 # Chama backend para OCR e Vetorização
-                text, retriever = process_uploaded_file(
-                    uploaded_file, 
-                    uploaded_file.name, 
-                    api_key=google_api_key,
-                    ocr_engine_choice=st.session_state.ocr_engine_choice
-                )
-                
-                if text.startswith("Erro") or text.startswith("Formato"):
-                    st.error(text)
+                try:
+                    text, retriever = process_uploaded_file(
+                        uploaded_file,
+                        uploaded_file.name,
+                        api_key=google_api_key,
+                        ocr_engine_choice=st.session_state.ocr_engine_choice
+                    )
+                except Exception as upload_err:
+                    st.error(f"Erro ao processar arquivo: {upload_err}")
+                    text, retriever = None, None
+
+                if not text or text.startswith("Formato"):
+                    if text:
+                        st.error(text)
                 else:
                     st.session_state.process_text = text
                     st.session_state.retriever = retriever

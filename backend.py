@@ -383,7 +383,7 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
             _progress(f"📝 TXT lido: {len(docs)} bloco(s)", 50)
             
         else:
-            return f"Formato não suportado: {filename}", None
+            raise ValueError(f"Formato não suportado: {suffix} ({filename})")
 
         # Limpeza e Consolidação
         _progress("🧹 Limpando e consolidando texto...", 55)
@@ -403,7 +403,7 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
         # Vetorização (RAG)
         # Divide em chunks semânticos (seções jurídicas + embeddings)
         if not docs:
-             return "Nenhum texto extraído.", None
+             return full_text, None
 
         try:
             from chunking import HybridSemanticChunker
@@ -467,7 +467,7 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
         
     except Exception as e:
         traceback.print_exc()
-        return f"Erro ao processar arquivo: {str(e)}", None
+        raise RuntimeError(f"Erro ao processar arquivo '{filename}': {type(e).__name__}: {e}") from e
     finally:
         # Limpa arquivo temporário
         if os.path.exists(tmp_path):
