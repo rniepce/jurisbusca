@@ -318,7 +318,7 @@ MODEL_MAP = {
 # Token limits per model family (conservative — leaves room for system prompt,
 # agent prompt, style dossier, RAG templates, and conversation history).
 _MODEL_CHAR_LIMITS: dict[str, int] = {
-    "v0.5":     800_000,   # Claude (~200k tokens)
+    "v0.5":     750_000,   # GPT-5.3 Azure (272k token limit — reserva ~50k para prompts/histórico)
     "v1":       600_000,   # Gemini (large context, but keep reasonable)
     "v2":       600_000,   # GPT/Claude (~150k tokens)
     "v3":       600_000,   # Multi-model pipeline
