@@ -314,6 +314,51 @@ MODEL_MAP = {
 }
 
 
+# ── Context-safe text truncation ───────────────────────────────────────────
+# Token limits per model family (conservative — leaves room for system prompt,
+# agent prompt, style dossier, RAG templates, and conversation history).
+_MODEL_CHAR_LIMITS: dict[str, int] = {
+    "v0.5":     800_000,   # Claude (~200k tokens)
+    "v1":       600_000,   # Gemini (large context, but keep reasonable)
+    "v2":       600_000,   # GPT/Claude (~150k tokens)
+    "v3":       600_000,   # Multi-model pipeline
+    "v3-local": 200_000,   # SLMs (small context)
+}
+_DEFAULT_CHAR_LIMIT = 600_000  # ~150k tokens
+
+
+def _truncate_for_context(text: str, model: str = "v1") -> str:
+    """Truncate uploaded text to fit within the model's context window.
+
+    Preserves the beginning (cabeçalho/relatório) and end (dispositivo/conclusão)
+    of the document, which are the most important parts in Brazilian legal docs.
+    """
+    limit = _MODEL_CHAR_LIMITS.get(model, _DEFAULT_CHAR_LIMIT)
+    if not text or len(text) <= limit:
+        return text
+
+    # Keep 80% from the start (relatório, fundamentação) and 20% from the end (dispositivo)
+    head_size = int(limit * 0.8)
+    tail_size = limit - head_size
+    original_len = len(text)
+    truncated_chars = original_len - limit
+
+    head = text[:head_size]
+    tail = text[-tail_size:]
+
+    marker = (
+        f"\n\n[... ⚠️ DOCUMENTO TRUNCADO: {truncated_chars:,} caracteres omitidos "
+        f"({original_len:,} → {limit:,} chars) para caber no contexto do modelo. "
+        f"Use o modo RAG para busca semântica no texto completo. ...]\n\n"
+    )
+
+    logger.warning(
+        "Texto truncado para contexto: %s chars → %s chars (modelo=%s)",
+        f"{original_len:,}", f"{limit:,}", model,
+    )
+    return head + marker + tail
+
+
 def _build_prompt(message: str, agent_prompt: Optional[str], uploaded_text: Optional[str]) -> str:
     """Combines agent system prompt + uploaded file text + user message into a single prompt."""
     parts = []
@@ -416,6 +461,10 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
                 llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.3, api_key=azure_key)
 
         conv_id = req.conversation_id or str(uuid.uuid4())
+
+        # ── Truncate uploaded text to fit model context window ──
+        if req.uploaded_text:
+            req.uploaded_text = _truncate_for_context(req.uploaded_text, req.model)
 
         # Fetch history (in-memory fallback, no auth)
         past_messages = []
