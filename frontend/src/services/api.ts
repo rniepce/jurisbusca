@@ -42,6 +42,13 @@ export interface UploadProgressInfo {
     percent: number;
 }
 
+export interface UploadResult {
+    filename: string;
+    text: string;
+    char_count: number;
+    rag_available: boolean;
+}
+
 /**
  * Get headers for API requests.
  * Includes Azure OpenAI key if stored, and Supabase JWT.
@@ -106,7 +113,7 @@ async function safeJson(res: Response, context: string) {
  * @param {string} ocrEngine
  * @returns {Promise<{filename: string, text: string, char_count: number}>}
  */
-export async function uploadFile(file: File, ocrEngine = 'mistral_doc_ai', compress = true, vectorize = true, onProgress: ((info: UploadProgressInfo) => void) | null = null) {
+export async function uploadFile(file: File, ocrEngine = 'mistral_doc_ai', compress = true, vectorize = true, onProgress: ((info: UploadProgressInfo) => void) | null = null): Promise<UploadResult> {
     const form = new FormData();
     form.append('file', file);
     form.append('ocr_engine', ocrEngine);

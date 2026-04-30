@@ -58,8 +58,8 @@ const SustentacaoPanel: React.FC<Props> = ({ onClose, onOpenJurisprudencia }) =>
             const upload = await uploadFile(file, 'mistral_doc_ai', true, false, (info) => {
                 setProgress(info.progress || `Processando OCR... ${info.percent}%`);
             });
-            const text = (upload as any)?.text || '';
-            if (!text.trim()) throw new Error('Não foi possível extrair texto do PDF.');
+            if (!upload.text?.trim()) throw new Error('Não foi possível extrair texto do PDF.');
+            const text = upload.text;
 
             // Cicla mensagens durante a extração estruturada
             let idx = 0;

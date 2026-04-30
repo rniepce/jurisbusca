@@ -46,8 +46,8 @@ const DocumentAnalysis: React.FC<Props> = ({ processId, mode }) => {
             const upload = await uploadFile(file, 'mistral_doc_ai', true, false, (info) => {
                 setProgress(info.progress || `OCR... ${info.percent}%`);
             });
-            const text = (upload as any)?.text || '';
-            if (!text.trim()) throw new Error('Não foi possível extrair texto.');
+            if (!upload.text?.trim()) throw new Error('Não foi possível extrair texto.');
+            const text = upload.text;
 
             setProgress('Analisando...');
             const analysis = mode === 'voto'

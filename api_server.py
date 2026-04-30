@@ -2551,9 +2551,38 @@ async def slm_unload():
 import prompts_sustentacao as ps_prompts
 
 _sustentacao_store: dict[str, dict] = {}
+_sustentacao_store_lock = threading.Lock()
 
 _VALID_TIPO_ATO = {"sustentacao", "audiencia"}
 _VALID_MODO = {"preparacao", "realizacao"}
+
+
+def _sustentacao_user_id(auth: dict) -> str:
+    """Extrai um ID estável de usuário do payload JWT."""
+    return auth.get("sub") or auth.get("email") or ""
+
+
+def _sustentacao_get_owned(process_id: str, auth: dict) -> dict | None:
+    """Devolve o entry só se pertencer ao usuário autenticado.
+    Retorna None tanto para 'não existe' quanto para 'pertence a outro' —
+    cabe ao caller responder 404 em ambos os casos (não vazar existência)."""
+    with _sustentacao_store_lock:
+        entry = _sustentacao_store.get(process_id)
+    if not entry:
+        return None
+    if entry.get("user_id") != _sustentacao_user_id(auth):
+        return None
+    return entry
+
+
+def _parse_llm_json(raw: str) -> dict:
+    """Remove cercas markdown comuns (```json ... ```) e parseia JSON do LLM."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.lower().startswith("json"):
+            raw = raw[4:].lstrip()
+    return json.loads(raw)
 
 
 class SustentacaoExtractRequest(BaseModel):
@@ -2593,13 +2622,7 @@ async def sustentacao_extract(req: SustentacaoExtractRequest, _auth: dict = Depe
 
     try:
         response = llm.invoke(messages)
-        raw = be.safe_content(response).strip()
-        # Remove cercas markdown caso o modelo escape
-        if raw.startswith("```"):
-            raw = raw.strip("`")
-            if raw.lower().startswith("json"):
-                raw = raw[4:].lstrip()
-        data = json.loads(raw)
+        data = _parse_llm_json(be.safe_content(response))
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=502, detail=f"LLM retornou JSON inválido: {e}")
     except Exception as e:
@@ -2607,16 +2630,19 @@ async def sustentacao_extract(req: SustentacaoExtractRequest, _auth: dict = Depe
         raise HTTPException(status_code=500, detail=f"Erro na extração: {e}")
 
     process_id = str(uuid.uuid4())
-    _sustentacao_store[process_id] = {
-        "text": text,
-        "data": data,
-        "tipo_ato": tipo_ato,
-        "modo": modo,
-    }
-    # Limita o store a 50 processos (LRU simples)
-    if len(_sustentacao_store) > 50:
-        oldest = next(iter(_sustentacao_store))
-        _sustentacao_store.pop(oldest, None)
+    user_id = _sustentacao_user_id(_auth)
+    with _sustentacao_store_lock:
+        _sustentacao_store[process_id] = {
+            "user_id": user_id,
+            "text": text,
+            "data": data,
+            "tipo_ato": tipo_ato,
+            "modo": modo,
+        }
+        # FIFO eviction simples — limita o store a 50 processos.
+        while len(_sustentacao_store) > 50:
+            oldest = next(iter(_sustentacao_store))
+            _sustentacao_store.pop(oldest, None)
 
     return {"process_id": process_id, "data": data, "tipo_ato": tipo_ato, "modo": modo}
 
@@ -2624,7 +2650,7 @@ async def sustentacao_extract(req: SustentacaoExtractRequest, _auth: dict = Depe
 @app.post("/api/sustentacao/chat")
 async def sustentacao_chat(req: SustentacaoChatRequest, _auth: dict = Depends(require_auth)):
     """Chat focado em um processo previamente extraído."""
-    entry = _sustentacao_store.get(req.process_id)
+    entry = _sustentacao_get_owned(req.process_id, _auth)
     if not entry:
         raise HTTPException(status_code=404, detail="Processo não encontrado. Faça o upload novamente.")
     if not req.messages:
@@ -2664,89 +2690,84 @@ class AnaliseDocumentoRequest(BaseModel):
     documento_text: str
 
 
-def _parse_llm_json(raw: str) -> dict:
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        if raw.lower().startswith("json"):
-            raw = raw[4:].lstrip()
-    return json.loads(raw)
+def _run_analise(
+    *,
+    entry: dict,
+    documento_text: str,
+    items_data_key: str,
+    items_label: str,
+    items_missing_msg: str,
+    documento_label: str,
+    documento_empty_msg: str,
+    system_prompt: str,
+) -> dict:
+    """Executa uma análise voto/sentença vs items do processo (teses ou pontos)."""
+    if not (documento_text or "").strip():
+        raise HTTPException(status_code=400, detail=documento_empty_msg)
+
+    items = entry.get("data", {}).get(items_data_key) or []
+    if not items:
+        raise HTTPException(status_code=400, detail=items_missing_msg)
+
+    try:
+        llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao inicializar LLM: {e}")
+
+    user_content = (
+        f"{items_label}:\n"
+        + "\n".join(f"- {it}" for it in items)
+        + f"\n\n{documento_label}:\n{documento_text[:60_000]}"
+    )
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_content),
+    ]
+
+    try:
+        response = llm.invoke(messages)
+        return _parse_llm_json(be.safe_content(response))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=502, detail=f"LLM retornou JSON inválido: {e}")
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na análise: {e}")
 
 
 @app.post("/api/sustentacao/analisar-voto")
 async def analisar_voto(req: AnaliseDocumentoRequest, _auth: dict = Depends(require_auth)):
     """Analisa o voto do relator vs as teses extraídas do recurso."""
-    entry = _sustentacao_store.get(req.process_id)
+    entry = _sustentacao_get_owned(req.process_id, _auth)
     if not entry:
         raise HTTPException(status_code=404, detail="Processo não encontrado.")
-    if not (req.documento_text or "").strip():
-        raise HTTPException(status_code=400, detail="Voto vazio.")
-
-    teses = entry.get("data", {}).get("teses") or []
-    if not teses:
-        raise HTTPException(status_code=400, detail="Não há teses extraídas para comparar com o voto.")
-
-    try:
-        llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.2)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao inicializar LLM: {e}")
-
-    user_content = (
-        f"TESES DO SUSTENTANTE:\n"
-        + "\n".join(f"- {t}" for t in teses)
-        + f"\n\nVOTO DO RELATOR:\n{req.documento_text[:60_000]}"
+    return _run_analise(
+        entry=entry,
+        documento_text=req.documento_text,
+        items_data_key="teses",
+        items_label="TESES DO SUSTENTANTE",
+        items_missing_msg="Não há teses extraídas para comparar com o voto.",
+        documento_label="VOTO DO RELATOR",
+        documento_empty_msg="Voto vazio.",
+        system_prompt=ps_prompts.ANALISE_VOTO_SYSTEM,
     )
-    messages = [
-        SystemMessage(content=ps_prompts.ANALISE_VOTO_SYSTEM),
-        HumanMessage(content=user_content),
-    ]
-
-    try:
-        response = llm.invoke(messages)
-        return _parse_llm_json(be.safe_content(response))
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=502, detail=f"LLM retornou JSON inválido: {e}")
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro na análise: {e}")
 
 
 @app.post("/api/sustentacao/analisar-sentenca")
 async def analisar_sentenca(req: AnaliseDocumentoRequest, _auth: dict = Depends(require_auth)):
     """Analisa minuta de sentença vs pontos controvertidos da audiência."""
-    entry = _sustentacao_store.get(req.process_id)
+    entry = _sustentacao_get_owned(req.process_id, _auth)
     if not entry:
         raise HTTPException(status_code=404, detail="Processo não encontrado.")
-    if not (req.documento_text or "").strip():
-        raise HTTPException(status_code=400, detail="Sentença vazia.")
-
-    pontos = entry.get("data", {}).get("pontos_controvertidos") or []
-    if not pontos:
-        raise HTTPException(status_code=400, detail="Não há pontos controvertidos extraídos para comparar.")
-
-    try:
-        llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.2)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao inicializar LLM: {e}")
-
-    user_content = (
-        f"PONTOS CONTROVERTIDOS:\n"
-        + "\n".join(f"- {p}" for p in pontos)
-        + f"\n\nMINUTA DE SENTENÇA:\n{req.documento_text[:60_000]}"
+    return _run_analise(
+        entry=entry,
+        documento_text=req.documento_text,
+        items_data_key="pontos_controvertidos",
+        items_label="PONTOS CONTROVERTIDOS",
+        items_missing_msg="Não há pontos controvertidos extraídos para comparar.",
+        documento_label="MINUTA DE SENTENÇA",
+        documento_empty_msg="Sentença vazia.",
+        system_prompt=ps_prompts.ANALISE_SENTENCA_SYSTEM,
     )
-    messages = [
-        SystemMessage(content=ps_prompts.ANALISE_SENTENCA_SYSTEM),
-        HumanMessage(content=user_content),
-    ]
-
-    try:
-        response = llm.invoke(messages)
-        return _parse_llm_json(be.safe_content(response))
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=502, detail=f"LLM retornou JSON inválido: {e}")
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro na análise: {e}")
 
 
 # ── Serve React frontend (production) ────────────────────────────────────────

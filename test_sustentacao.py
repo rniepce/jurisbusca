@@ -18,10 +18,13 @@ from api_server import app, require_auth
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
+DEFAULT_USER = {"sub": "test-user"}
+
+
 @pytest.fixture(autouse=True)
 def _bypass_auth():
     """Sobrescreve require_auth em todos os testes deste módulo."""
-    app.dependency_overrides[require_auth] = lambda: {"sub": "test-user"}
+    app.dependency_overrides[require_auth] = lambda: DEFAULT_USER
     yield
     app.dependency_overrides.pop(require_auth, None)
 
@@ -46,6 +49,22 @@ def _mock_llm_returning(payload):
     response.content = json.dumps(payload) if isinstance(payload, (dict, list)) else payload
     mock.invoke.return_value = response
     return mock
+
+
+def _seed_processo(process_id: str, *, user_id: str = "test-user", **extras):
+    """Helper: insere um processo no store já com user_id correto."""
+    api_server._sustentacao_store[process_id] = {
+        "user_id": user_id,
+        "text": extras.get("text", "Texto do processo..."),
+        "data": extras.get("data", {}),
+        "tipo_ato": extras.get("tipo_ato", "sustentacao"),
+        "modo": extras.get("modo", "preparacao"),
+    }
+
+
+def _set_user(user: dict):
+    """Atalho: troca o usuário autenticado para o teste corrente."""
+    app.dependency_overrides[require_auth] = lambda: user
 
 
 # ── /api/sustentacao/extract ────────────────────────────────────────────────
@@ -73,9 +92,9 @@ def test_extract_sustentacao_preparacao_ok(client):
     assert "process_id" in body
     assert body["tipo_ato"] == "sustentacao"
     assert body["modo"] == "preparacao"
-    assert body["data"]["numero_processo"] == "1234567-89.2024.8.13.0024"
-    # Store deve guardar o processo
-    assert body["process_id"] in api_server._sustentacao_store
+    # Store guarda user_id (tenant isolation)
+    stored = api_server._sustentacao_store[body["process_id"]]
+    assert stored["user_id"] == "test-user"
 
 
 def test_extract_audiencia_realizacao_ok(client):
@@ -147,9 +166,7 @@ def test_extract_invalid_json_returns_502(client):
 # ── /api/sustentacao/chat ───────────────────────────────────────────────────
 
 def test_chat_ok(client):
-    api_server._sustentacao_store["pid-1"] = {
-        "text": "Texto do processo...", "data": {}, "tipo_ato": "sustentacao", "modo": "preparacao",
-    }
+    _seed_processo("pid-1")
     mock = MagicMock()
     response = MagicMock()
     response.content = "Resposta sobre o processo."
@@ -172,7 +189,7 @@ def test_chat_unknown_process(client):
 
 
 def test_chat_no_messages(client):
-    api_server._sustentacao_store["pid-2"] = {"text": "...", "data": {}}
+    _seed_processo("pid-2")
     res = client.post("/api/sustentacao/chat", json={"process_id": "pid-2", "messages": []})
     assert res.status_code == 400
 
@@ -180,12 +197,7 @@ def test_chat_no_messages(client):
 # ── /api/sustentacao/analisar-voto ─────────────────────────────────────────
 
 def test_analisar_voto_ok(client):
-    api_server._sustentacao_store["pid-3"] = {
-        "text": "Processo...",
-        "data": {"teses": ["Prescrição", "Dano moral"]},
-        "tipo_ato": "sustentacao",
-        "modo": "preparacao",
-    }
+    _seed_processo("pid-3", data={"teses": ["Prescrição", "Dano moral"]})
     payload = {
         "resultado": "favoravel",
         "resumo": "Voto provê o recurso.",
@@ -204,9 +216,25 @@ def test_analisar_voto_ok(client):
     assert len(body["por_tese"]) == 2
 
 
+def test_analisar_voto_aceita_fences_markdown(client):
+    """LLM pode envolver a resposta em ```json ... ```."""
+    _seed_processo("pid-3b", data={"teses": ["X"]})
+    raw = "```json\n" + json.dumps({"resultado": "parcial", "resumo": "OK", "por_tese": []}) + "\n```"
+    mock = MagicMock()
+    response = MagicMock()
+    response.content = raw
+    mock.invoke.return_value = response
+    with patch("api_server.be.get_llm", return_value=mock):
+        res = client.post("/api/sustentacao/analisar-voto", json={
+            "process_id": "pid-3b", "documento_text": "Voto...",
+        })
+    assert res.status_code == 200
+    assert res.json()["resultado"] == "parcial"
+
+
 def test_analisar_voto_sem_teses(client):
     """Se o processo não tem teses extraídas, retorna 400."""
-    api_server._sustentacao_store["pid-4"] = {"text": "...", "data": {"teses": []}}
+    _seed_processo("pid-4", data={"teses": []})
     res = client.post("/api/sustentacao/analisar-voto", json={
         "process_id": "pid-4", "documento_text": "Voto...",
     })
@@ -221,7 +249,7 @@ def test_analisar_voto_processo_inexistente(client):
 
 
 def test_analisar_voto_documento_vazio(client):
-    api_server._sustentacao_store["pid-5"] = {"text": "...", "data": {"teses": ["T"]}}
+    _seed_processo("pid-5", data={"teses": ["T"]})
     res = client.post("/api/sustentacao/analisar-voto", json={
         "process_id": "pid-5", "documento_text": "  ",
     })
@@ -231,10 +259,7 @@ def test_analisar_voto_documento_vazio(client):
 # ── /api/sustentacao/analisar-sentenca ─────────────────────────────────────
 
 def test_analisar_sentenca_ok(client):
-    api_server._sustentacao_store["pid-6"] = {
-        "text": "...",
-        "data": {"pontos_controvertidos": ["Existência da dívida", "Valor"]},
-    }
+    _seed_processo("pid-6", data={"pontos_controvertidos": ["Existência da dívida", "Valor"]})
     payload = {
         "resultado": "procedente",
         "resumo": "Procedente em parte.",
@@ -251,9 +276,73 @@ def test_analisar_sentenca_ok(client):
     assert res.json()["por_ponto"][1]["alerta"] == "Verificar fls 30"
 
 
+def test_analisar_sentenca_aceita_fences_markdown(client):
+    _seed_processo("pid-6b", data={"pontos_controvertidos": ["X"]})
+    raw = "```json\n" + json.dumps({"resultado": "improcedente", "resumo": "...", "por_ponto": []}) + "\n```"
+    mock = MagicMock()
+    response = MagicMock()
+    response.content = raw
+    mock.invoke.return_value = response
+    with patch("api_server.be.get_llm", return_value=mock):
+        res = client.post("/api/sustentacao/analisar-sentenca", json={
+            "process_id": "pid-6b", "documento_text": "Sentença...",
+        })
+    assert res.status_code == 200
+    assert res.json()["resultado"] == "improcedente"
+
+
 def test_analisar_sentenca_sem_pontos(client):
-    api_server._sustentacao_store["pid-7"] = {"text": "...", "data": {"pontos_controvertidos": []}}
+    _seed_processo("pid-7", data={"pontos_controvertidos": []})
     res = client.post("/api/sustentacao/analisar-sentenca", json={
         "process_id": "pid-7", "documento_text": "...",
     })
     assert res.status_code == 400
+
+
+# ── Tenant isolation ────────────────────────────────────────────────────────
+
+def test_chat_tenant_isolation(client):
+    """Usuário B não consegue acessar processo do usuário A — recebe 404 (não vaza existência)."""
+    _seed_processo("pid-A", user_id="user-A", text="Processo do A")
+
+    _set_user({"sub": "user-B"})
+    res = client.post("/api/sustentacao/chat", json={
+        "process_id": "pid-A",
+        "messages": [{"role": "user", "content": "Resumo?"}],
+    })
+    assert res.status_code == 404
+
+
+def test_analisar_voto_tenant_isolation(client):
+    _seed_processo("pid-A2", user_id="user-A", data={"teses": ["T"]})
+
+    _set_user({"sub": "user-B"})
+    res = client.post("/api/sustentacao/analisar-voto", json={
+        "process_id": "pid-A2", "documento_text": "Voto...",
+    })
+    assert res.status_code == 404
+
+
+def test_analisar_sentenca_tenant_isolation(client):
+    _seed_processo("pid-A3", user_id="user-A", data={"pontos_controvertidos": ["P"]})
+
+    _set_user({"sub": "user-B"})
+    res = client.post("/api/sustentacao/analisar-sentenca", json={
+        "process_id": "pid-A3", "documento_text": "Sentença...",
+    })
+    assert res.status_code == 404
+
+
+def test_owner_pode_acessar(client):
+    """Caminho positivo: dono do processo acessa sem problema."""
+    _seed_processo("pid-mine", user_id="test-user")
+    mock = MagicMock()
+    response = MagicMock()
+    response.content = "ok"
+    mock.invoke.return_value = response
+    with patch("api_server.be.get_llm", return_value=mock):
+        res = client.post("/api/sustentacao/chat", json={
+            "process_id": "pid-mine",
+            "messages": [{"role": "user", "content": "?"}],
+        })
+    assert res.status_code == 200
