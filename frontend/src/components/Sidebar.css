@@ -51,6 +51,39 @@
     box-shadow: 0 1px 4px rgba(37, 99, 235, 0.2);
 }
 
+.sustentacao-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 16px;
+    margin-top: 8px;
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-family);
+    color: #1e293b;
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    transition: all 0.18s ease;
+}
+
+.sustentacao-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(251, 191, 36, 0.3);
+    border-color: rgba(251, 191, 36, 0.7);
+}
+
+.sustentacao-btn:active {
+    transform: translateY(0);
+}
+
+.sustentacao-btn svg {
+    color: #b45309;
+}
+
 /* ===== SECTION TOGGLE ===== */
 .sidebar-section {
     padding: 4px 14px 0;

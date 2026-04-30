@@ -1,0 +1,452 @@
+/* ── Sustentação Oral Panel ─────────────────────────────────────────── */
+
+.sust-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #fafbfc;
+    overflow: hidden;
+}
+
+/* Header */
+.sust-header {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    color: #fff;
+    padding: 24px 32px;
+    flex-shrink: 0;
+}
+
+.sust-header-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.sust-title-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.sust-header-icon {
+    font-size: 32px;
+    color: #fbbf24;
+}
+
+.sust-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+}
+
+.sust-subtitle {
+    margin: 2px 0 0 0;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.sust-header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.sust-btn-icon {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.sust-btn-icon:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.sust-btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+}
+
+.sust-btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.sust-btn-primary {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-top: 16px;
+}
+
+.sust-btn-primary:hover {
+    background: #1d4ed8;
+}
+
+/* Body */
+.sust-body {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+}
+
+/* Upload area */
+.sust-upload-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+    text-align: center;
+    border: 2px dashed transparent;
+}
+
+.sust-upload-icon {
+    font-size: 64px;
+    color: #94a3b8;
+    margin-bottom: 24px;
+}
+
+.sust-upload-area h2 {
+    margin: 0 0 8px 0;
+    color: #1e293b;
+    font-size: 22px;
+}
+
+.sust-upload-area p {
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+}
+
+.sust-error {
+    margin-top: 20px;
+    padding: 12px 16px;
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    border-radius: 8px;
+    font-size: 13px;
+    max-width: 480px;
+}
+
+/* Processing */
+.sust-processing {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+    text-align: center;
+}
+
+.sust-spinner {
+    font-size: 48px;
+    color: #2563eb;
+    animation: sust-spin 1s linear infinite;
+    margin-bottom: 24px;
+}
+
+.sust-spinner-sm {
+    animation: sust-spin 1s linear infinite;
+    margin-right: 6px;
+}
+
+@keyframes sust-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.sust-processing h2 {
+    margin: 0 0 8px 0;
+    color: #1e293b;
+    font-size: 18px;
+    font-weight: 500;
+}
+
+.sust-processing p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+}
+
+/* Dashboard */
+.sust-dashboard {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 0;
+    overflow: hidden;
+}
+
+.sust-main {
+    overflow-y: auto;
+    padding: 24px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.sust-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.sust-card-title {
+    margin: 0 0 14px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e293b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sust-card-title svg {
+    color: #2563eb;
+}
+
+.sust-fields-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+}
+
+.sust-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sust-field-label {
+    font-size: 11px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 500;
+}
+
+.sust-field-value {
+    font-size: 14px;
+    color: #1e293b;
+    font-weight: 500;
+    word-break: break-word;
+}
+
+.sust-list {
+    margin: 0;
+    padding-left: 20px;
+    color: #1e293b;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.sust-list li {
+    margin-bottom: 6px;
+}
+
+.sust-prose {
+    margin: 0;
+    color: #1e293b;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.sust-empty {
+    color: #94a3b8;
+    font-size: 13px;
+    font-style: italic;
+}
+
+.sust-notes {
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    color: #1e293b;
+    background: #f8fafc;
+}
+
+.sust-notes:focus {
+    outline: none;
+    border-color: #2563eb;
+    background: #fff;
+}
+
+/* Chat sidebar */
+.sust-chat {
+    background: #fff;
+    border-left: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.sust-chat-header {
+    padding: 16px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1e293b;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.sust-chat-header svg {
+    color: #fbbf24;
+}
+
+.sust-chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sust-chat-empty {
+    color: #94a3b8;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 20px 8px;
+}
+
+.sust-chat-empty ul {
+    margin: 8px 0 0 0;
+    padding-left: 18px;
+}
+
+.sust-chat-empty li {
+    margin-bottom: 4px;
+    font-style: italic;
+}
+
+.sust-chat-msg {
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+    max-width: 92%;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.sust-chat-msg.user {
+    background: #2563eb;
+    color: #fff;
+    align-self: flex-end;
+    border-bottom-right-radius: 2px;
+}
+
+.sust-chat-msg.assistant {
+    background: #f1f5f9;
+    color: #1e293b;
+    align-self: flex-start;
+    border-bottom-left-radius: 2px;
+}
+
+.sust-chat-msg.loading {
+    color: #64748b;
+    font-style: italic;
+    display: flex;
+    align-items: center;
+}
+
+.sust-chat-input {
+    border-top: 1px solid #e2e8f0;
+    padding: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    background: #f8fafc;
+}
+
+.sust-chat-input textarea {
+    flex: 1;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: none;
+    background: #fff;
+    color: #1e293b;
+}
+
+.sust-chat-input textarea:focus {
+    outline: none;
+    border-color: #2563eb;
+}
+
+.sust-btn-send {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.sust-btn-send:hover:not(:disabled) {
+    background: #1d4ed8;
+}
+
+.sust-btn-send:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+}
+
+/* Responsivo */
+@media (max-width: 900px) {
+    .sust-dashboard {
+        grid-template-columns: 1fr;
+    }
+
+    .sust-chat {
+        border-left: none;
+        border-top: 1px solid #e2e8f0;
+        max-height: 400px;
+    }
+}

@@ -4,7 +4,8 @@ import {
     FaChevronDown, FaChevronRight,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
     FaBookOpen, FaPenNib, FaComments, FaClipboardCheck,
-    FaWandMagicSparkles, FaTrash, FaShareNodes, FaEllipsisVertical, FaRobot
+    FaWandMagicSparkles, FaTrash, FaShareNodes, FaEllipsisVertical, FaRobot,
+    FaGavel
 } from 'react-icons/fa6';
 import './Sidebar.css';
 import agentDefinitions from '../config/agents';
@@ -33,6 +34,7 @@ const Sidebar = ({
     onDeleteAgent,
     onShareAgent,
     onOpenMemory,
+    onOpenSustentacao,
 }: any) => {
     const [agentsOpen, setAgentsOpen] = useState(true);
     const [customAgentsOpen, setCustomAgentsOpen] = useState(true);
@@ -82,6 +84,18 @@ const Sidebar = ({
                 <button className="new-chat-btn" id="new-chat-btn" onClick={handleNewChat}>
                     <FaPlus size={14} />
                     <span>Novo Chat</span>
+                </button>
+                <button
+                    className="sustentacao-btn"
+                    id="btn-sustentacao"
+                    onClick={() => {
+                        if (onOpenSustentacao) onOpenSustentacao();
+                        if (onCloseMobile) onCloseMobile();
+                    }}
+                    title="Painel de apoio para sustentação oral"
+                >
+                    <FaGavel size={13} />
+                    <span>Sustentação Oral</span>
                 </button>
             </div>
 

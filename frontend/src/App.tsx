@@ -8,6 +8,7 @@ import CanvasEditor from './components/CanvasEditor';
 import XRayDashboard from './components/XRayDashboard';
 import BatchPanel from './components/BatchPanel';
 import JurisprudenciaPanel from './components/JurisprudenciaPanel';
+import SustentacaoPanel from './components/SustentacaoPanel';
 import ModelManagerPanel from './components/ModelManagerPanel';
 import AgentBuilderChat from './components/AgentBuilderChat';
 import CreateAgentDialog from './components/CreateAgentDialog';
@@ -46,6 +47,7 @@ function MainApp() {
   const globalSelectedModel = globalSelectedModelStore;
   const setGlobalSelectedModel = setSelectedModel;
   const [showJurisprudencia, setShowJurisprudencia] = useState(false);
+  const [showSustentacao, setShowSustentacao] = useState(false);
   const [showModelManager, setShowModelManager] = useState(false);
   // Jurisprudence toggle state — always enabled
   // V0.5 jurisprudence research state
@@ -816,6 +818,7 @@ function MainApp() {
     setCanvasContent('');
     _setCanvasTitle('');
     setBatchPilotSession(null);
+    setShowSustentacao(false);
   }, [messages, activeAgent, conversationId]);
 
   // ── Load chat from history ──────────────────────────────────────────
@@ -920,6 +923,13 @@ function MainApp() {
         />
       );
     }
+    if (showSustentacao) {
+      return (
+        <SustentacaoPanel
+          onClose={() => setShowSustentacao(false)}
+        />
+      );
+    }
     if (xrayReport) {
       return (
         <XRayDashboard
@@ -1008,6 +1018,12 @@ function MainApp() {
         onDeleteAgent={handleDeleteAgent}
         onShareAgent={handleShareAgentOpen}
         onOpenMemory={() => setShowMemoryPanel(true)}
+        onOpenSustentacao={() => {
+          setShowSustentacao(true);
+          setShowJurisprudencia(false);
+          setShowAgentBuilder(false);
+          setShowModelManager(false);
+        }}
       />
 
       <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>

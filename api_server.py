@@ -2544,6 +2544,133 @@ async def slm_unload():
     return {"status": "ok", "message": "Modelos descarregados da memória."}
 
 
+# ── Sustentação Oral (Veredas) ───────────────────────────────────────────────
+# Painel de apoio a sustentações orais: extrai dados estruturados do processo
+# e oferece chat focado escopado ao texto extraído.
+
+_sustentacao_store: dict[str, dict] = {}
+
+_SUSTENTACAO_EXTRACT_SYSTEM = """Você é um assistente jurídico especializado em processos do TJMG.
+Analise o texto do processo judicial fornecido e extraia as informações em JSON válido.
+Retorne SOMENTE o JSON, sem markdown, sem explicações.
+
+Esquema esperado:
+{
+  "numero_processo": "string ou null",
+  "tipo_recursal": "string ou null",
+  "camara": "string ou null",
+  "relator": "string ou null",
+  "data_sessao": "string ou null",
+  "recorrente": "string ou null",
+  "recorrido": "string ou null",
+  "advogado_sustentante": "string ou null",
+  "parte_sustentante": "string ou null",
+  "teses": ["string"],
+  "preliminares": ["string"],
+  "sintese_decisao_1grau": "string ou null"
+}
+
+Se um campo não for encontrado, use null. Teses e preliminares devem ser listas de
+strings curtas e objetivas (uma frase cada). Se não houver teses ou preliminares,
+retorne lista vazia."""
+
+_SUSTENTACAO_CHAT_SYSTEM_TEMPLATE = """Você é um assistente jurídico do desembargador, especializado no processo abaixo.
+Responda às perguntas de forma objetiva, direta e técnica, com base exclusivamente
+no texto do processo. Se a resposta não estiver no processo, diga isso claramente.
+
+=== PROCESSO ===
+{process_text}
+=== FIM DO PROCESSO ==="""
+
+
+class SustentacaoExtractRequest(BaseModel):
+    text: str
+
+
+class SustentacaoChatRequest(BaseModel):
+    process_id: str
+    messages: list[dict]
+
+
+@app.post("/api/sustentacao/extract")
+async def sustentacao_extract(req: SustentacaoExtractRequest, _auth: dict = Depends(require_auth)):
+    """Extrai dados estruturados de um processo para apoio a sustentação oral."""
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Texto vazio.")
+
+    try:
+        llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao inicializar LLM: {e}")
+
+    truncated = text[:80_000]
+    messages = [
+        SystemMessage(content=_SUSTENTACAO_EXTRACT_SYSTEM),
+        HumanMessage(content=f"Texto do processo:\n\n{truncated}"),
+    ]
+
+    try:
+        response = llm.invoke(messages)
+        raw = be.safe_content(response).strip()
+        # Remove cercas markdown caso o modelo escape
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:].lstrip()
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=502, detail=f"LLM retornou JSON inválido: {e}")
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na extração: {e}")
+
+    process_id = str(uuid.uuid4())
+    _sustentacao_store[process_id] = {"text": text, "data": data}
+    # Limita o store a 50 processos (LRU simples)
+    if len(_sustentacao_store) > 50:
+        oldest = next(iter(_sustentacao_store))
+        _sustentacao_store.pop(oldest, None)
+
+    return {"process_id": process_id, "data": data}
+
+
+@app.post("/api/sustentacao/chat")
+async def sustentacao_chat(req: SustentacaoChatRequest, _auth: dict = Depends(require_auth)):
+    """Chat focado em um processo de sustentação oral previamente extraído."""
+    entry = _sustentacao_store.get(req.process_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Processo não encontrado. Faça o upload novamente.")
+    if not req.messages:
+        raise HTTPException(status_code=400, detail="Nenhuma mensagem fornecida.")
+
+    try:
+        llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.3)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao inicializar LLM: {e}")
+
+    system_content = _SUSTENTACAO_CHAT_SYSTEM_TEMPLATE.format(
+        process_text=entry["text"][:80_000]
+    )
+    lc_messages = [SystemMessage(content=system_content)]
+    for m in req.messages:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        if role == "assistant":
+            lc_messages.append(AIMessage(content=content))
+        else:
+            lc_messages.append(HumanMessage(content=content))
+
+    try:
+        response = llm.invoke(lc_messages)
+        reply = be.safe_content(response)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro no chat: {e}")
+
+    return {"reply": reply}
+
+
 # ── Serve React frontend (production) ────────────────────────────────────────
 FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 if FRONTEND_DIR.is_dir():

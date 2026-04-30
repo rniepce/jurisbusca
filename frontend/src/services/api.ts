@@ -763,3 +763,46 @@ export async function saveMemory(content: string, enabled = true) {
     return safeJson(res, 'Save Memory');
 }
 
+
+// ── Sustentação Oral ────────────────────────────────────────────────────────
+
+export interface SustentacaoData {
+    numero_processo: string | null;
+    tipo_recursal: string | null;
+    camara: string | null;
+    relator: string | null;
+    data_sessao: string | null;
+    recorrente: string | null;
+    recorrido: string | null;
+    advogado_sustentante: string | null;
+    parte_sustentante: string | null;
+    teses: string[];
+    preliminares: string[];
+    sintese_decisao_1grau: string | null;
+}
+
+export async function extractSustentacao(text: string): Promise<{ process_id: string; data: SustentacaoData }> {
+    const res = await fetch(`${API_BASE}/sustentacao/extract`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Sustentação Extract').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao extrair processo (${res.status})`);
+    }
+    return safeJson(res, 'Sustentação Extract');
+}
+
+export async function chatSustentacao(processId: string, messages: Array<{ role: string; content: string }>): Promise<{ reply: string }> {
+    const res = await fetch(`${API_BASE}/sustentacao/chat`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ process_id: processId, messages }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Sustentação Chat').catch(() => ({}));
+        throw new Error(err.detail || `Erro no chat (${res.status})`);
+    }
+    return safeJson(res, 'Sustentação Chat');
+}
