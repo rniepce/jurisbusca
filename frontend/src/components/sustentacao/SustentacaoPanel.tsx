@@ -32,6 +32,28 @@ const SustentacaoPanel: React.FC<Props> = ({ onClose, onOpenJurisprudencia }) =>
         setError('');
         setPhase('processing');
         setProgress('Enviando PDF...');
+
+        // Mensagens incrementais para a fase de extração (LLM call de 10-30s sem
+        // eventos reais). Cicla a cada ~4s até a chamada terminar.
+        const extractionMessages = tipoAto === 'sustentacao'
+            ? [
+                'Lendo o processo...',
+                'Identificando partes e relator...',
+                'Extraindo teses do recurso...',
+                'Mapeando preliminares...',
+                'Sintetizando decisão de 1º grau...',
+                'Estruturando pré-juízo...',
+            ]
+            : [
+                'Lendo o processo...',
+                'Identificando autor, réu e vara...',
+                'Extraindo pontos controvertidos...',
+                'Mapeando ônus da prova...',
+                'Identificando testemunhas e intimações...',
+                'Sugerindo quesitos...',
+            ];
+
+        let extractionTimer: ReturnType<typeof setInterval> | null = null;
         try {
             const upload = await uploadFile(file, 'mistral_doc_ai', true, false, (info) => {
                 setProgress(info.progress || `Processando OCR... ${info.percent}%`);
@@ -39,12 +61,21 @@ const SustentacaoPanel: React.FC<Props> = ({ onClose, onOpenJurisprudencia }) =>
             const text = (upload as any)?.text || '';
             if (!text.trim()) throw new Error('Não foi possível extrair texto do PDF.');
 
-            setProgress('Extraindo dados do processo...');
+            // Cicla mensagens durante a extração estruturada
+            let idx = 0;
+            setProgress(extractionMessages[0]);
+            extractionTimer = setInterval(() => {
+                idx = Math.min(idx + 1, extractionMessages.length - 1);
+                setProgress(extractionMessages[idx]);
+            }, 4000);
+
             const result = await extractSustentacao(text, tipoAto, modo);
+            if (extractionTimer) clearInterval(extractionTimer);
             setProcessId(result.process_id);
             setData(result.data);
             setPhase('ready');
         } catch (e: any) {
+            if (extractionTimer) clearInterval(extractionTimer);
             setError(e?.message || 'Erro desconhecido');
             setPhase('select');
         }
@@ -108,8 +139,7 @@ const SustentacaoPanel: React.FC<Props> = ({ onClose, onOpenJurisprudencia }) =>
                         <ModeSelector
                             tipoAto={tipoAto}
                             modo={modo}
-                            onTipoChange={setTipoAto}
-                            onModoChange={setModo}
+                            onSelect={(t, m) => { setTipoAto(t); setModo(m); }}
                         />
                         <div
                             className="sust-upload-area"

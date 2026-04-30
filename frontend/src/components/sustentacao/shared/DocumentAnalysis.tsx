@@ -111,8 +111,12 @@ const DocumentAnalysis: React.FC<Props> = ({ processId, mode }) => {
             <section className="sust-card">
                 <h3 className="sust-card-title"><FaFileArrowUp /> {cfg.title}</h3>
 
-                <div className={`sust-verdict ${badge.cls}`}>
-                    <span className="sust-verdict-icon">{badge.icon}</span>
+                <div
+                    className={`sust-verdict ${badge.cls}`}
+                    role="status"
+                    aria-label={`Resultado: ${badge.text}. ${result.resumo}`}
+                >
+                    <span className="sust-verdict-icon" aria-hidden="true">{badge.icon}</span>
                     <div className="sust-verdict-body">
                         <strong>{badge.text}</strong>
                         <span>{result.resumo}</span>

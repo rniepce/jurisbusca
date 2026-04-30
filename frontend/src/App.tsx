@@ -997,7 +997,23 @@ function MainApp() {
         />
       );
     }
-    return <WelcomeContent onOpenJurisprudencia={() => setShowJurisprudencia(true)} />;
+    return (
+      <WelcomeContent
+        onOpenJurisprudencia={() => setShowJurisprudencia(true)}
+        onOpenSustentacao={() => setShowSustentacao(true)}
+        onAttachFile={() => {
+          // Foca o textarea — o usuário já vê o botão de anexo no ChatInput
+          chatTextareaRef.current?.focus();
+          const attachBtn = document.querySelector('[aria-label="Anexar processo"]') as HTMLButtonElement | null;
+          attachBtn?.click();
+        }}
+        onOpenAgents={() => {
+          // Abre a sidebar (no mobile estaria fechada) e foca o primeiro agente
+          if (!sidebarOpen) setSidebarOpen(true);
+          setTimeout(() => document.getElementById('agent-gabinete-2.0')?.focus(), 100);
+        }}
+      />
+    );
   };
 
   const showBatchPanel = batchResults.length > 0;

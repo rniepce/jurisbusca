@@ -78,8 +78,13 @@ const ChatPanel: React.FC<Props> = ({ processId, placeholders, title = 'Pergunte
                     rows={2}
                     disabled={loading}
                 />
-                <button className="sust-btn-send" onClick={handleSend} disabled={!input.trim() || loading}>
-                    <FaPaperPlane />
+                <button
+                    className="sust-btn-send"
+                    onClick={handleSend}
+                    disabled={!input.trim() || loading}
+                    aria-label="Enviar pergunta"
+                >
+                    <FaPaperPlane aria-hidden="true" />
                 </button>
             </div>
         </aside>

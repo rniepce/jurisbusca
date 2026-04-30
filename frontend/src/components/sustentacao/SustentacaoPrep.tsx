@@ -46,10 +46,11 @@ const SustentacaoPrep: React.FC<Props> = ({ data, processId, onOpenJurisprudenci
                     )}
                 </section>
 
-                <section className="sust-card">
-                    <h3 className="sust-card-title"><FaScaleBalanced /> Síntese da decisão de 1º grau</h3>
+                {/* Pré-juízo logo após teses/preliminares — é o conteúdo mais valioso */}
+                <section className="sust-card sust-card-highlight">
+                    <h3 className="sust-card-title"><FaLightbulb /> Pré-juízo</h3>
                     <p className="sust-prose">
-                        {data.sintese_decisao_1grau || <span className="sust-empty">Não identificada.</span>}
+                        {data.pre_juizo || <span className="sust-empty">—</span>}
                     </p>
                 </section>
 
@@ -65,9 +66,9 @@ const SustentacaoPrep: React.FC<Props> = ({ data, processId, onOpenJurisprudenci
                 </section>
 
                 <section className="sust-card">
-                    <h3 className="sust-card-title"><FaLightbulb /> Pré-juízo</h3>
+                    <h3 className="sust-card-title"><FaScaleBalanced /> Síntese da decisão de 1º grau</h3>
                     <p className="sust-prose">
-                        {data.pre_juizo || <span className="sust-empty">—</span>}
+                        {data.sintese_decisao_1grau || <span className="sust-empty">Não identificada.</span>}
                     </p>
                 </section>
 

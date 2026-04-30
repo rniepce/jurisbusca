@@ -55,29 +55,31 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: var(--space-2);
     width: 100%;
-    padding: 10px 16px;
-    margin-top: 8px;
-    border: 1px solid rgba(251, 191, 36, 0.4);
+    padding: var(--space-2) var(--space-4);
+    margin-top: var(--space-2);
+    border: 1px solid var(--gray-200);
     border-radius: 10px;
     cursor: pointer;
-    font-size: 13px;
-    font-weight: 600;
+    font-size: var(--text-sm);
+    font-weight: 500;
     font-family: var(--font-family);
-    color: #1e293b;
-    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-    transition: all 0.18s ease;
+    color: var(--gray-700);
+    background: #fff;
+    min-height: var(--touch-target);
+    transition: all 0.15s ease;
 }
 
 .sustentacao-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 3px 10px rgba(251, 191, 36, 0.3);
-    border-color: rgba(251, 191, 36, 0.7);
+    border-color: #f59e0b;
+    background: #fffbeb;
+    color: var(--text-color);
 }
 
-.sustentacao-btn:active {
-    transform: translateY(0);
+.sustentacao-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
 }
 
 .sustentacao-btn svg {
