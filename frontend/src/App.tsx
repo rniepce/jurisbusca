@@ -916,17 +916,20 @@ function MainApp() {
         />
       );
     }
-    if (showJurisprudencia) {
+    // Jurisprudência sozinha (sem Sustentação aberta)
+    if (showJurisprudencia && !showSustentacao) {
       return (
         <JurisprudenciaPanel
           onClose={() => setShowJurisprudencia(false)}
         />
       );
     }
+    // Sustentação aberta — Jurisprudência será renderizada como overlay (fora de renderContent)
     if (showSustentacao) {
       return (
         <SustentacaoPanel
           onClose={() => setShowSustentacao(false)}
+          onOpenJurisprudencia={() => setShowJurisprudencia(true)}
         />
       );
     }
@@ -1104,6 +1107,15 @@ function MainApp() {
         isOpen={showMemoryPanel}
         onClose={() => setShowMemoryPanel(false)}
       />
+
+      {/* Jurisprudência overlay sobre Sustentação (preserva estado da Sustentação) */}
+      {showSustentacao && showJurisprudencia && (
+        <div className="sust-jurisprudencia-overlay">
+          <JurisprudenciaPanel
+            onClose={() => setShowJurisprudencia(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { FaListUl, FaPenToSquare, FaTriangleExclamation } from 'react-icons/fa6';
 import type { SustentacaoData } from '../../services/api';
 import ProcessHeader from './shared/ProcessHeader';
 import ChatPanel from './shared/ChatPanel';
 import DocumentAnalysis from './shared/DocumentAnalysis';
+import { useLocalState, useLocalNumberSet } from './shared/useLocalState';
 
 interface Props {
     data: SustentacaoData;
@@ -11,9 +12,9 @@ interface Props {
 }
 
 const SustentacaoLive: React.FC<Props> = ({ data, processId }) => {
-    const [tesesMarcadas, setTesesMarcadas] = useState<Set<number>>(new Set());
-    const [argumentosNovos, setArgumentosNovos] = useState('');
-    const [notas, setNotas] = useState('');
+    const [tesesMarcadas, setTesesMarcadas] = useLocalNumberSet(`sust:${processId}:teses`);
+    const [argumentosNovos, setArgumentosNovos] = useLocalState(`sust:${processId}:argumentos`, '');
+    const [notas, setNotas] = useLocalState(`sust:${processId}:notas`, '');
 
     const toggleTese = (i: number) => {
         setTesesMarcadas(prev => {

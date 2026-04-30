@@ -10,11 +10,12 @@ import './SustentacaoPanel.css';
 
 interface Props {
     onClose: () => void;
+    onOpenJurisprudencia?: () => void;
 }
 
 type Phase = 'select' | 'processing' | 'ready';
 
-const SustentacaoPanel: React.FC<Props> = ({ onClose }) => {
+const SustentacaoPanel: React.FC<Props> = ({ onClose, onOpenJurisprudencia }) => {
     const [tipoAto, setTipoAto] = useState<TipoAto>('sustentacao');
     const [modo, setModo] = useState<Modo>('preparacao');
     const [phase, setPhase] = useState<Phase>('select');
@@ -70,9 +71,9 @@ const SustentacaoPanel: React.FC<Props> = ({ onClose }) => {
 
     const renderView = () => {
         if (!data || !processId) return null;
-        if (tipoAto === 'sustentacao' && modo === 'preparacao') return <SustentacaoPrep data={data} processId={processId} />;
+        if (tipoAto === 'sustentacao' && modo === 'preparacao') return <SustentacaoPrep data={data} processId={processId} onOpenJurisprudencia={onOpenJurisprudencia} />;
         if (tipoAto === 'sustentacao' && modo === 'realizacao') return <SustentacaoLive data={data} processId={processId} />;
-        if (tipoAto === 'audiencia' && modo === 'preparacao') return <AudienciaPrep data={data} processId={processId} />;
+        if (tipoAto === 'audiencia' && modo === 'preparacao') return <AudienciaPrep data={data} processId={processId} onOpenJurisprudencia={onOpenJurisprudencia} />;
         if (tipoAto === 'audiencia' && modo === 'realizacao') return <AudienciaLive data={data} processId={processId} />;
         return null;
     };

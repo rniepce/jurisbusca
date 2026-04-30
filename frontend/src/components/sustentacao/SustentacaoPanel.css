@@ -438,6 +438,21 @@
     cursor: not-allowed;
 }
 
+/* ── Jurisprudência como overlay sobre Sustentação ──────────────────── */
+
+.sust-jurisprudencia-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    background: #fff;
+    animation: sust-overlay-in 0.18s ease-out;
+}
+
+@keyframes sust-overlay-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* ── Mode selector ──────────────────────────────────────────────────── */
 
 .sust-select-area {
@@ -799,6 +814,25 @@
 .sust-analysis-alerta {
     color: #b45309 !important;
     font-weight: 500;
+}
+
+.sust-research-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.sust-research-actions .sust-btn-primary,
+.sust-research-actions .sust-btn-secondary-light {
+    margin-top: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sust-research-actions .sust-btn-primary:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
 }
 
 /* Responsivo */

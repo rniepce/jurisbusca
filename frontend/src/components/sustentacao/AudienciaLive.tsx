@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { FaUsers, FaQuestion, FaPenToSquare, FaTriangleExclamation, FaStar } from 'react-icons/fa6';
 import type { SustentacaoData } from '../../services/api';
 import ProcessHeader from './shared/ProcessHeader';
 import ChatPanel from './shared/ChatPanel';
 import DocumentAnalysis from './shared/DocumentAnalysis';
+import { useLocalState } from './shared/useLocalState';
 
 interface Props {
     data: SustentacaoData;
@@ -12,9 +13,10 @@ interface Props {
 
 const AudienciaLive: React.FC<Props> = ({ data, processId }) => {
     const depoentes = data.depoentes || [];
-    const [depoenteId, setDepoenteId] = useState<string>(depoentes[0]?.id || '');
-    const [perguntasMarcadas, setPerguntasMarcadas] = useState<Record<string, Set<number>>>({});
-    const [caderno, setCaderno] = useState('');
+    const [depoenteId, setDepoenteId] = useLocalState<string>(`aud:${processId}:depoente`, depoentes[0]?.id || '');
+    // Persistido como Record<string, number[]> (Sets não são serializáveis)
+    const [perguntasMarcadasArr, setPerguntasMarcadasArr] = useLocalState<Record<string, number[]>>(`aud:${processId}:perguntas`, {});
+    const [caderno, setCaderno] = useLocalState(`aud:${processId}:caderno`, '');
 
     const perguntasAtuais = useMemo(() => {
         const item = (data.perguntas_planejadas || []).find(p => p.depoente_id === depoenteId);
@@ -22,14 +24,14 @@ const AudienciaLive: React.FC<Props> = ({ data, processId }) => {
     }, [data.perguntas_planejadas, depoenteId]);
 
     const togglePergunta = (i: number) => {
-        setPerguntasMarcadas(prev => {
+        setPerguntasMarcadasArr(prev => {
             const cur = new Set(prev[depoenteId] || []);
             if (cur.has(i)) cur.delete(i); else cur.add(i);
-            return { ...prev, [depoenteId]: cur };
+            return { ...prev, [depoenteId]: Array.from(cur) };
         });
     };
 
-    const marcadas = perguntasMarcadas[depoenteId] || new Set();
+    const marcadas = useMemo(() => new Set(perguntasMarcadasArr[depoenteId] || []), [perguntasMarcadasArr, depoenteId]);
 
     const inserirMarca = (texto: string) => {
         const ts = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });

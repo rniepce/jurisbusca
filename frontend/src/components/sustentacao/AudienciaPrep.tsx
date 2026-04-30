@@ -3,15 +3,17 @@ import { FaListUl, FaScaleBalanced, FaUsers, FaFileLines, FaQuestion } from 'rea
 import type { SustentacaoData } from '../../services/api';
 import ProcessHeader from './shared/ProcessHeader';
 import ChatPanel from './shared/ChatPanel';
+import ResearchActions from './shared/ResearchActions';
 
 interface Props {
     data: SustentacaoData;
     processId: string;
+    onOpenJurisprudencia?: () => void;
 }
 
 const yesNo = (v: boolean | null | undefined): string => v == null ? '?' : v ? 'Sim' : 'Não';
 
-const AudienciaPrep: React.FC<Props> = ({ data, processId }) => {
+const AudienciaPrep: React.FC<Props> = ({ data, processId, onOpenJurisprudencia }) => {
     const totalTestemunhas = (data.testemunhas_autor?.length || 0) + (data.testemunhas_reu?.length || 0);
 
     return (
@@ -123,6 +125,8 @@ const AudienciaPrep: React.FC<Props> = ({ data, processId }) => {
                         ))}
                     </section>
                 )}
+
+                <ResearchActions onOpenJurisprudencia={onOpenJurisprudencia} />
             </div>
 
             <ChatPanel

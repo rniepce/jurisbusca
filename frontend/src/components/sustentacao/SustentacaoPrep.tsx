@@ -3,13 +3,15 @@ import { FaListUl, FaTriangleExclamation, FaScaleBalanced, FaEye, FaLightbulb } 
 import type { SustentacaoData } from '../../services/api';
 import ProcessHeader from './shared/ProcessHeader';
 import ChatPanel from './shared/ChatPanel';
+import ResearchActions from './shared/ResearchActions';
 
 interface Props {
     data: SustentacaoData;
     processId: string;
+    onOpenJurisprudencia?: () => void;
 }
 
-const SustentacaoPrep: React.FC<Props> = ({ data, processId }) => {
+const SustentacaoPrep: React.FC<Props> = ({ data, processId, onOpenJurisprudencia }) => {
     return (
         <div className="sust-dashboard">
             <div className="sust-main">
@@ -68,6 +70,8 @@ const SustentacaoPrep: React.FC<Props> = ({ data, processId }) => {
                         {data.pre_juizo || <span className="sust-empty">—</span>}
                     </p>
                 </section>
+
+                <ResearchActions onOpenJurisprudencia={onOpenJurisprudencia} />
             </div>
 
             <ChatPanel
