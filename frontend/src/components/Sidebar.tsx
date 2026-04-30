@@ -92,10 +92,10 @@ const Sidebar = ({
                         if (onOpenSustentacao) onOpenSustentacao();
                         if (onCloseMobile) onCloseMobile();
                     }}
-                    title="Painel de apoio para sustentação oral"
+                    title="Painel de apoio para sessão / audiência"
                 >
                     <FaGavel size={13} />
-                    <span>Sustentação Oral</span>
+                    <span>Sessão / Audiência</span>
                 </button>
             </div>
 
