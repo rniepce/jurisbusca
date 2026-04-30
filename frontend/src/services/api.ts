@@ -830,6 +830,53 @@ export async function extractSustentacao(text: string, tipoAto: TipoAto = 'suste
     return safeJson(res, 'Sustentação Extract');
 }
 
+export interface AnaliseVotoResult {
+    resultado: 'favoravel' | 'desfavoravel' | 'parcial';
+    resumo: string;
+    por_tese: Array<{
+        tese: string;
+        posicao: 'favoravel' | 'desfavoravel' | 'nao_apreciada';
+        justificativa: string;
+    }>;
+}
+
+export interface AnaliseSentencaResult {
+    resultado: 'procedente' | 'improcedente' | 'parcial';
+    resumo: string;
+    por_ponto: Array<{
+        ponto: string;
+        decisao: string;
+        fundamento: string;
+        alerta: string | null;
+    }>;
+}
+
+export async function analisarVoto(processId: string, documentoText: string): Promise<AnaliseVotoResult> {
+    const res = await fetch(`${API_BASE}/sustentacao/analisar-voto`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ process_id: processId, documento_text: documentoText }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Análise voto').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao analisar voto (${res.status})`);
+    }
+    return safeJson(res, 'Análise voto');
+}
+
+export async function analisarSentenca(processId: string, documentoText: string): Promise<AnaliseSentencaResult> {
+    const res = await fetch(`${API_BASE}/sustentacao/analisar-sentenca`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ process_id: processId, documento_text: documentoText }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Análise sentença').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao analisar sentença (${res.status})`);
+    }
+    return safeJson(res, 'Análise sentença');
+}
+
 export async function chatSustentacao(processId: string, messages: Array<{ role: string; content: string }>): Promise<{ reply: string }> {
     const res = await fetch(`${API_BASE}/sustentacao/chat`, {
         method: 'POST',

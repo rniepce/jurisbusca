@@ -2657,6 +2657,98 @@ async def sustentacao_chat(req: SustentacaoChatRequest, _auth: dict = Depends(re
     return {"reply": reply}
 
 
+# ── Análise voto/sentença ───────────────────────────────────────────────────
+
+class AnaliseDocumentoRequest(BaseModel):
+    process_id: str
+    documento_text: str
+
+
+def _parse_llm_json(raw: str) -> dict:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.lower().startswith("json"):
+            raw = raw[4:].lstrip()
+    return json.loads(raw)
+
+
+@app.post("/api/sustentacao/analisar-voto")
+async def analisar_voto(req: AnaliseDocumentoRequest, _auth: dict = Depends(require_auth)):
+    """Analisa o voto do relator vs as teses extraídas do recurso."""
+    entry = _sustentacao_store.get(req.process_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Processo não encontrado.")
+    if not (req.documento_text or "").strip():
+        raise HTTPException(status_code=400, detail="Voto vazio.")
+
+    teses = entry.get("data", {}).get("teses") or []
+    if not teses:
+        raise HTTPException(status_code=400, detail="Não há teses extraídas para comparar com o voto.")
+
+    try:
+        llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao inicializar LLM: {e}")
+
+    user_content = (
+        f"TESES DO SUSTENTANTE:\n"
+        + "\n".join(f"- {t}" for t in teses)
+        + f"\n\nVOTO DO RELATOR:\n{req.documento_text[:60_000]}"
+    )
+    messages = [
+        SystemMessage(content=ps_prompts.ANALISE_VOTO_SYSTEM),
+        HumanMessage(content=user_content),
+    ]
+
+    try:
+        response = llm.invoke(messages)
+        return _parse_llm_json(be.safe_content(response))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=502, detail=f"LLM retornou JSON inválido: {e}")
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na análise: {e}")
+
+
+@app.post("/api/sustentacao/analisar-sentenca")
+async def analisar_sentenca(req: AnaliseDocumentoRequest, _auth: dict = Depends(require_auth)):
+    """Analisa minuta de sentença vs pontos controvertidos da audiência."""
+    entry = _sustentacao_store.get(req.process_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Processo não encontrado.")
+    if not (req.documento_text or "").strip():
+        raise HTTPException(status_code=400, detail="Sentença vazia.")
+
+    pontos = entry.get("data", {}).get("pontos_controvertidos") or []
+    if not pontos:
+        raise HTTPException(status_code=400, detail="Não há pontos controvertidos extraídos para comparar.")
+
+    try:
+        llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao inicializar LLM: {e}")
+
+    user_content = (
+        f"PONTOS CONTROVERTIDOS:\n"
+        + "\n".join(f"- {p}" for p in pontos)
+        + f"\n\nMINUTA DE SENTENÇA:\n{req.documento_text[:60_000]}"
+    )
+    messages = [
+        SystemMessage(content=ps_prompts.ANALISE_SENTENCA_SYSTEM),
+        HumanMessage(content=user_content),
+    ]
+
+    try:
+        response = llm.invoke(messages)
+        return _parse_llm_json(be.safe_content(response))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=502, detail=f"LLM retornou JSON inválido: {e}")
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na análise: {e}")
+
+
 # ── Serve React frontend (production) ────────────────────────────────────────
 FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 if FRONTEND_DIR.is_dir():

@@ -3,6 +3,7 @@ import { FaUsers, FaQuestion, FaPenToSquare, FaTriangleExclamation, FaStar } fro
 import type { SustentacaoData } from '../../services/api';
 import ProcessHeader from './shared/ProcessHeader';
 import ChatPanel from './shared/ChatPanel';
+import DocumentAnalysis from './shared/DocumentAnalysis';
 
 interface Props {
     data: SustentacaoData;
@@ -99,6 +100,8 @@ const AudienciaLive: React.FC<Props> = ({ data, processId }) => {
                             rows={12}
                         />
                     </section>
+
+                    <DocumentAnalysis processId={processId} mode="sentenca" />
                 </div>
 
                 <ChatPanel

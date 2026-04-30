@@ -702,6 +702,105 @@
     background: rgba(120, 53, 15, 0.1);
 }
 
+/* ── Document analysis (voto / sentença) ────────────────────────────── */
+
+.sust-inline-processing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #64748b;
+    font-size: 14px;
+    padding: 8px 0;
+}
+
+.sust-verdict {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    border: 1px solid;
+}
+
+.sust-verdict.favoravel {
+    background: #dcfce7;
+    border-color: #86efac;
+    color: #14532d;
+}
+
+.sust-verdict.desfavoravel {
+    background: #fee2e2;
+    border-color: #fecaca;
+    color: #7f1d1d;
+}
+
+.sust-verdict.parcial {
+    background: #fef3c7;
+    border-color: #fde68a;
+    color: #78350f;
+}
+
+.sust-verdict-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+}
+
+.sust-verdict-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sust-verdict-body strong {
+    font-size: 15px;
+    letter-spacing: 0.4px;
+}
+
+.sust-verdict-body span {
+    font-size: 13px;
+    opacity: 0.9;
+}
+
+.sust-analysis-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sust-analysis-item {
+    border-left: 3px solid #cbd5e1;
+    background: #f8fafc;
+    padding: 10px 14px;
+    border-radius: 0 6px 6px 0;
+}
+
+.sust-analysis-item.favoravel { border-left-color: #16a34a; }
+.sust-analysis-item.desfavoravel { border-left-color: #dc2626; }
+.sust-analysis-item.parcial,
+.sust-analysis-item.nao_apreciada { border-left-color: #ca8a04; }
+
+.sust-analysis-item-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    font-size: 13px;
+    color: #1e293b;
+}
+
+.sust-analysis-item p {
+    margin: 4px 0 0 0;
+    font-size: 13px;
+    color: #334155;
+    line-height: 1.5;
+}
+
+.sust-analysis-alerta {
+    color: #b45309 !important;
+    font-weight: 500;
+}
+
 /* Responsivo */
 @media (max-width: 900px) {
     .sust-dashboard {

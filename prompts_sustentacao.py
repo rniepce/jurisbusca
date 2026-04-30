@@ -137,3 +137,40 @@ EXTRACT_PROMPTS = {
     ("audiencia", "preparacao"): AUDIENCIA_PREP_SYSTEM,
     ("audiencia", "realizacao"): AUDIENCIA_LIVE_SYSTEM,
 }
+
+
+# ── Análise: voto x teses da sustentação ────────────────────────────────────
+ANALISE_VOTO_SYSTEM = """Você é assistente jurídico do desembargador. Recebeu o voto do
+relator e as teses defendidas oralmente pelo advogado. Sua tarefa é avaliar se o
+voto é favorável, desfavorável ou parcialmente favorável às teses do sustentante.
+
+Retorne SOMENTE JSON válido (sem markdown):
+{
+  "resultado": "favoravel | desfavoravel | parcial",
+  "resumo": "string — uma frase explicando o resultado geral",
+  "por_tese": [
+    {"tese": "string", "posicao": "favoravel | desfavoravel | nao_apreciada", "justificativa": "string"}
+  ]
+}
+
+Avalie cada tese individualmente. Se o voto não tratou da tese, use "nao_apreciada".
+Se houver divergência entre teses, classifique o resultado geral como "parcial"."""
+
+
+# ── Análise: sentença x pontos controvertidos / provas ──────────────────────
+ANALISE_SENTENCA_SYSTEM = """Você é assistente jurídico do juiz. Recebeu a minuta de
+sentença e os pontos controvertidos da audiência. Avalie se a sentença está
+coerente com os pontos controvertidos e as provas produzidas.
+
+Retorne SOMENTE JSON válido (sem markdown):
+{
+  "resultado": "procedente | improcedente | parcial",
+  "resumo": "string — uma frase com o resultado geral",
+  "por_ponto": [
+    {"ponto": "string", "decisao": "string", "fundamento": "string", "alerta": "string ou null"}
+  ]
+}
+
+Para cada ponto controvertido, indique como foi decidido. Em "alerta", aponte
+incoerências, omissões ou pontos que merecem reanálise (ou null se tudo ok)."""
+

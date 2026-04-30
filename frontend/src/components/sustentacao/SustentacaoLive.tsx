@@ -3,6 +3,7 @@ import { FaListUl, FaPenToSquare, FaTriangleExclamation } from 'react-icons/fa6'
 import type { SustentacaoData } from '../../services/api';
 import ProcessHeader from './shared/ProcessHeader';
 import ChatPanel from './shared/ChatPanel';
+import DocumentAnalysis from './shared/DocumentAnalysis';
 
 interface Props {
     data: SustentacaoData;
@@ -79,6 +80,8 @@ const SustentacaoLive: React.FC<Props> = ({ data, processId }) => {
                             rows={6}
                         />
                     </section>
+
+                    <DocumentAnalysis processId={processId} mode="voto" />
                 </div>
 
                 <ChatPanel
