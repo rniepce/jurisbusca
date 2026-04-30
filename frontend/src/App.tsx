@@ -1050,8 +1050,8 @@ function MainApp() {
       <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
         <Header onMenuClick={toggleSidebar} isOpen={sidebarOpen} onOpenModelManager={() => setShowModelManager(true)} />
 
-        <div className={`main-content ${showBatchPanel ? 'with-batch' : ''} ${canvasOpen ? 'with-canvas' : ''}`}>
-          <div className={canvasOpen ? 'canvas-chat-pane' : undefined}>
+        <div className={`main-content ${showBatchPanel ? 'with-batch' : ''} ${canvasOpen ? 'with-canvas' : ''} ${(showSustentacao || showJurisprudencia || showModelManager || showAgentBuilder || xrayReport) ? 'with-full-panel' : ''}`}>
+          <div className={`chat-content-wrapper ${canvasOpen ? 'canvas-chat-pane' : ''}`}>
             <Suspense fallback={<div className="lazy-fallback">Carregando...</div>}>
               {renderContent()}
             </Suspense>
