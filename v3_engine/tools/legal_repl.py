@@ -183,9 +183,17 @@ class LegalREPL:
             import io
             from contextlib import redirect_stdout
             
+            _safe_builtins = {
+                "len": len, "range": range, "enumerate": enumerate, "zip": zip,
+                "sorted": sorted, "list": list, "dict": dict, "set": set, "tuple": tuple,
+                "str": str, "int": int, "float": float, "bool": bool,
+                "sum": sum, "max": max, "min": min, "abs": abs, "round": round,
+                "print": print, "map": map, "filter": filter, "any": any, "all": all,
+                "isinstance": isinstance, "type": type,
+            }
             f = io.StringIO()
             with redirect_stdout(f):
-                exec(code, self.context)
+                exec(code, {"__builtins__": _safe_builtins}, self.context)
             
             output = f.getvalue()
             return output if output else "CODE_EXECUTED_NO_OUTPUT"
