@@ -438,6 +438,270 @@
     cursor: not-allowed;
 }
 
+/* ── Mode selector ──────────────────────────────────────────────────── */
+
+.sust-select-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.sust-mode-selector {
+    padding: 28px 32px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.sust-mode-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sust-mode-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.sust-mode-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.sust-mode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #1e293b;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.sust-mode-btn small {
+    color: #94a3b8;
+    font-weight: 400;
+}
+
+.sust-mode-btn:hover {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+}
+
+.sust-mode-btn.active {
+    background: #1e293b;
+    color: #fff;
+    border-color: #1e293b;
+}
+
+.sust-mode-btn.active small {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Header compacto (modos Realização) ─────────────────────────────── */
+
+.sust-live {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.sust-header-compact {
+    background: #1e293b;
+    color: #fff;
+    padding: 10px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    flex-shrink: 0;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.sust-header-compact-left {
+    font-weight: 600;
+}
+
+.sust-header-compact-right {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 12px;
+}
+
+.sust-live .sust-dashboard {
+    flex: 1;
+    overflow: hidden;
+}
+
+/* ── Checklist (teses, perguntas) ───────────────────────────────────── */
+
+.sust-checklist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sust-checklist li {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+    transition: all 0.15s;
+}
+
+.sust-checklist li.checked {
+    background: #dcfce7;
+    border-color: #86efac;
+}
+
+.sust-checklist li.checked span {
+    text-decoration: line-through;
+    color: #475569;
+}
+
+.sust-checklist label {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #1e293b;
+}
+
+.sust-checklist input[type="checkbox"] {
+    margin-top: 3px;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* ── Table (testemunhas) ────────────────────────────────────────────── */
+
+.sust-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 13px;
+}
+
+.sust-table th,
+.sust-table td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.sust-table th {
+    background: #f8fafc;
+    color: #64748b;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.sust-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.sust-subsection {
+    margin-top: 12px;
+}
+
+.sust-subsection > strong {
+    display: block;
+    font-size: 13px;
+    color: #1e293b;
+    margin-bottom: 4px;
+}
+
+/* ── Quick actions (audiência ao vivo) ──────────────────────────────── */
+
+.sust-quick-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.sust-btn-secondary-light {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #1e293b;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.sust-btn-secondary-light:hover {
+    background: #e2e8f0;
+}
+
+/* ── Future feature alert ───────────────────────────────────────────── */
+
+.sust-future-alert {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    color: #78350f;
+    font-size: 13px;
+    margin: 8px 0;
+}
+
+.sust-future-alert-icon {
+    color: #b45309;
+    flex-shrink: 0;
+}
+
+.sust-future-alert-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sust-future-alert-close {
+    background: transparent;
+    border: none;
+    color: #78350f;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.sust-future-alert-close:hover {
+    background: rgba(120, 53, 15, 0.1);
+}
+
 /* Responsivo */
 @media (max-width: 900px) {
     .sust-dashboard {

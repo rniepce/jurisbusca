@@ -2544,47 +2544,22 @@ async def slm_unload():
     return {"status": "ok", "message": "Modelos descarregados da memória."}
 
 
-# ── Sustentação Oral (Veredas) ───────────────────────────────────────────────
-# Painel de apoio a sustentações orais: extrai dados estruturados do processo
-# e oferece chat focado escopado ao texto extraído.
+# ── Sustentação Oral / Audiência ─────────────────────────────────────────────
+# Painel de apoio a magistrados durante atos processuais.
+# Duas dimensões: tipo_ato (sustentacao | audiencia) × modo (preparacao | realizacao)
+
+import prompts_sustentacao as ps_prompts
 
 _sustentacao_store: dict[str, dict] = {}
 
-_SUSTENTACAO_EXTRACT_SYSTEM = """Você é um assistente jurídico especializado em processos do TJMG.
-Analise o texto do processo judicial fornecido e extraia as informações em JSON válido.
-Retorne SOMENTE o JSON, sem markdown, sem explicações.
-
-Esquema esperado:
-{
-  "numero_processo": "string ou null",
-  "tipo_recursal": "string ou null",
-  "camara": "string ou null",
-  "relator": "string ou null",
-  "data_sessao": "string ou null",
-  "recorrente": "string ou null",
-  "recorrido": "string ou null",
-  "advogado_sustentante": "string ou null",
-  "parte_sustentante": "string ou null",
-  "teses": ["string"],
-  "preliminares": ["string"],
-  "sintese_decisao_1grau": "string ou null"
-}
-
-Se um campo não for encontrado, use null. Teses e preliminares devem ser listas de
-strings curtas e objetivas (uma frase cada). Se não houver teses ou preliminares,
-retorne lista vazia."""
-
-_SUSTENTACAO_CHAT_SYSTEM_TEMPLATE = """Você é um assistente jurídico do desembargador, especializado no processo abaixo.
-Responda às perguntas de forma objetiva, direta e técnica, com base exclusivamente
-no texto do processo. Se a resposta não estiver no processo, diga isso claramente.
-
-=== PROCESSO ===
-{process_text}
-=== FIM DO PROCESSO ==="""
+_VALID_TIPO_ATO = {"sustentacao", "audiencia"}
+_VALID_MODO = {"preparacao", "realizacao"}
 
 
 class SustentacaoExtractRequest(BaseModel):
     text: str
+    tipo_ato: str = "sustentacao"
+    modo: str = "preparacao"
 
 
 class SustentacaoChatRequest(BaseModel):
@@ -2594,10 +2569,16 @@ class SustentacaoChatRequest(BaseModel):
 
 @app.post("/api/sustentacao/extract")
 async def sustentacao_extract(req: SustentacaoExtractRequest, _auth: dict = Depends(require_auth)):
-    """Extrai dados estruturados de um processo para apoio a sustentação oral."""
+    """Extrai dados estruturados de um processo, com schema variando por tipo_ato × modo."""
     text = (req.text or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Texto vazio.")
+
+    tipo_ato = req.tipo_ato if req.tipo_ato in _VALID_TIPO_ATO else "sustentacao"
+    modo = req.modo if req.modo in _VALID_MODO else "preparacao"
+    system_prompt = ps_prompts.EXTRACT_PROMPTS.get((tipo_ato, modo))
+    if not system_prompt:
+        raise HTTPException(status_code=400, detail=f"Combinação inválida: {tipo_ato}/{modo}")
 
     try:
         llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.2)
@@ -2606,7 +2587,7 @@ async def sustentacao_extract(req: SustentacaoExtractRequest, _auth: dict = Depe
 
     truncated = text[:80_000]
     messages = [
-        SystemMessage(content=_SUSTENTACAO_EXTRACT_SYSTEM),
+        SystemMessage(content=system_prompt),
         HumanMessage(content=f"Texto do processo:\n\n{truncated}"),
     ]
 
@@ -2626,18 +2607,23 @@ async def sustentacao_extract(req: SustentacaoExtractRequest, _auth: dict = Depe
         raise HTTPException(status_code=500, detail=f"Erro na extração: {e}")
 
     process_id = str(uuid.uuid4())
-    _sustentacao_store[process_id] = {"text": text, "data": data}
+    _sustentacao_store[process_id] = {
+        "text": text,
+        "data": data,
+        "tipo_ato": tipo_ato,
+        "modo": modo,
+    }
     # Limita o store a 50 processos (LRU simples)
     if len(_sustentacao_store) > 50:
         oldest = next(iter(_sustentacao_store))
         _sustentacao_store.pop(oldest, None)
 
-    return {"process_id": process_id, "data": data}
+    return {"process_id": process_id, "data": data, "tipo_ato": tipo_ato, "modo": modo}
 
 
 @app.post("/api/sustentacao/chat")
 async def sustentacao_chat(req: SustentacaoChatRequest, _auth: dict = Depends(require_auth)):
-    """Chat focado em um processo de sustentação oral previamente extraído."""
+    """Chat focado em um processo previamente extraído."""
     entry = _sustentacao_store.get(req.process_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Processo não encontrado. Faça o upload novamente.")
@@ -2649,7 +2635,7 @@ async def sustentacao_chat(req: SustentacaoChatRequest, _auth: dict = Depends(re
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao inicializar LLM: {e}")
 
-    system_content = _SUSTENTACAO_CHAT_SYSTEM_TEMPLATE.format(
+    system_content = ps_prompts.CHAT_SYSTEM_TEMPLATE.format(
         process_text=entry["text"][:80_000]
     )
     lc_messages = [SystemMessage(content=system_content)]

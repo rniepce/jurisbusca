@@ -764,28 +764,64 @@ export async function saveMemory(content: string, enabled = true) {
 }
 
 
-// ── Sustentação Oral ────────────────────────────────────────────────────────
+// ── Sustentação Oral / Audiência ────────────────────────────────────────────
 
+export type TipoAto = 'sustentacao' | 'audiencia';
+export type Modo = 'preparacao' | 'realizacao';
+
+// Schema união — campos presentes variam por (tipo_ato × modo).
+// Cada sub-view consome só o subconjunto que precisa.
 export interface SustentacaoData {
-    numero_processo: string | null;
-    tipo_recursal: string | null;
-    camara: string | null;
-    relator: string | null;
-    data_sessao: string | null;
-    recorrente: string | null;
-    recorrido: string | null;
-    advogado_sustentante: string | null;
-    parte_sustentante: string | null;
-    teses: string[];
-    preliminares: string[];
-    sintese_decisao_1grau: string | null;
+    // Comuns / Sustentação
+    numero_processo?: string | null;
+    tipo_recursal?: string | null;
+    camara?: string | null;
+    relator?: string | null;
+    data_sessao?: string | null;
+    recorrente?: string | null;
+    recorrido?: string | null;
+    advogado_sustentante?: string | null;
+    parte_sustentante?: string | null;
+    sintese_recurso?: string | null;
+    teses?: string[];
+    preliminares?: string[];
+    sintese_decisao_1grau?: string | null;
+    pontos_criticos?: string[];
+    pre_juizo?: string | null;
+
+    // Audiência
+    vara?: string | null;
+    juiz?: string | null;
+    tipo_acao?: string | null;
+    autor?: string | null;
+    reu?: string | null;
+    data_audiencia?: string | null;
+    pontos_controvertidos?: string[];
+    onus_prova?: Array<{ de_quem: string; fato: string }>;
+    provas_deferidas?: string[];
+    provas_indeferidas?: string[];
+    testemunhas_autor?: Array<{ nome: string; intimada: boolean | null; ja_depos: boolean | null }>;
+    testemunhas_reu?: Array<{ nome: string; intimada: boolean | null; ja_depos: boolean | null }>;
+    depoimento_pessoal_autor?: boolean | null;
+    depoimento_pessoal_reu?: boolean | null;
+    documentos_relevantes?: string[];
+    quesitos_sugeridos?: Array<{ para: string; perguntas: string[] }>;
+    depoentes?: Array<{ id: string; nome: string; tipo: string }>;
+    perguntas_planejadas?: Array<{ depoente_id: string; perguntas: string[] }>;
 }
 
-export async function extractSustentacao(text: string): Promise<{ process_id: string; data: SustentacaoData }> {
+export interface ExtractResult {
+    process_id: string;
+    data: SustentacaoData;
+    tipo_ato: TipoAto;
+    modo: Modo;
+}
+
+export async function extractSustentacao(text: string, tipoAto: TipoAto = 'sustentacao', modo: Modo = 'preparacao'): Promise<ExtractResult> {
     const res = await fetch(`${API_BASE}/sustentacao/extract`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, tipo_ato: tipoAto, modo }),
     });
     if (!res.ok) {
         const err = await safeJson(res, 'Sustentação Extract').catch(() => ({}));

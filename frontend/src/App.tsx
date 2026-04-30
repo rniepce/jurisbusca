@@ -8,7 +8,7 @@ import CanvasEditor from './components/CanvasEditor';
 import XRayDashboard from './components/XRayDashboard';
 import BatchPanel from './components/BatchPanel';
 import JurisprudenciaPanel from './components/JurisprudenciaPanel';
-import SustentacaoPanel from './components/SustentacaoPanel';
+import SustentacaoPanel from './components/sustentacao/SustentacaoPanel';
 import ModelManagerPanel from './components/ModelManagerPanel';
 import AgentBuilderChat from './components/AgentBuilderChat';
 import CreateAgentDialog from './components/CreateAgentDialog';
