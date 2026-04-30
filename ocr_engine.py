@@ -8,9 +8,12 @@ Available engines:
 
 import os
 import tempfile
+import threading
 import requests
 
 import fitz  # PyMuPDF
+
+_singleton_lock = threading.Lock()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -116,12 +119,14 @@ MISTRAL_DOC_AI_ENGINE = None
 def get_mistral_doc_ai_engine():
     global MISTRAL_DOC_AI_ENGINE
     if MISTRAL_DOC_AI_ENGINE is None:
-        try:
-            MISTRAL_DOC_AI_ENGINE = MistralDocumentAIEngine()
-            print("✅ Mistral Document AI engine initialized")
-        except Exception as e:
-            print(f"⚠️ Erro ao iniciar Mistral Document AI: {e}")
-            MISTRAL_DOC_AI_ENGINE = None
+        with _singleton_lock:
+            if MISTRAL_DOC_AI_ENGINE is None:
+                try:
+                    MISTRAL_DOC_AI_ENGINE = MistralDocumentAIEngine()
+                    print("✅ Mistral Document AI engine initialized")
+                except Exception as e:
+                    print(f"⚠️ Erro ao iniciar Mistral Document AI: {e}")
+                    MISTRAL_DOC_AI_ENGINE = None
     return MISTRAL_DOC_AI_ENGINE
 
 
@@ -193,11 +198,13 @@ MARKER_ENGINE = None
 def get_marker_engine():
     global MARKER_ENGINE
     if MARKER_ENGINE is None:
-        try:
-            MARKER_ENGINE = MarkerEngine()
-        except Exception as e:
-            print(f"⚠️ Erro ao iniciar Marker engine: {e}")
-            MARKER_ENGINE = None
+        with _singleton_lock:
+            if MARKER_ENGINE is None:
+                try:
+                    MARKER_ENGINE = MarkerEngine()
+                except Exception as e:
+                    print(f"⚠️ Erro ao iniciar Marker engine: {e}")
+                    MARKER_ENGINE = None
     return MARKER_ENGINE
 
 

@@ -40,6 +40,7 @@ def init_db():
 @contextmanager
 def get_db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -72,17 +73,18 @@ def get_messages(conversation_id: str, user_email: str):
 def save_message(conversation_id: str, user_email: str, role: str, content: str, title: str = "Nova Conversa"):
     """Save a message payload to a conversation, creating it if it doesn't exist."""
     with get_db() as conn:
-        # Upsert conversation
-        cur = conn.execute("SELECT id FROM conversations WHERE id = ?", (conversation_id,))
+        # Upsert conversation — verify ownership before updating
+        cur = conn.execute("SELECT id FROM conversations WHERE id = ? AND user_email = ?", (conversation_id, user_email))
         if not cur.fetchone():
+            # Either doesn't exist, or belongs to a different user — create new row for this user
             conn.execute(
-                "INSERT INTO conversations (id, user_email, title) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO conversations (id, user_email, title) VALUES (?, ?, ?)",
                 (conversation_id, user_email, title)
             )
         else:
             conn.execute(
-                "UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (conversation_id,)
+                "UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_email = ?",
+                (conversation_id, user_email)
             )
 
         # Insert message
@@ -126,5 +128,14 @@ def save_memory(user_key: str = "default", content: str = "", enabled: bool = Tr
     return {"content": content, "enabled": enabled}
 
 
-# Create tables on import
-init_db()
+_db_initialized = False
+
+def ensure_db():
+    """Lazy initializer — call once at server startup instead of on every import."""
+    global _db_initialized
+    if not _db_initialized:
+        init_db()
+        _db_initialized = True
+
+# Initialize on import (safe to call multiple times due to IF NOT EXISTS)
+ensure_db()
