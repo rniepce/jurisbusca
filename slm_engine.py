@@ -238,6 +238,8 @@ def generate(
         tokenizer,
         prompt=chat_prompt,
         max_tokens=max_tokens,
+        temp=temperature,
+        top_p=top_p,
         verbose=False,
     )
 
@@ -289,6 +291,8 @@ def generate_chat(
         tokenizer,
         prompt=chat_prompt,
         max_tokens=max_tokens,
+        temp=temperature,
+        top_p=top_p,
         verbose=False,
     )
 

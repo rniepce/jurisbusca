@@ -138,7 +138,7 @@ def run_triage_agent(process_text: str, api_key: str = None, knowledge_base: str
         ]
         
         response = llm.invoke(messages)
-        return response.content
+        return be.safe_content(response)
         
     except Exception as e:
         return f"Erro Crítico no Triage Agent: {str(e)}"

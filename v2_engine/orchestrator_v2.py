@@ -62,9 +62,15 @@ def build_v2_graph():
     workflow.add_node("drafting", node_drafting)
     workflow.add_node("revision", node_revision)
     
+    def route_after_triage(state: AgentState):
+        """Circuit breaker: abort pipeline if triage produced no output."""
+        if not state.get("triage_report", "").strip():
+            return END
+        return "drafting"
+
     workflow.set_entry_point("triage")
-    
-    workflow.add_edge("triage", "drafting")
+
+    workflow.add_conditional_edges("triage", route_after_triage, {"drafting": "drafting", END: END})
     workflow.add_edge("drafting", "revision")
     workflow.add_edge("revision", END)
     
