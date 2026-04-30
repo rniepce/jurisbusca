@@ -1,21 +1,23 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import WelcomeContent from './components/WelcomeContent';
 import ChatArea from './components/ChatArea';
 import ChatInput from './components/ChatInput';
-import CanvasEditor from './components/CanvasEditor';
-import XRayDashboard from './components/XRayDashboard';
 import BatchPanel from './components/BatchPanel';
-import JurisprudenciaPanel from './components/JurisprudenciaPanel';
-import SustentacaoPanel from './components/sustentacao/SustentacaoPanel';
-import ModelManagerPanel from './components/ModelManagerPanel';
-import AgentBuilderChat from './components/AgentBuilderChat';
 import CreateAgentDialog from './components/CreateAgentDialog';
 import MemoryPanel from './components/MemoryPanel';
 import ShareAgentDialog from './components/ShareAgentDialog';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
+
+// Painéis pesados — carregados sob demanda para reduzir o bundle inicial
+const CanvasEditor = lazy(() => import('./components/CanvasEditor'));
+const XRayDashboard = lazy(() => import('./components/XRayDashboard'));
+const JurisprudenciaPanel = lazy(() => import('./components/JurisprudenciaPanel'));
+const SustentacaoPanel = lazy(() => import('./components/sustentacao/SustentacaoPanel'));
+const ModelManagerPanel = lazy(() => import('./components/ModelManagerPanel'));
+const AgentBuilderChat = lazy(() => import('./components/AgentBuilderChat'));
 import { AuthProvider, useAuth } from './components/AuthContext';
 import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, replicateBatchPilot, uploadTemplates, triggerJurisprudenciaResearch, pollJurisprudenciaResearch, getCustomAgents, createCustomAgent, deleteCustomAgent, shareCustomAgent } from './services/api';
 import agentDefinitions from './config/agents';
@@ -1034,25 +1036,28 @@ function MainApp() {
 
         <div className={`main-content ${showBatchPanel ? 'with-batch' : ''} ${canvasOpen ? 'with-canvas' : ''}`}>
           <div className={canvasOpen ? 'canvas-chat-pane' : undefined}>
-            {renderContent()}
+            <Suspense fallback={<div className="lazy-fallback">Carregando...</div>}>
+              {renderContent()}
+            </Suspense>
           </div>
           {canvasOpen && (
-            <CanvasEditor
-              content={canvasContent}
-              onClose={handleCanvasClose}
-              onContentChange={(text) => setCanvasContent(text)}
-              onSelectionChange={(text) => setCanvasSelection(text)}
-              onFocusChat={(selectedText) => {
-                // Focus the chat input and pre-fill with selection context
-                setCanvasSelection(selectedText);
-                if (chatTextareaRef.current) {
-                  chatTextareaRef.current.focus();
-                  chatTextareaRef.current.placeholder = `Refinar: "${selectedText.slice(0, 40)}..." — digite sua instrução`;
-                }
-              }}
-              isUpdating={isLoading}
-              conversationId={conversationId}
-            />
+            <Suspense fallback={<div className="lazy-fallback">Carregando editor...</div>}>
+              <CanvasEditor
+                content={canvasContent}
+                onClose={handleCanvasClose}
+                onContentChange={(text) => setCanvasContent(text)}
+                onSelectionChange={(text) => setCanvasSelection(text)}
+                onFocusChat={(selectedText) => {
+                  setCanvasSelection(selectedText);
+                  if (chatTextareaRef.current) {
+                    chatTextareaRef.current.focus();
+                    chatTextareaRef.current.placeholder = `Refinar: "${selectedText.slice(0, 40)}..." — digite sua instrução`;
+                  }
+                }}
+                isUpdating={isLoading}
+                conversationId={conversationId}
+              />
+            </Suspense>
           )}
           {showBatchPanel && (
             <BatchPanel
@@ -1064,7 +1069,7 @@ function MainApp() {
           )}
         </div>
 
-        {!showAgentBuilder && (
+        {!showAgentBuilder && !showSustentacao && !showJurisprudencia && !showModelManager && !xrayReport && (
           <ChatInput
             onSend={handleSend}
             onXray={handleXray}
@@ -1111,9 +1116,11 @@ function MainApp() {
       {/* Jurisprudência overlay sobre Sustentação (preserva estado da Sustentação) */}
       {showSustentacao && showJurisprudencia && (
         <div className="sust-jurisprudencia-overlay">
-          <JurisprudenciaPanel
-            onClose={() => setShowJurisprudencia(false)}
-          />
+          <Suspense fallback={<div className="lazy-fallback">Carregando...</div>}>
+            <JurisprudenciaPanel
+              onClose={() => setShowJurisprudencia(false)}
+            />
+          </Suspense>
         </div>
       )}
     </div>

@@ -134,3 +134,12 @@
     min-height: 0;
   }
 }
+.lazy-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #64748b;
+  font-size: 14px;
+  padding: 32px;
+}
