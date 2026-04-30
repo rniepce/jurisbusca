@@ -25,7 +25,7 @@ const SustentacaoPanel: React.FC<Props> = ({ onClose, onOpenJurisprudencia }) =>
     const [data, setData] = useState<SustentacaoData | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const titulo = tipoAto === 'sustentacao' ? 'Sustentação Oral' : 'Audiência';
+    const titulo = tipoAto === 'sustentacao' ? 'Sessão' : 'Audiência';
     const subtitulo = `${tipoAto === 'sustentacao' ? '2ª instância' : '1ª instância'} · ${modo === 'preparacao' ? 'Preparação' : 'Realização'}`;
 
     const handleFile = useCallback(async (file: File) => {

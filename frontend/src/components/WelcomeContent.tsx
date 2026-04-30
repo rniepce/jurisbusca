@@ -28,8 +28,8 @@ const WelcomeContent: React.FC<Props> = ({
         {
             id: 'sustentacao',
             icon: <FaGavel size={22} />,
-            title: 'Sustentação Oral',
-            desc: 'Apoio para audiência ou sessão',
+            title: 'Sessão',
+            desc: 'Apoio para audiência ou sessão de julgamento',
             onClick: onOpenSustentacao,
             accent: 'amber',
         },

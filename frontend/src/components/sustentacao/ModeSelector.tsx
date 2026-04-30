@@ -22,7 +22,7 @@ const COMBOS: Combo[] = [
     {
         tipoAto: 'sustentacao',
         modo: 'preparacao',
-        title: 'Sustentação · Preparação',
+        title: 'Sessão · Preparação',
         instancia: '2ª instância',
         desc: 'Estudo do recurso antes da sessão de julgamento',
         icon: <><FaGavel /><FaBookOpen /></>,
@@ -31,7 +31,7 @@ const COMBOS: Combo[] = [
     {
         tipoAto: 'sustentacao',
         modo: 'realizacao',
-        title: 'Sustentação · Realização',
+        title: 'Sessão · Realização',
         instancia: '2ª instância',
         desc: 'Apoio ao desembargador durante a sustentação oral',
         icon: <><FaGavel /><FaPlay /></>,
