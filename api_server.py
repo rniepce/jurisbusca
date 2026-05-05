@@ -2576,13 +2576,31 @@ def _sustentacao_get_owned(process_id: str, auth: dict) -> dict | None:
 
 
 def _parse_llm_json(raw: str) -> dict:
-    """Remove cercas markdown comuns (```json ... ```) e parseia JSON do LLM."""
-    raw = raw.strip()
+    """Remove cercas markdown e parseia JSON do LLM de forma tolerante.
+
+    Lida com três fontes comuns de falha em saída de LLM:
+    1. Cercas ```json ... ``` (com ou sem fechamento correto)
+    2. Lixo textual antes/depois do objeto (ex.: 'Aqui está o JSON: { ... }')
+    3. Caracteres de controle literais (\\n, \\t, \\r) dentro de strings —
+       o LLM costuma quebrar linha de verdade dentro de campos longos.
+       strict=False aceita esses bytes; o default rejeita com
+       'Invalid control character'.
+    """
+    raw = (raw or "").strip()
     if raw.startswith("```"):
-        raw = raw.strip("`")
+        raw = raw[3:]
         if raw.lower().startswith("json"):
-            raw = raw[4:].lstrip()
-    return json.loads(raw)
+            raw = raw[4:]
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        raw = raw.strip()
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end > start:
+        raw = raw[start:end + 1]
+
+    return json.loads(raw, strict=False)
 
 
 class SustentacaoExtractRequest(BaseModel):

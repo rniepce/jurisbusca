@@ -264,9 +264,11 @@ TESSERACT_ENGINE = None
 def get_tesseract_engine():
     global TESSERACT_ENGINE
     if TESSERACT_ENGINE is None:
-        try:
-            TESSERACT_ENGINE = TesseractEngine()
-        except Exception as e:
-            print(f"⚠️ Erro ao iniciar Tesseract engine: {e}")
-            TESSERACT_ENGINE = None
+        with _singleton_lock:
+            if TESSERACT_ENGINE is None:
+                try:
+                    TESSERACT_ENGINE = TesseractEngine()
+                except Exception as e:
+                    print(f"⚠️ Erro ao iniciar Tesseract engine: {e}")
+                    TESSERACT_ENGINE = None
     return TESSERACT_ENGINE

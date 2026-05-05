@@ -73,12 +73,15 @@ def get_messages(conversation_id: str, user_email: str):
 def save_message(conversation_id: str, user_email: str, role: str, content: str, title: str = "Nova Conversa"):
     """Save a message payload to a conversation, creating it if it doesn't exist."""
     with get_db() as conn:
-        # Upsert conversation — verify ownership before updating
-        cur = conn.execute("SELECT id FROM conversations WHERE id = ? AND user_email = ?", (conversation_id, user_email))
-        if not cur.fetchone():
-            # Either doesn't exist, or belongs to a different user — create new row for this user
+        cur = conn.execute("SELECT user_email FROM conversations WHERE id = ?", (conversation_id,))
+        row = cur.fetchone()
+        if row is not None and row["user_email"] != user_email:
+            # Conversation existe mas pertence a outro tenant — recusa para não anexar
+            # mensagens cross-tenant via INSERT OR IGNORE silencioso.
+            raise PermissionError(f"Conversation {conversation_id} não pertence a {user_email}")
+        if row is None:
             conn.execute(
-                "INSERT OR IGNORE INTO conversations (id, user_email, title) VALUES (?, ?, ?)",
+                "INSERT INTO conversations (id, user_email, title) VALUES (?, ?, ?)",
                 (conversation_id, user_email, title)
             )
         else:
@@ -87,7 +90,6 @@ def save_message(conversation_id: str, user_email: str, role: str, content: str,
                 (conversation_id, user_email)
             )
 
-        # Insert message
         conn.execute(
             "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)",
             (conversation_id, role, content)
