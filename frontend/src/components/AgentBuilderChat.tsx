@@ -98,13 +98,13 @@ Assuma a persona de um **Engenheiro de Prompt Sênior**, um especialista em trad
 IMPORTANTE: Sempre responda em português do Brasil.`;
 
 const AgentBuilderChat = ({ onClose, onPromptReady }) => {
-    const [messages, setMessages] = useState([]);
+    const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [conversationId, setConversationId] = useState(null);
-    const [finalPrompt, setFinalPrompt] = useState(null);
-    const messagesEndRef = useRef(null);
-    const textareaRef = useRef(null);
+    const [conversationId, setConversationId] = useState<string | null>(null);
+    const [finalPrompt, setFinalPrompt] = useState<string | null>(null);
+    const messagesEndRef = useRef<HTMLDivElement | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
     // Auto-scroll to bottom on new messages
     useEffect(() => {
@@ -140,10 +140,10 @@ const AgentBuilderChat = ({ onClose, onPromptReady }) => {
                     content = content.text || content.content || JSON.stringify(content);
                 }
                 setMessages([{ role: 'assistant', content: String(content) }]);
-            } catch (err) {
+            } catch (err: any) {
                 setMessages([{
                     role: 'assistant',
-                    content: `⚠️ Erro ao iniciar o Engenheiro de Prompt: ${err.message}`
+                    content: `⚠️ Erro ao iniciar o Engenheiro de Prompt: ${err?.message}`
                 }]);
             } finally {
                 setIsLoading(false);
@@ -197,10 +197,10 @@ const AgentBuilderChat = ({ onClose, onPromptReady }) => {
                 content = content.text || content.content || JSON.stringify(content);
             }
             setMessages(prev => [...prev, { role: 'assistant', content: String(content) }]);
-        } catch (err) {
+        } catch (err: any) {
             setMessages(prev => [...prev, {
                 role: 'assistant',
-                content: `⚠️ Erro: ${err.message}`
+                content: `⚠️ Erro: ${err?.message}`
             }]);
         } finally {
             setIsLoading(false);

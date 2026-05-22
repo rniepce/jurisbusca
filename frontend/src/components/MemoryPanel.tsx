@@ -12,7 +12,7 @@ const MemoryPanel = ({ isOpen, onClose }) => {
     const [saved, setSaved] = useState(false);
     const [loading, setLoading] = useState(true);
     const [dirty, setDirty] = useState(false);
-    const textareaRef = useRef(null);
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
     // Load memory on open
     useEffect(() => {

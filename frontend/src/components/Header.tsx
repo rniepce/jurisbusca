@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FaKey, FaBook, FaCircleQuestion } from 'react-icons/fa6';
+import { FaKey, FaBook, FaCircleQuestion, FaSun, FaMoon, FaDesktop } from 'react-icons/fa6';
 import { LuPanelLeftClose, LuPanelLeftOpen } from 'react-icons/lu';
 import { validateAzureKey } from '../services/api';
 import { useAuth } from './AuthContext';
-import { FaUserCircle } from 'react-icons/fa';
+import { useTheme } from '../hooks/useTheme';
 import logoSvg from '../assets/logo.svg';
 import './Header.css';
 
@@ -12,8 +12,12 @@ const Header = ({ onMenuClick, isOpen, onOpenModelManager }) => {
     const [keyValue, setKeyValue] = useState('');
     const [keyStatus, setKeyStatus] = useState('unknown'); // 'unknown' | 'valid' | 'invalid' | 'checking'
     const [keyMessage, setKeyMessage] = useState('');
-    const popoverRef = useRef(null);
+    const popoverRef = useRef<HTMLDivElement | null>(null);
     const { user, signOut } = useAuth();
+    const { mode, toggle: toggleTheme } = useTheme();
+
+    const themeIcon = mode === 'light' ? <FaSun size={16} /> : mode === 'dark' ? <FaMoon size={16} /> : <FaDesktop size={16} />;
+    const themeLabel = mode === 'light' ? 'Tema claro (clique para escuro)' : mode === 'dark' ? 'Tema escuro (clique para automático)' : 'Tema automático (clique para claro)';
 
     // Load stored key status on mount
     useEffect(() => {
@@ -140,6 +144,14 @@ const Header = ({ onMenuClick, isOpen, onOpenModelManager }) => {
                     <button className="gestor-modelos-btn" onClick={() => onOpenModelManager && onOpenModelManager()}>
                         <FaBook size={14} />
                         Gestor de Modelos
+                    </button>
+                    <button
+                        className="header-icon-btn"
+                        aria-label={themeLabel}
+                        title={themeLabel}
+                        onClick={toggleTheme}
+                    >
+                        {themeIcon}
                     </button>
                     <button className="header-icon-btn" aria-label="Ajuda">
                         <FaCircleQuestion size={18} />

@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react';
+import { useState, useEffect, useCallback, lazy } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import WelcomeContent from './components/WelcomeContent';
@@ -10,1168 +11,390 @@ import MemoryPanel from './components/MemoryPanel';
 import ShareAgentDialog from './components/ShareAgentDialog';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
+import LazyPanel from './components/LazyPanel';
+import { AuthProvider, useAuth } from './components/AuthContext';
+import { getTemplateStatus } from './services/api';
+import agentDefinitions from './config/agents';
+import { useUIStore, useChatStore } from './store';
+import { useMessageSender } from './hooks/useMessageSender';
+import { useOcrUpload } from './hooks/useOcrUpload';
+import { useBatchOps } from './hooks/useBatchOps';
+import { useJurisprudencia } from './hooks/useJurisprudencia';
+import { useCustomAgents } from './hooks/useCustomAgents';
+import { useStyleReport } from './hooks/useStyleReport';
+import { useCanvas } from './hooks/useCanvas';
+import { useChatSession } from './hooks/useChatSession';
+import type { Agent, RagStatus } from './types/chat';
+import './App.css';
 
-// Painéis pesados — carregados sob demanda para reduzir o bundle inicial
+// Painéis pesados — carregados sob demanda
 const CanvasEditor = lazy(() => import('./components/CanvasEditor'));
 const XRayDashboard = lazy(() => import('./components/XRayDashboard'));
 const JurisprudenciaPanel = lazy(() => import('./components/JurisprudenciaPanel'));
 const SustentacaoPanel = lazy(() => import('./components/sustentacao/SustentacaoPanel'));
 const ModelManagerPanel = lazy(() => import('./components/ModelManagerPanel'));
 const AgentBuilderChat = lazy(() => import('./components/AgentBuilderChat'));
-import { AuthProvider, useAuth } from './components/AuthContext';
-import { sendMessage, uploadFile, uploadBatchXray, generateStyleReport, getTemplateStatus, analyzeCluster, replicateBatchPilot, uploadTemplates, triggerJurisprudenciaResearch, pollJurisprudenciaResearch, getCustomAgents, createCustomAgent, deleteCustomAgent, shareCustomAgent } from './services/api';
-import agentDefinitions from './config/agents';
-import { useUIStore } from './store/index';
-import './App.css';
+
+// ── Route constants ──
+const ROUTES = {
+    home: '/',
+    login: '/login',
+    signup: '/signup',
+    jurisprudencia: '/jurisprudencia',
+    sustentacao: '/sustentacao',
+    modelos: '/modelos',
+    agenteBuilder: '/agente-builder',
+} as const;
+
+const PANEL_PATHS = new Set<string>([
+    ROUTES.jurisprudencia,
+    ROUTES.sustentacao,
+    ROUTES.modelos,
+    ROUTES.agenteBuilder,
+]);
 
 function MainApp() {
-  // UI state from Zustand store
-  const { sidebarOpen, setSidebarOpen, toggleSidebar: toggleSidebarStore, selectedModel: globalSelectedModelStore, setSelectedModel } = useUIStore();
-  const [messages, setMessages] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [activeAgent, setActiveAgent] = useState(agentDefinitions[0]);
-  const [conversationId, setConversationId] = useState(null);
-  const [uploadedText, setUploadedText] = useState(null);
-  const [xrayReport, setXrayReport] = useState(null);
-  const [xrayLoading, setXrayLoading] = useState(false);
-  const [xrayProgress, setXrayProgress] = useState('');
-  const [xrayTextCache, setXrayTextCache] = useState({});
-  const [ocrProcessing, setOcrProcessing] = useState(false);
-  const [ocrEngineName, setOcrEngineName] = useState('none');
-  const [ocrProgress, setOcrProgress] = useState({ progress: '', percent: 0 });
-  const [styleAnalyzing, setStyleAnalyzing] = useState(false);
-  const [styleDossier, setStyleDossier] = useState(null);
-  const [chatHistory, setChatHistory] = useState([]);
-  const [ragStatus, setRagStatus] = useState(null);
-  const [batchResults, setBatchResults] = useState([]);
-  const [batchSelectedIndex, setBatchSelectedIndex] = useState(null);
-  // globalSelectedModel uses Zustand store; alias for backward compat
-  const globalSelectedModel = globalSelectedModelStore;
-  const setGlobalSelectedModel = setSelectedModel;
-  const [showJurisprudencia, setShowJurisprudencia] = useState(false);
-  const [showSustentacao, setShowSustentacao] = useState(false);
-  const [showModelManager, setShowModelManager] = useState(false);
-  // Jurisprudence toggle state — always enabled
-  // V0.5 jurisprudence research state
-  const [jurisResearch, setJurisResearch] = useState(null);
-  const [jurisResearchLoading, setJurisResearchLoading] = useState(false);
-  const [jurisResearchProgress, setJurisResearchProgress] = useState('');
-  const [jurisContext, setJurisContext] = useState(''); // accumulated imported jurisprudence for LLM
-  // Custom agents state
-  const [customAgents, setCustomAgents] = useState([]);
-  const [showAgentBuilder, setShowAgentBuilder] = useState(false);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [pendingPrompt, setPendingPrompt] = useState('');
-  const [shareAgent, setShareAgent] = useState(null); // agent being shared
-  // Memory panel state
-  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
-  // Canvas state
-  const [canvasOpen, setCanvasOpen] = useState(false);
-  const [canvasContent, setCanvasContent] = useState('');
-  const [_canvasTitle, _setCanvasTitle] = useState('');
-  const [canvasSelection, setCanvasSelection] = useState(null); // selected text in canvas
-  const chatTextareaRef = useRef(null); // ref to focus the chat input from canvas
-  // Batch Pilot state
-  const [batchPilotSession, setBatchPilotSession] = useState(null);
-  // { clusterName, processes: [{filename, text}], pilotFilename, phase: 'pilot'|'confirming'|'replicating'|'done' }
+    const navigate = useNavigate();
+    const location = useLocation();
+    const currentPath = location.pathname;
 
+    const { sidebarOpen, setSidebarOpen, toggleSidebar: toggleSidebarStore, selectedModel: globalSelectedModel, setSelectedModel } = useUIStore();
+    const messages = useChatStore((s) => s.messages);
+    const isLoading = useChatStore((s) => s.isLoading);
+    const activeAgent = useChatStore((s) => s.activeAgent);
+    const uploadedText = useChatStore((s) => s.uploadedText);
+    const conversationId = useChatStore((s) => s.conversationId);
 
+    // Local UI state (modals + sustentacao overlay)
+    const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+    const [showJurisOverlay, setShowJurisOverlay] = useState(false);
+    const [ragStatus, setRagStatus] = useState<RagStatus | null>(null);
 
-  // Fetch template/RAG status and custom agents on mount
-  useEffect(() => {
-    getTemplateStatus().then(setRagStatus).catch(() => { });
-    getCustomAgents().then((data) => setCustomAgents(data.agents || [])).catch(() => { });
-  }, []);
-
-  const toggleSidebar = () => toggleSidebarStore();
-  const closeSidebarMobile = () => { if (window.innerWidth <= 768) setSidebarOpen(false); };
-
-  // ── Send message handler ────────────────────────────────────────────
-  const handleSend = useCallback(async (message, selectedModel, files, ocrEngine, templateFiles, useRag = false, { hideUserBubble = false, overridePrompt = null } = {}) => {
-    // Use a default prompt if user sends empty message but has context
-    const userTyped = message.trim();
-    const effectiveMessage = userTyped ||
-      (uploadedText && activeAgent ? 'Analise o documento anexado conforme as instruções do agente.' :
-        uploadedText ? 'Analise o documento anexado.' : '');
-    if (!effectiveMessage) return;
-
-    // ── Canvas context injection ──
-    // When canvas is open and has content, wrap the user's message with canvas context
-    let finalMessage = effectiveMessage;
-    if (canvasOpen && canvasContent && canvasContent.length > 50) {
-      if (canvasSelection && canvasSelection.length > 5) {
-        // Selection-based refinement
-        finalMessage = [
-          '[TRECHO SELECIONADO PARA EDIÇÃO]:',
-          canvasSelection,
-          '',
-          '[DOCUMENTO COMPLETO NO CANVAS (contexto)]:',
-          canvasContent,
-          '',
-          `[INSTRUÇÃO DO USUÁRIO]: ${effectiveMessage}`,
-          '',
-          'Retorne O DOCUMENTO COMPLETO ATUALIZADO, com o trecho selecionado ajustado conforme a instrução. Preserve todo o restante do documento intacto.',
-        ].join('\n');
-      } else {
-        // Full document refinement
-        finalMessage = [
-          '[DOCUMENTO ATUAL NO CANVAS]:',
-          canvasContent,
-          '',
-          `[INSTRUÇÃO DO USUÁRIO]: ${effectiveMessage}`,
-          '',
-          'Retorne O DOCUMENTO COMPLETO ATUALIZADO conforme a instrução. Preserve o que não precisa mudar.',
-        ].join('\n');
-      }
-      // Clear selection after using it
-      setCanvasSelection(null);
-    }
-
-    // 1. Add user message immediately (hide auto-generated messages)
-    if (userTyped && !hideUserBubble) {
-      const userMsg = { role: 'user', content: userTyped };
-      setMessages((prev) => [...prev, userMsg]);
-    }
-    setIsLoading(true);
-
-    try {
-      // ── Auto-index templates in ChromaDB if not yet indexed ──
-      if (templateFiles && templateFiles.length > 0 && (!ragStatus || ragStatus.indexed_chunks === 0)) {
-        try {
-          const indexResult = await uploadTemplates(templateFiles);
-          setRagStatus({ indexed_chunks: indexResult.indexed_chunks, has_dossier: indexResult.has_dossier });
-        } catch (err) {
-          console.warn('Auto-indexing templates failed:', err.message);
-        }
-      }
-
-      // ── Auto-generate style dossier in background (no chat display) ──
-      // The dossier is used internally for styleDossier state (injected into LLM calls).
-      // Users can view it explicitly via "Relatório de Estilo" button.
-      let currentStyleDossier = styleDossier;
-      if (templateFiles && templateFiles.length > 0 && !currentStyleDossier) {
-        try {
-          const styleResult = await generateStyleReport(templateFiles);
-          if (styleResult.cloning_prompt) {
-            currentStyleDossier = styleResult.cloning_prompt;
-            setStyleDossier(styleResult.cloning_prompt);
-          }
-        } catch (styleErr) {
-          console.warn('Auto style report failed:', styleErr.message);
-        }
-      }
-
-      // Files are already processed by handleFilesUploaded (auto-OCR),
-      // so we just use the uploadedText that was populated earlier.
-
-      // 2. Load agent prompt — use overridePrompt if provided (e.g. auto-review QA)
-      let agentPrompt = overridePrompt || null;
-
-      if (!agentPrompt && (activeAgent as any)?.prompt && !activeAgent?.promptModule) {
-        // Custom agent — use stored prompt directly
-        agentPrompt = (activeAgent as any).prompt;
-      } else if (activeAgent?.promptModule) {
-        // Agent explicitly selected from sidebar — load its prompt
-        try {
-          const mod = await activeAgent.promptModule();
-          agentPrompt = mod.default || null;
-        } catch {
-          console.warn('Could not load agent prompt');
-        }
-      }
-
-      // 3. Call the backend
-      const result = await sendMessage({
-        message: finalMessage,
-        model: selectedModel.id,
-        llm: selectedModel.llm || null,
-        agentPrompt,
-        conversationId,
-        uploadedText,
-        styleDossier: currentStyleDossier,
-        useRag: useRag,
-        jurisprudenceContext: jurisContext || null,
-      });
-
-      setConversationId(result.conversation_id);
-
-      // 4. Add assistant response — ensure content is always a string
-      let rawResponse = result.response;
-      if (typeof rawResponse === 'object' && rawResponse !== null) {
-        rawResponse = rawResponse.text || rawResponse.content || rawResponse.output || JSON.stringify(rawResponse);
-      }
-
-      const safeResponse = typeof rawResponse === 'string' ? rawResponse : String(rawResponse);
-
-      // ── Canvas mode: route long responses to canvas editor ──
-      const isLongResponse = safeResponse.length > 500;
-      const isErrorOrSystem = safeResponse.includes('⚠️ **Erro') || safeResponse.includes('MESA DE DELIBERAÇÃO') || safeResponse.includes('AGUARDANDO DIRETRIZES');
-
-      if (canvasOpen && isLongResponse && !isErrorOrSystem) {
-        // Update canvas content in-place
-        setCanvasContent(safeResponse);
-        // Show short notification in chat
-        const isFirstCanvas = !canvasContent;
-        const canvasMsg = {
-          role: 'assistant',
-          content: isFirstCanvas
-            ? '📄 **Minuta gerada no Canvas.** Veja o documento no painel ao lado. Peça alterações aqui no chat e o Canvas será atualizado automaticamente.'
-            : '✏️ **Canvas atualizado** com as alterações solicitadas.',
-          model: result.model,
-          isCanvasUpdate: true,
-        };
-        setMessages((prev) => [...prev, canvasMsg]);
-      } else {
-        // Normal flow — show full response in chat
-        const assistantMsg = {
-          role: 'assistant',
-          content: safeResponse,
-          model: result.model,
-          v2Sections: result.v2_sections || null,
-          modelContext: result.model_context || null,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-
-        // ── Batch Pilot: detect when minuta is generated and offer replication ──
-        if (batchPilotSession && batchPilotSession.phase === 'pilot' && safeResponse.length > 800) {
-          const remainingCount = batchPilotSession.processes.length;
-          if (remainingCount > 0) {
-            setBatchPilotSession((prev) => ({ ...prev, phase: 'confirming', pilotMinuta: safeResponse }));
-            const confirmMsg = {
-              role: 'batch-pilot-confirm',
-              content: `✅ **Minuta do caso piloto gerada!**\n\nDeseja aplicar estas instruções e esta minuta como gabarito para os demais **${remainingCount} processo(s)** do grupo "${batchPilotSession.clusterName}"?\n\nCada processo será analisado individualmente, e diferenças serão destacadas com alertas.`,
-              remainingCount,
-              clusterName: batchPilotSession.clusterName,
-            };
-            setMessages((prev) => [...prev, confirmMsg]);
-          }
-        }
-      }
-    } catch (err) {
-      const errorMsg = {
-        role: 'assistant',
-        content: `⚠️ **Erro:** ${err.message}`,
-        model: 'erro',
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeAgent, conversationId, uploadedText, styleDossier, ragStatus, jurisContext, canvasOpen, canvasContent, canvasSelection, batchPilotSession]);
-
-  // ── V0.5: Manually trigger jurisprudence research ─────────────────
-  const handleJurisSearch = useCallback(async () => {
-    if (!uploadedText) return;
-    setJurisResearchLoading(true);
-    setJurisResearch(null);
-    setJurisResearchProgress('Extraindo temas jurídicos do processo...');
-
-    try {
-      // Get the latest assistant message for better theme extraction
-      const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant' && m.content?.length > 100);
-      const analysisText = lastAssistant?.content || '';
-
-      const { task_id } = await triggerJurisprudenciaResearch(uploadedText, analysisText);
-      _pollJurisResearch(task_id);
-    } catch (err) {
-      console.error('Juris research trigger failed:', err);
-      setJurisResearchLoading(false);
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `⚠️ **Erro na pesquisa jurisprudencial:** ${err.message}`,
-        model: 'erro',
-      }]);
-    }
-  }, [uploadedText, messages]);
-
-  // ── V0.5: Poll jurisprudence research task ──────────────────────
-  const _pollJurisResearch = async (taskId) => {
-    const POLL_INTERVAL = 2500;
-    const MAX_POLLS = 60; // ~2.5 min max
-
-    for (let i = 0; i < MAX_POLLS; i++) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
-
-      const data = await pollJurisprudenciaResearch(taskId);
-      if (!data) continue;
-
-      if (data.progress) setJurisResearchProgress(data.progress);
-
-      if (data.status === 'done') {
-        setJurisResearch(data.result);
-        setJurisResearchLoading(false);
-        return;
-      }
-      if (data.status === 'error') {
-        console.error('Jurisprudence research failed:', data.error);
-        setJurisResearchLoading(false);
-        return;
-      }
-    }
-    // Timeout
-    setJurisResearchLoading(false);
-  };
-
-  // ── X-Ray handler (batch clustering) ────────────────────────────────
-  const handleXray = useCallback(async (files) => {
-    if (files.length < 2) return;
-    setXrayLoading(true);
-    setXrayReport(null);
-    setXrayProgress('Enviando processos...');
-
-    try {
-      const result = await uploadBatchXray(files, (progress) => {
-        setXrayProgress(progress);
-      });
-      setXrayReport(result.report);
-      setXrayTextCache(result.text_cache || {});
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `⚠️ **Erro no Raio-X:** ${err.message}`, model: 'erro' },
-      ]);
-    } finally {
-      setXrayLoading(false);
-      setXrayProgress('');
-    }
-  }, []);
-
-  // ── Cluster action: analyze all processes in a cluster individually ──
-  const handleClusterAction = useCallback(async (cluster) => {
-    const filenames = cluster.arquivos || [];
-    if (filenames.length === 0) return;
-
-    // Build process list from text cache
-    const processes = filenames
-      .filter((fname) => xrayTextCache[fname])
-      .map((fname) => ({ filename: fname, text: xrayTextCache[fname] }));
-
-    if (processes.length === 0) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: '⚠️ Textos dos processos não encontrados no cache. Tente refazer o Raio-X.', model: 'erro' },
-      ]);
-      return;
-    }
-
-    // Switch to chat view and show progress
-    setXrayReport(null);
-    setIsLoading(true);
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: `⚡ **Processando ${processes.length} processo(s) do grupo "${cluster.nome}" em paralelo...**\n\nAguarde, cada processo está sendo analisado individualmente.`,
-        model: 'sistema',
-      },
-    ]);
-
-    try {
-      // Usa o globalSelectedModel que veio do ChatInput (incluindo engine e llm)
-      const result = await analyzeCluster(processes, (activeAgent as any)?.prompt || '', globalSelectedModel.id, globalSelectedModel.llm);
-
-      // Add each individual result as a separate message
-      const resultMessages = result.results.map((r) => {
-        let raw = r.response;
-        if (typeof raw === 'object' && raw !== null) {
-          raw = raw.text || raw.content || raw.output || JSON.stringify(raw);
-        }
-        const safeText = typeof raw === 'string' ? raw : String(raw);
-
-        return {
-          role: 'assistant',
-          content: r.status === 'ok'
-            ? `## 📄 ${r.filename}\n\n${safeText}`
-            : `## ⚠️ ${r.filename}\n\n${safeText}`,
-          model: r.model,
-        };
-      });
-
-      // Summary header
-      const summary = {
-        role: 'assistant',
-        content: `✅ **Lote concluído:** ${result.ok_count}/${result.total} minutas geradas com sucesso.`,
-        model: 'sistema',
-      };
-
-      setMessages((prev) => [...prev, summary, ...resultMessages]);
-
-      // Populate batch panel with results
-      setBatchResults(result.results);
-      setBatchSelectedIndex(null);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `⚠️ **Erro na análise em lote:** ${err.message}`, model: 'erro' },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [xrayTextCache, activeAgent, globalSelectedModel.id, globalSelectedModel.llm]);
-
-  // ── When user selects a batch card, show its content in chat ────────
-  const handleBatchSelect = useCallback((index) => {
-    setBatchSelectedIndex(index);
-    const res = batchResults[index];
-    if (!res) return;
-
-    let raw = res.response;
-    if (typeof raw === 'object' && raw !== null) {
-      raw = raw.text || raw.content || raw.output || JSON.stringify(raw);
-    }
-    const safeText = typeof raw === 'string' ? raw : String(raw);
-
-    const content = res.status === 'ok'
-      ? `## 📄 ${res.filename}\n\n${safeText}`
-      : `## ⚠️ ${res.filename}\n\n${safeText}`;
-
-    // Replace messages with just this result
-    setMessages([{
-      role: 'assistant',
-      content,
-      model: res.model,
-    }]);
-  }, [batchResults]);
-
-  const handleBatchClose = useCallback(() => {
-    setBatchResults([]);
-    setBatchSelectedIndex(null);
-  }, []);
-
-  // ── Batch Pilot: open first process as interactive chat ────────────
-  const handleClusterPilotAction = useCallback((cluster) => {
-    const filenames = cluster.arquivos || [];
-    if (filenames.length === 0) return;
-
-    // Build process list from text cache
-    const allProcesses = filenames
-      .filter((fname) => xrayTextCache[fname])
-      .map((fname) => ({ filename: fname, text: xrayTextCache[fname] }));
-
-    if (allProcesses.length === 0) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: '⚠️ Textos dos processos não encontrados no cache. Tente refazer o Raio-X.', model: 'erro' },
-      ]);
-      return;
-    }
-
-    // First process = pilot, rest = batch
-    const [pilot, ...remaining] = allProcesses;
-
-    // Switch to chat view
-    setXrayReport(null);
-
-    // Load pilot process text into the chat context
-    setUploadedText(pilot.text);
-
-    // Set batch pilot session
-    setBatchPilotSession({
-      clusterName: cluster.nome,
-      processes: remaining,
-      pilotFilename: pilot.filename,
-      pilotMinuta: null,
-      phase: 'pilot',
+    // Hooks own their respective flows
+    const canvas = useCanvas();
+    const ocr = useOcrUpload();
+    const sender = useMessageSender({ canvas, ragStatus, setRagStatus });
+    const batch = useBatchOps();
+    const juris = useJurisprudencia();
+    const style = useStyleReport();
+    const agents = useCustomAgents();
+    const session = useChatSession({
+        onResetXray: () => batch.setXrayReport(null),
+        onResetJurisprudencia: juris.resetJurisprudencia,
+        onResetCanvas: () => {
+            canvas.setCanvasOpen(false);
+            canvas.setCanvasContent('');
+        },
+        onResetSustentacao: () => {
+            if (currentPath === ROUTES.sustentacao) navigate(ROUTES.home);
+            setShowJurisOverlay(false);
+        },
     });
 
-    // Show activation message
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: `📋 **Caso Piloto ativado: ${pilot.filename}**\n\nO texto do processo foi carregado. Converse normalmente com o agente — faça perguntas, dê instruções e refine a minuta.\n\nQuando a minuta estiver pronta, o sistema perguntará se deseja replicar para os demais **${remaining.length} processo(s)** do grupo *"${cluster.nome}"*.`,
-        model: 'sistema',
-      },
-    ]);
-  }, [xrayTextCache]);
-
-  // ── Batch Pilot: replicate pilot instructions to remaining processes ──
-  const handlePilotReplicate = useCallback(async () => {
-    if (!batchPilotSession || !batchPilotSession.pilotMinuta) return;
-
-    setBatchPilotSession((prev) => ({ ...prev, phase: 'replicating' }));
-    setIsLoading(true);
-
-    // Consolidate pilot instructions from conversation history
-    const pilotInstructions = messages
-      .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content?.length > 100))
-      .map((m) => `[${m.role === 'user' ? 'MAGISTRADO' : 'AGENTE'}]: ${m.content}`)
-      .join('\n\n');
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: `⚡ **Replicando para ${batchPilotSession.processes.length} processo(s)...**\n\nCada processo será analisado individualmente com as instruções e minuta-gabarito do caso piloto.`,
-        model: 'sistema',
-      },
-    ]);
-
-    try {
-      const result = await replicateBatchPilot({
-        pilotInstructions,
-        pilotMinuta: batchPilotSession.pilotMinuta,
-        pilotSummary: null,
-        processes: batchPilotSession.processes,
-        model: globalSelectedModel.id,
-        llm: globalSelectedModel.llm || null,
-        agentPrompt: (activeAgent as any)?.prompt || null,
-      });
-
-      // Add results to chat
-      const resultMessages = result.results.map((r) => {
-        let raw = r.response;
-        if (typeof raw === 'object' && raw !== null) {
-          raw = raw.text || raw.content || raw.output || JSON.stringify(raw);
+    // Bootstrap RAG status + default agent
+    useEffect(() => {
+        getTemplateStatus().then(setRagStatus).catch(() => {});
+        if (!useChatStore.getState().activeAgent) {
+            useChatStore.getState().setActiveAgent(agentDefinitions[0] as Agent);
         }
-        const safeText = typeof raw === 'string' ? raw : String(raw);
-        const alertsBadge = r.alerts_count > 0 ? ` (⚠️ ${r.alerts_count} alerta${r.alerts_count > 1 ? 's' : ''})` : '';
+    }, []);
 
-        return {
-          role: 'assistant',
-          content: r.status === 'ok'
-            ? `## 📄 ${r.filename}${alertsBadge}\n\n${safeText}`
-            : `## ⚠️ ${r.filename}\n\n${safeText}`,
-          model: r.model,
-        };
-      });
+    // Close juris overlay automatically when leaving /sustentacao
+    useEffect(() => {
+        if (currentPath !== ROUTES.sustentacao) setShowJurisOverlay(false);
+    }, [currentPath]);
 
-      const alertsInfo = result.total_alerts > 0
-        ? ` — ⚠️ ${result.total_alerts} alerta(s) de diferença encontrado(s)`
-        : ' — Todos os processos são similares ao piloto';
+    const toggleSidebar = useCallback(() => toggleSidebarStore(), [toggleSidebarStore]);
+    const closeSidebarMobile = useCallback(() => {
+        if (window.innerWidth <= 768) setSidebarOpen(false);
+    }, [setSidebarOpen]);
 
-      const summary = {
-        role: 'assistant',
-        content: `✅ **Lote piloto concluído:** ${result.ok_count}/${result.total} minutas geradas${alertsInfo}.`,
-        model: 'sistema',
-      };
+    const goHome = useCallback(() => navigate(ROUTES.home), [navigate]);
 
-      setMessages((prev) => [...prev, summary, ...resultMessages]);
-      setBatchResults(result.results);
-      setBatchSelectedIndex(null);
-      setBatchPilotSession((prev) => ({ ...prev, phase: 'done' }));
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `⚠️ **Erro na replicação piloto:** ${err.message}`, model: 'erro' },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [batchPilotSession, messages, globalSelectedModel, activeAgent]);
+    const sidebarHistory = session.chatHistory.length > 0
+        ? [{
+            label: 'Conversas anteriores',
+            items: session.chatHistory.map((c) => ({ id: c.id, title: c.title })),
+        }]
+        : [];
 
-  // ── Batch Pilot: dismiss replication (continue editing pilot) ──
-  const handlePilotDismiss = useCallback(() => {
-    setBatchPilotSession((prev) => ({ ...prev, phase: 'pilot' }));
-    // Remove the confirmation message
-    setMessages((prev) => prev.filter((m) => m.role !== 'batch-pilot-confirm'));
-  }, []);
+    const hasMessages = messages.length > 0;
+    const showBatchPanel = batch.batchResults.length > 0;
+    const isPanelRoute = PANEL_PATHS.has(currentPath);
+    const showFullPanel = isPanelRoute || !!batch.xrayReport;
 
-  // ── Files uploaded → run OCR immediately ─────────────────────────────
-  const handleFilesUploaded = useCallback(async (files, ocrEngine, compress = true) => {
-    if (files.length === 0) return [];
-    // Show processing animation for all uploads (OCR or plain reading)
-    setOcrProcessing(true);
-    setOcrEngineName(ocrEngine);
-    setOcrProgress({ progress: '📤 Enviando arquivo...', percent: 5 });
+    // ── Content area: either xray report, lazy panel routes, or chat/welcome ──
+    const renderMainContent = () => {
+        if (batch.xrayReport) {
+            return (
+                <LazyPanel label="Raio-X" onReset={() => batch.setXrayReport(null)}>
+                    <XRayDashboard
+                        report={batch.xrayReport}
+                        onClose={() => batch.setXrayReport(null)}
+                        onClusterAction={batch.handleClusterAction}
+                        onClusterPilotAction={batch.handleClusterPilotAction}
+                    />
+                </LazyPanel>
+            );
+        }
 
-    try {
-      // Upload files sequentially (not parallel) to avoid overwhelming backend
-      const results = [];
-      for (const f of files) {
-        const result = await uploadFile(f, ocrEngine, compress, true, (p) => setOcrProgress(p));
-        results.push(result);
-      }
-
-      // Store the extracted text for future chat messages
-      const newText = results.map((r) => r.text).join('\n\n---\n\n');
-      setUploadedText((prev) => prev ? prev + '\n\n---\n\n' + newText : newText);
-
-      // Inject OCR preview messages into the chat
-      const ocrMessages = results.map((r) => ({
-        role: 'ocr',
-        filename: r.filename,
-        text: r.text,
-        engine: ocrEngine,
-        charCount: r.char_count,
-      }));
-      setMessages((prev) => [...prev, ...ocrMessages]);
-
-      return results; // Return results so ChatInput can check rag_available
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `⚠️ **Erro no OCR:** ${err.message}`, model: 'erro' },
-      ]);
-      return [];
-    } finally {
-      setOcrProcessing(false);
-    }
-  }, []);
-
-  // ── Agent selection handler ─────────────────────────────────────────
-  const handleAgentSelect = useCallback((agent) => {
-    // Toggle: if the clicked agent is already active, deactivate it
-    if (activeAgent?.id === agent.id) {
-      setActiveAgent(null);
-      // Opcional: remover a mensagem de ativação ao desativar
-      setMessages((prev) => prev.filter((m) => m.role !== 'agent-activation'));
-      return;
-    }
-
-    setActiveAgent(agent);
-    setShowAgentBuilder(false); // Close builder if open
-    // For custom agents, use their prompt as the promptModule
-    const isCustom = !agent.promptModule && agent.prompt;
-    const activationMsg = {
-      role: 'agent-activation',
-      agentName: agent.name,
-      agentDesc: agent.desc || (isCustom ? 'Agente personalizado' : ''),
-      agentColor: agent.color || '#8B5CF6',
-      agentIcon: agent.icon || 'FaRobot',
-      autoAction: agent.autoAction || null,
+        return (
+            <Routes>
+                <Route
+                    path={ROUTES.agenteBuilder}
+                    element={
+                        <LazyPanel label="Construtor de Agente" onReset={goHome}>
+                            <AgentBuilderChat
+                                onClose={goHome}
+                                onPromptReady={agents.handlePromptReady}
+                            />
+                        </LazyPanel>
+                    }
+                />
+                <Route
+                    path={ROUTES.modelos}
+                    element={
+                        <LazyPanel label="Modelos" onReset={goHome}>
+                            <ModelManagerPanel
+                                onClose={goHome}
+                                onRagStatusChange={setRagStatus}
+                            />
+                        </LazyPanel>
+                    }
+                />
+                <Route
+                    path={ROUTES.jurisprudencia}
+                    element={
+                        <LazyPanel label="Jurisprudência" onReset={goHome}>
+                            <JurisprudenciaPanel onClose={goHome} />
+                        </LazyPanel>
+                    }
+                />
+                <Route
+                    path={ROUTES.sustentacao}
+                    element={
+                        <LazyPanel label="Sustentação" onReset={goHome}>
+                            <SustentacaoPanel
+                                onClose={goHome}
+                                onOpenJurisprudencia={() => setShowJurisOverlay(true)}
+                            />
+                        </LazyPanel>
+                    }
+                />
+                <Route
+                    path="*"
+                    element={
+                        hasMessages || style.styleAnalyzing || batch.xrayLoading || ocr.ocrProcessing ? (
+                            <ChatArea
+                                messages={messages}
+                                isLoading={isLoading}
+                                selectedModel={globalSelectedModel}
+                                activeAgent={activeAgent}
+                                ocrProcessing={ocr.ocrProcessing}
+                                ocrEngineName={ocr.ocrEngineName}
+                                ocrProgress={ocr.ocrProgress}
+                                styleAnalyzing={style.styleAnalyzing}
+                                xrayLoading={batch.xrayLoading}
+                                xrayProgress={batch.xrayProgress}
+                                onAutoAction={sender.handleAutoReview}
+                                onQAReview={sender.handleAutoReview}
+                                hasUploadedText={!!uploadedText}
+                                jurisResearch={juris.jurisResearch}
+                                jurisResearchLoading={juris.jurisResearchLoading}
+                                jurisResearchProgress={juris.jurisResearchProgress}
+                                onJurisImport={juris.handleJurisImport}
+                                onJurisSearch={juris.handleJurisSearch}
+                                onPilotReplicate={batch.handlePilotReplicate}
+                                onPilotDismiss={batch.handlePilotDismiss}
+                                onRetry={sender.handleRetry}
+                            />
+                        ) : (
+                            <WelcomeContent
+                                onOpenJurisprudencia={() => navigate(ROUTES.jurisprudencia)}
+                                onOpenSustentacao={() => navigate(ROUTES.sustentacao)}
+                                onAttachFile={() => {
+                                    canvas.chatTextareaRef.current?.focus();
+                                    const attachBtn = document.querySelector('[aria-label="Anexar processo"]') as HTMLButtonElement | null;
+                                    attachBtn?.click();
+                                }}
+                                onOpenAgents={() => {
+                                    if (!sidebarOpen) setSidebarOpen(true);
+                                    setTimeout(() => document.getElementById('agent-gabinete-2.0')?.focus(), 100);
+                                }}
+                            />
+                        )
+                    }
+                />
+            </Routes>
+        );
     };
 
-    // Filtra qualquer mensagem de ativação anterior e adiciona a nova
-    setMessages((prev) => [
-      ...prev.filter((m) => m.role !== 'agent-activation'),
-      activationMsg,
-    ]);
-  }, [activeAgent]);
-
-  // ── Custom Agent CRUD handlers ──────────────────────────────────────
-  const handleOpenAgentBuilder = useCallback(() => {
-    setShowAgentBuilder(true);
-  }, []);
-
-  const handlePromptReady = useCallback((prompt) => {
-    setPendingPrompt(prompt);
-    setShowCreateDialog(true);
-  }, []);
-
-  const handleCreateAgent = useCallback(async ({ name, prompt, color }) => {
-    try {
-      const created = await createCustomAgent({ name, prompt, color });
-      setCustomAgents((prev) => [created, ...prev]);
-      setShowCreateDialog(false);
-      setShowAgentBuilder(false);
-      setPendingPrompt('');
-    } catch (err) {
-      console.error('Failed to create agent:', err);
-    }
-  }, []);
-
-  const handleDeleteAgent = useCallback(async (agentId) => {
-    try {
-      await deleteCustomAgent(agentId);
-      setCustomAgents((prev) => prev.filter((a) => a.id !== agentId));
-      // If the deleted agent was active, deactivate it
-      if (activeAgent?.id === agentId) setActiveAgent(null);
-    } catch (err) {
-      console.error('Failed to delete agent:', err);
-    }
-  }, [activeAgent]);
-
-  const handleShareAgentOpen = useCallback((agent) => {
-    setShareAgent(agent);
-  }, []);
-
-  const handleShareAgentConfirm = useCallback(async (email) => {
-    if (!shareAgent) return;
-    await shareCustomAgent(shareAgent.id, email);
-    setShareAgent(null);
-  }, [shareAgent]);
-
-  // ── Auto-review handler (Revisor QA) ────────────────────────────────
-  // Makes an ISOLATED API call (no conversation history) to avoid token limit overflow.
-  // Only sends: QA prompt + OCR process text + minuta extracted from chat.
-  const handleAutoReview = useCallback(async (_activationMsg) => {
-    // 1. Find the last substantial assistant message (the minuta)
-    const assistantMsgs = messages.filter(
-      (m) => m.role === 'assistant' && m.content && m.content.length > 100
-    );
-    const lastMinuta = assistantMsgs.length > 0 ? assistantMsgs[assistantMsgs.length - 1] : null;
-
-    if (!lastMinuta) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: '🛑 **Nenhuma minuta encontrada no chat.** Primeiro, use o agente Gabinete para gerar uma minuta. Depois, ative o Revisor (QA) para auditá-la.',
-          model: 'sistema',
-        },
-      ]);
-      return;
-    }
-
-    if (!uploadedText) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: '🛑 **Nenhum processo carregado.** Faça o upload do processo (PDF/DOCX) para que o Revisor possa cruzar os fatos com a minuta.',
-          model: 'sistema',
-        },
-      ]);
-      return;
-    }
-
-    // 2. Load the QA prompt
-    let qaPrompt = null;
-    try {
-      const mod = await import('./prompts/auditorQA');
-      qaPrompt = mod.default || null;
-    } catch {
-      console.warn('Could not load auditor QA prompt');
-    }
-
-    // 3. Build the audit message with ONLY process data + minuta (sandwich format)
-    const auditMessage = [
-      'Execute a auditoria de conformidade cruzando os textos abaixo.',
-      '',
-      '[MINUTA PROPOSTA]:',
-      lastMinuta.content,
-      '',
-      'Execute a auditoria de conformidade cruzando a minuta acima com os dados do processo. Gere o Dashboard de Conformidade completo.',
-    ].join('\n');
-
-    // 4. Make an ISOLATED API call — no conversationId (fresh conversation, no history)
-    // The uploadedText goes via uploaded_text param (backend injects it as system prompt context)
-    // The minuta goes in the message body
-    setIsLoading(true);
-    try {
-      const result = await sendMessage({
-        message: auditMessage,
-        model: globalSelectedModel.id,
-        llm: globalSelectedModel.llm || null,
-        agentPrompt: qaPrompt,
-        conversationId: null, // ← ISOLATED: no history, fresh call
-        uploadedText: uploadedText,
-        styleDossier: null,
-        useRag: false,
-        jurisprudenceContext: null,
-      });
-
-      // 5. Add the QA result to chat
-      let rawResponse = result.response;
-      if (typeof rawResponse === 'object' && rawResponse !== null) {
-        rawResponse = rawResponse.text || rawResponse.content || rawResponse.output || JSON.stringify(rawResponse);
-      }
-      const assistantMsg = {
-        role: 'assistant',
-        content: typeof rawResponse === 'string' ? rawResponse : String(rawResponse),
-        model: result.model,
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `⚠️ **Erro na auditoria QA:** ${err.message}`, model: 'erro' },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [messages, uploadedText, globalSelectedModel]);
-
-
-
-  // ── Retry last human message ───────────────────────────────────────
-  const handleRetry = useCallback(() => {
-    // Find the last user message
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
-    if (!lastUserMsg) return;
-    // Re-send it with the current model
-    handleSend(lastUserMsg.content, globalSelectedModel, [], 'none', [], false);
-  }, [messages, globalSelectedModel, handleSend]);
-
-  // ── New chat handler — saves current conversation to history ────────
-  const handleNewChat = useCallback(() => {
-    // Save current conversation to history (only if it has real messages)
-    const realMessages = messages.filter((m) => m.role === 'user' || m.role === 'assistant');
-    if (realMessages.length > 0) {
-      const firstUserMsg = realMessages.find((m) => m.role === 'user');
-      const title = firstUserMsg
-        ? firstUserMsg.content.slice(0, 60) + (firstUserMsg.content.length > 60 ? '…' : '')
-        : 'Conversa sem título';
-
-      setChatHistory((prev) => [
-        {
-          id: conversationId || Date.now().toString(),
-          title,
-          messages: [...messages],
-          agent: activeAgent,
-          timestamp: new Date(),
-        },
-        ...prev,
-      ]);
-    }
-
-
-    // Reset everything for new chat
-    setMessages([]);
-    setActiveAgent(null);
-    setConversationId(null);
-    setUploadedText(null);
-    setXrayReport(null);
-    setJurisResearch(null);
-    setJurisResearchLoading(false);
-    setJurisContext('');
-    setCanvasOpen(false);
-    setCanvasContent('');
-    _setCanvasTitle('');
-    setBatchPilotSession(null);
-    setShowSustentacao(false);
-  }, [messages, activeAgent, conversationId]);
-
-  // ── Load chat from history ──────────────────────────────────────────
-  const handleLoadChat = useCallback((chatId) => {
-    const chat = chatHistory.find((c) => c.id === chatId);
-    if (!chat) return;
-
-    setMessages(chat.messages);
-    setActiveAgent(chat.agent);
-    setConversationId(chat.id);
-    setUploadedText(null);
-    setXrayReport(null);
-  }, [chatHistory]);
-
-  // ── Style report handler — calls backend API ────────────────────────
-  const handleStyleReport = useCallback(async (templateFiles) => {
-    if (!templateFiles || templateFiles.length === 0) return;
-
-    setStyleAnalyzing(true);
-
-    try {
-      const result = await generateStyleReport(templateFiles);
-
-      // Display the full dossier as an assistant message
-      const dossierContent = result.full_response || result.dossier || 'Dossiê gerado sem conteúdo.';
-      const assistantMsg = {
-        role: 'assistant',
-        content: `🎨 **Dossiê de Identidade Decisional** (${result.file_count} modelo${result.file_count > 1 ? 's' : ''} analisado${result.file_count > 1 ? 's' : ''})\n\n${dossierContent}`,
-        model: 'gemini-flash',
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      // Store the cloning prompt for subsequent LLM analysis
-      if (result.cloning_prompt) {
-        setStyleDossier(result.cloning_prompt);
-      }
-    } catch (err) {
-      const errorMsg = {
-        role: 'assistant',
-        content: `⚠️ **Erro no Relatório de Estilo:** ${err.message}`,
-        model: 'erro',
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
-      setStyleAnalyzing(false);
-    }
-  }, []);
-
-  const hasMessages = messages.length > 0;
-
-  // ── Canvas toggle handler ──
-  const handleCanvasToggle = useCallback(() => {
-    setCanvasOpen((prev) => {
-      const next = !prev;
-      if (next) {
-        // Hide sidebar when canvas opens
-        setSidebarOpen(false);
-      } else {
-        // Restore sidebar when canvas closes (desktop only)
-        if (window.innerWidth > 768) setSidebarOpen(true);
-      }
-      return next;
-    });
-  }, [setSidebarOpen]);
-
-  const handleCanvasClose = useCallback(() => {
-    setCanvasOpen(false);
-    // Restore sidebar if not mobile
-    if (window.innerWidth > 768) setSidebarOpen(true);
-  }, [setSidebarOpen]);
-
-  // Build sidebar history format
-  const sidebarHistory = chatHistory.length > 0
-    ? [{
-      label: 'Conversas anteriores',
-      items: chatHistory.map((c) => ({ id: c.id, title: c.title })),
-    }]
-    : [];
-
-  // Determine what to show in main content
-  const renderContent = () => {
-    if (showAgentBuilder) {
-      return (
-        <AgentBuilderChat
-          onClose={() => setShowAgentBuilder(false)}
-          onPromptReady={handlePromptReady}
-        />
-      );
-    }
-    if (showModelManager) {
-      return (
-        <ModelManagerPanel
-          onClose={() => setShowModelManager(false)}
-          onRagStatusChange={setRagStatus}
-        />
-      );
-    }
-    // Jurisprudência sozinha (sem Sustentação aberta)
-    if (showJurisprudencia && !showSustentacao) {
-      return (
-        <JurisprudenciaPanel
-          onClose={() => setShowJurisprudencia(false)}
-        />
-      );
-    }
-    // Sustentação aberta — Jurisprudência será renderizada como overlay (fora de renderContent)
-    if (showSustentacao) {
-      return (
-        <SustentacaoPanel
-          onClose={() => setShowSustentacao(false)}
-          onOpenJurisprudencia={() => setShowJurisprudencia(true)}
-        />
-      );
-    }
-    if (xrayReport) {
-      return (
-        <XRayDashboard
-          report={xrayReport}
-          onClose={() => setXrayReport(null)}
-          onClusterAction={handleClusterAction}
-          onClusterPilotAction={handleClusterPilotAction}
-        />
-      );
-    }
-    if (hasMessages || styleAnalyzing || xrayLoading || ocrProcessing) {
-      return (
-        <ChatArea
-          messages={messages}
-          isLoading={isLoading}
-          selectedModel={globalSelectedModel}
-          activeAgent={activeAgent}
-          ocrProcessing={ocrProcessing}
-          ocrEngineName={ocrEngineName}
-          ocrProgress={ocrProgress}
-          styleAnalyzing={styleAnalyzing}
-          xrayLoading={xrayLoading}
-          xrayProgress={xrayProgress}
-          onAutoAction={handleAutoReview as any}
-          onQAReview={handleAutoReview as any}
-          hasUploadedText={!!uploadedText}
-          jurisResearch={jurisResearch}
-          jurisResearchLoading={jurisResearchLoading}
-          jurisResearchProgress={jurisResearchProgress}
-          onJurisImport={(data) => {
-            // Format imported jurisprudence with explicit ementa + citation for LLM
-            const parts = (data as any).research.map((r: any) => {
-              const resultsText = (r.results || []).map((res) => {
-                const ementa = (res.ementa || '').trim();
-                const processo = res.numero_processo || '?';
-                const tipo = res.tipo_recurso || 'Acórdão';
-                const data_pub = res.data_publicacao || '?';
-                return (
-                  `Nesse sentido, assim entende o Eg. TJMG:\n` +
-                  `"EMENTA: ${ementa}" (TJMG, ${tipo}, nº ${processo}, ${data_pub})`
-                );
-              }).join('\n\n');
-              return `**Tema:** ${r.theme}\n\n${resultsText}`;
-            });
-            const newContext = parts.join('\n\n---\n\n');
-            setJurisContext((prev) => prev ? `${prev}\n\n---\n\n${newContext}` : newContext);
-
-            // Also show visual confirmation in chat
-            const importMsg = {
-              role: 'assistant',
-              content: `✅ **Jurisprudência incluída na fundamentação.** A próxima minuta gerada incluirá a ementa com a citação "Assim entende o TJMG:".`,
-              model: 'pesquisador',
-            };
-            setMessages((prev) => [...prev, importMsg]);
-          }}
-          onJurisSearch={handleJurisSearch}
-          onPilotReplicate={handlePilotReplicate}
-          onPilotDismiss={handlePilotDismiss}
-          onRetry={handleRetry}
-        />
-      );
-    }
     return (
-      <WelcomeContent
-        onOpenJurisprudencia={() => setShowJurisprudencia(true)}
-        onOpenSustentacao={() => setShowSustentacao(true)}
-        onAttachFile={() => {
-          // Foca o textarea — o usuário já vê o botão de anexo no ChatInput
-          chatTextareaRef.current?.focus();
-          const attachBtn = document.querySelector('[aria-label="Anexar processo"]') as HTMLButtonElement | null;
-          attachBtn?.click();
-        }}
-        onOpenAgents={() => {
-          // Abre a sidebar (no mobile estaria fechada) e foca o primeiro agente
-          if (!sidebarOpen) setSidebarOpen(true);
-          setTimeout(() => document.getElementById('agent-gabinete-2.0')?.focus(), 100);
-        }}
-      />
-    );
-  };
-
-  const showBatchPanel = batchResults.length > 0;
-
-  return (
-    <div className="app-layout">
-      {/* Mobile backdrop */}
-      <div
-        className={`sidebar-backdrop ${sidebarOpen ? 'visible' : ''}`}
-        onClick={() => setSidebarOpen(false)}
-      />
-      <Sidebar
-        isOpen={sidebarOpen}
-        onToggle={toggleSidebar}
-        onCloseMobile={closeSidebarMobile}
-        activeAgent={activeAgent}
-        onAgentSelect={handleAgentSelect}
-        onNewChat={handleNewChat}
-        history={sidebarHistory}
-        onLoadChat={handleLoadChat}
-        customAgents={customAgents}
-        onCreateAgent={handleOpenAgentBuilder}
-        onDeleteAgent={handleDeleteAgent}
-        onShareAgent={handleShareAgentOpen}
-        onOpenMemory={() => setShowMemoryPanel(true)}
-        onOpenSustentacao={() => {
-          setShowSustentacao(true);
-          setShowJurisprudencia(false);
-          setShowAgentBuilder(false);
-          setShowModelManager(false);
-        }}
-      />
-
-      <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
-        <Header onMenuClick={toggleSidebar} isOpen={sidebarOpen} onOpenModelManager={() => setShowModelManager(true)} />
-
-        <div className={`main-content ${showBatchPanel ? 'with-batch' : ''} ${canvasOpen ? 'with-canvas' : ''} ${(showSustentacao || showJurisprudencia || showModelManager || showAgentBuilder || xrayReport) ? 'with-full-panel' : ''}`}>
-          <div className={`chat-content-wrapper ${canvasOpen ? 'canvas-chat-pane' : ''}`}>
-            <Suspense fallback={<div className="lazy-fallback">Carregando...</div>}>
-              {renderContent()}
-            </Suspense>
-          </div>
-          {canvasOpen && (
-            <Suspense fallback={<div className="lazy-fallback">Carregando editor...</div>}>
-              <CanvasEditor
-                content={canvasContent}
-                onClose={handleCanvasClose}
-                onContentChange={(text) => setCanvasContent(text)}
-                onSelectionChange={(text) => setCanvasSelection(text)}
-                onFocusChat={(selectedText) => {
-                  setCanvasSelection(selectedText);
-                  if (chatTextareaRef.current) {
-                    chatTextareaRef.current.focus();
-                    chatTextareaRef.current.placeholder = `Refinar: "${selectedText.slice(0, 40)}..." — digite sua instrução`;
-                  }
+        <div className="app-layout">
+            <div
+                className={`sidebar-backdrop ${sidebarOpen ? 'visible' : ''}`}
+                onClick={() => setSidebarOpen(false)}
+            />
+            <Sidebar
+                isOpen={sidebarOpen}
+                onToggle={toggleSidebar}
+                onCloseMobile={closeSidebarMobile}
+                activeAgent={activeAgent}
+                onAgentSelect={session.handleAgentSelect}
+                onNewChat={() => {
+                    session.handleNewChat();
+                    if (currentPath !== ROUTES.home) navigate(ROUTES.home);
                 }}
-                isUpdating={isLoading}
-                conversationId={conversationId}
-              />
-            </Suspense>
-          )}
-          {showBatchPanel && (
-            <BatchPanel
-              results={batchResults}
-              selectedIndex={batchSelectedIndex}
-              onSelect={handleBatchSelect}
-              onClose={handleBatchClose}
+                history={sidebarHistory}
+                onLoadChat={(id: string) => {
+                    session.handleLoadChat(id);
+                    if (currentPath !== ROUTES.home) navigate(ROUTES.home);
+                }}
+                customAgents={agents.customAgents}
+                onCreateAgent={() => navigate(ROUTES.agenteBuilder)}
+                onDeleteAgent={agents.handleDeleteAgent}
+                onShareAgent={agents.handleShareAgentOpen}
+                onOpenMemory={() => setShowMemoryPanel(true)}
+                onOpenSustentacao={() => navigate(ROUTES.sustentacao)}
             />
-          )}
-        </div>
 
-        {!showAgentBuilder && !showSustentacao && !showJurisprudencia && !showModelManager && !xrayReport && (
-          <ChatInput
-            onSend={handleSend}
-            onXray={handleXray}
-            onFilesUploaded={handleFilesUploaded}
-            onStyleReport={handleStyleReport}
-            onModelChange={setGlobalSelectedModel}
-            onOpenModelManager={() => setShowModelManager(true)}
-            isLoading={isLoading || xrayLoading || styleAnalyzing}
-            ocrProcessing={ocrProcessing}
-            hasContext={!!(uploadedText || activeAgent)}
-            ragStatus={ragStatus}
-            onRagStatusChange={setRagStatus}
-            activeAgent={activeAgent}
-            canvasOpen={canvasOpen}
-            canvasSelection={canvasSelection}
-            onCanvasToggle={handleCanvasToggle}
-            chatTextareaRef={chatTextareaRef}
-          />
-        )}
-      </div>
+            <div className={`main-panel ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
+                <Header
+                    onMenuClick={toggleSidebar}
+                    isOpen={sidebarOpen}
+                    onOpenModelManager={() => navigate(ROUTES.modelos)}
+                />
 
-      {/* Create Agent Dialog */}
-      <CreateAgentDialog
-        isOpen={showCreateDialog}
-        onClose={() => { setShowCreateDialog(false); setPendingPrompt(''); }}
-        onConfirm={handleCreateAgent}
-        initialPrompt={pendingPrompt}
-      />
+                <div className={`main-content ${showBatchPanel ? 'with-batch' : ''} ${canvas.canvasOpen ? 'with-canvas' : ''} ${showFullPanel ? 'with-full-panel' : ''}`}>
+                    <div className={`chat-content-wrapper ${canvas.canvasOpen ? 'canvas-chat-pane' : ''}`}>
+                        {renderMainContent()}
+                    </div>
+                    {canvas.canvasOpen && (
+                        <LazyPanel label="Canvas" fallback={<div className="lazy-fallback">Carregando editor...</div>}>
+                            <CanvasEditor
+                                content={canvas.canvasContent}
+                                onClose={canvas.handleCanvasClose}
+                                onContentChange={canvas.setCanvasContent}
+                                onSelectionChange={canvas.setCanvasSelection}
+                                onFocusChat={(selectedText: string) => {
+                                    canvas.setCanvasSelection(selectedText);
+                                    const ta = canvas.chatTextareaRef.current;
+                                    if (ta) {
+                                        ta.focus();
+                                        ta.placeholder = `Refinar: "${selectedText.slice(0, 40)}..." — digite sua instrução`;
+                                    }
+                                }}
+                                isUpdating={isLoading}
+                                conversationId={conversationId}
+                            />
+                        </LazyPanel>
+                    )}
+                    {showBatchPanel && (
+                        <BatchPanel
+                            results={batch.batchResults}
+                            selectedIndex={batch.batchSelectedIndex}
+                            onSelect={batch.handleBatchSelect}
+                            onClose={batch.handleBatchClose}
+                        />
+                    )}
+                </div>
 
-      {/* Share Agent Dialog */}
-      <ShareAgentDialog
-        isOpen={!!shareAgent}
-        onClose={() => setShareAgent(null)}
-        onShare={handleShareAgentConfirm}
-        agentName={shareAgent?.name || ''}
-      />
+                {!isPanelRoute && !batch.xrayReport && (
+                    <ChatInput
+                        onSend={sender.handleSend}
+                        onXray={batch.handleXray}
+                        onFilesUploaded={ocr.handleFilesUploaded}
+                        onStyleReport={style.handleStyleReport}
+                        onModelChange={setSelectedModel}
+                        onOpenModelManager={() => navigate(ROUTES.modelos)}
+                        isLoading={isLoading || batch.xrayLoading || style.styleAnalyzing}
+                        ocrProcessing={ocr.ocrProcessing}
+                        hasContext={!!(uploadedText || activeAgent)}
+                        ragStatus={ragStatus}
+                        onRagStatusChange={setRagStatus}
+                        activeAgent={activeAgent}
+                        canvasOpen={canvas.canvasOpen}
+                        canvasSelection={canvas.canvasSelection}
+                        onCanvasToggle={canvas.handleCanvasToggle}
+                        chatTextareaRef={canvas.chatTextareaRef}
+                    />
+                )}
+            </div>
 
-      {/* Memory Panel */}
-      <MemoryPanel
-        isOpen={showMemoryPanel}
-        onClose={() => setShowMemoryPanel(false)}
-      />
-
-      {/* Jurisprudência overlay sobre Sustentação (preserva estado da Sustentação) */}
-      {showSustentacao && showJurisprudencia && (
-        <div className="sust-jurisprudencia-overlay">
-          <Suspense fallback={<div className="lazy-fallback">Carregando...</div>}>
-            <JurisprudenciaPanel
-              onClose={() => setShowJurisprudencia(false)}
+            <CreateAgentDialog
+                isOpen={agents.showCreateDialog}
+                onClose={() => {
+                    agents.setShowCreateDialog(false);
+                    agents.setPendingPrompt('');
+                }}
+                onConfirm={async (input: { name: string; prompt: string; color?: string }) => {
+                    await agents.handleCreateAgent(input);
+                    if (currentPath === ROUTES.agenteBuilder) navigate(ROUTES.home);
+                }}
+                initialPrompt={agents.pendingPrompt}
             />
-          </Suspense>
+
+            <ShareAgentDialog
+                isOpen={!!agents.shareAgent}
+                onClose={() => agents.setShareAgent(null)}
+                onShare={agents.handleShareAgentConfirm}
+                agentName={agents.shareAgent?.name || ''}
+            />
+
+            <MemoryPanel isOpen={showMemoryPanel} onClose={() => setShowMemoryPanel(false)} />
+
+            {/* Jurisprudência overlay when sustentação is the active route */}
+            {currentPath === ROUTES.sustentacao && showJurisOverlay && (
+                <div className="sust-jurisprudencia-overlay">
+                    <LazyPanel
+                        label="Jurisprudência"
+                        onReset={() => setShowJurisOverlay(false)}
+                    >
+                        <JurisprudenciaPanel onClose={() => setShowJurisOverlay(false)} />
+                    </LazyPanel>
+                </div>
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 }
 
 function App() {
-  return (
-    <AuthProvider>
-      <AuthGate />
-    </AuthProvider>
-  );
+    return (
+        <AuthProvider>
+            <AppRoutes />
+        </AuthProvider>
+    );
 }
 
-function AuthGate() {
-  const { user, loading } = useAuth();
-  const [showSignup, setShowSignup] = useState(false);
+function AppRoutes() {
+    const { user, loading } = useAuth();
+    const navigate = useNavigate();
 
-  if (loading) {
+    if (loading) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background text-primary">
+                <div className="animate-spin text-3xl">⚙️</div>
+            </div>
+        );
+    }
+
+    if (!user) {
+        return (
+            <Routes>
+                <Route path={ROUTES.login} element={<LoginPage onNavigateSignup={() => navigate(ROUTES.signup)} />} />
+                <Route path={ROUTES.signup} element={<SignupPage onNavigateLogin={() => navigate(ROUTES.login)} />} />
+                <Route path="*" element={<Navigate to={ROUTES.login} replace />} />
+            </Routes>
+        );
+    }
+
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-background text-primary">
-        <div className="animate-spin text-3xl">⚙️</div>
-      </div>
+        <Routes>
+            <Route path={ROUTES.login} element={<Navigate to={ROUTES.home} replace />} />
+            <Route path={ROUTES.signup} element={<Navigate to={ROUTES.home} replace />} />
+            <Route path="/*" element={<MainApp />} />
+        </Routes>
     );
-  }
-
-  if (!user) {
-    return showSignup ? (
-      <SignupPage onNavigateLogin={() => setShowSignup(false)} />
-    ) : (
-      <LoginPage onNavigateSignup={() => setShowSignup(true)} />
-    );
-  }
-
-  return <MainApp />;
 }
 
 export default App;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 import { AiOutlineLoading3Quarters } from 'react-icons/ai';
+import { loginSchema, firstError } from '../validation/schemas';
 import logoSvg from '../assets/logo.svg';
 import './AuthPage.css';
 
@@ -8,16 +9,22 @@ export default function LoginPage({ onNavigateSignup }) {
     const [isLoading, setIsLoading] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [errorMsg, setErrorMsg] = useState(null);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setErrorMsg(null);
-        setIsLoading(true);
 
+        const parsed = loginSchema.safeParse({ email, password });
+        if (!parsed.success) {
+            setErrorMsg(firstError(parsed.error));
+            return;
+        }
+
+        setIsLoading(true);
         const { error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
+            email: parsed.data.email,
+            password: parsed.data.password,
         });
 
         if (error) {

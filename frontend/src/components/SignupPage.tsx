@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 import { AiOutlineLoading3Quarters } from 'react-icons/ai';
+import { signupSchema, firstError } from '../validation/schemas';
 import logoSvg from '../assets/logo.svg';
 import './AuthPage.css';
 
@@ -12,35 +13,32 @@ export default function SignupPage({ onNavigateLogin }) {
         password: '',
         confirmPassword: ''
     });
-    const [errorMsg, setErrorMsg] = useState(null);
-    const [successMsg, setSuccessMsg] = useState(null);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setErrorMsg(null);
         setSuccessMsg(null);
 
-        if (formData.password !== formData.confirmPassword) {
-            setErrorMsg("As senhas não coincidem.");
-            return;
-        }
-        if (formData.password.length < 6) {
-            setErrorMsg("A senha deve ter pelo menos 6 caracteres.");
+        const parsed = signupSchema.safeParse(formData);
+        if (!parsed.success) {
+            setErrorMsg(firstError(parsed.error));
             return;
         }
 
         setIsLoading(true);
 
         const { error } = await supabase.auth.signUp({
-            email: formData.email,
-            password: formData.password,
+            email: parsed.data.email,
+            password: parsed.data.password,
             options: {
                 data: {
-                    full_name: formData.name,
+                    full_name: parsed.data.name,
                 }
             }
         });

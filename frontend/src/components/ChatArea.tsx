@@ -41,7 +41,7 @@ interface ChatAreaProps {
     jurisResearch?: any;
     jurisResearchLoading?: boolean;
     jurisResearchProgress?: string;
-    onJurisImport?: (text: string) => void;
+    onJurisImport?: (data: any) => void;
     onJurisSearch?: () => void;
     onPilotReplicate?: () => void;
     onPilotDismiss?: () => void;
@@ -427,11 +427,11 @@ const MessageRow = memo(function MessageRow({ msg, i, isLoading, onRetry, onAuto
 const VISIBLE_INCREMENT = 50;
 
 const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessing = false, ocrEngineName = 'none', ocrProgress = { progress: '', percent: 0 }, styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, onQAReview, hasUploadedText = false, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, onPilotReplicate, onPilotDismiss, onRetry }: ChatAreaProps) => {
-    const endRef = useRef(null);
+    const endRef = useRef<HTMLDivElement | null>(null);
     const [visibleCount, setVisibleCount] = useState(VISIBLE_INCREMENT);
     // Elapsed timer for loading state
     const [elapsed, setElapsed] = useState(0);
-    const elapsedRef = useRef(null);
+    const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -454,7 +454,7 @@ const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessi
             }, 1000);
             return () => {
                 clearTimeout(resetTimer);
-                clearInterval(elapsedRef.current);
+                if (elapsedRef.current) clearInterval(elapsedRef.current);
                 elapsedRef.current = null;
             };
         } else {

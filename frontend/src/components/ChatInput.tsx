@@ -34,9 +34,9 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
     const [selectedModel, setSelectedModel] = useState(LLM_OPTIONS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [showOverflow, setShowOverflow] = useState(false);
-    const overflowRef = useRef(null);
+    const overflowRef = useRef<HTMLDivElement | null>(null);
 
-    const [files, setFiles] = useState([]);
+    const [files, setFiles] = useState<File[]>([]);
     const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[0].id);
     const [compressEnabled, setCompressEnabled] = useState(false);
     const [ragEnabled, setRagEnabled] = useState(false);
@@ -44,9 +44,9 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
     const [_indexing, _setIndexing] = useState(false);
     const [_indexSuccess, _setIndexSuccess] = useState(false);
     const [slmStatus, setSlmStatus] = useState({ available: false, mode: 'none' });
-    const dropdownRef = useRef(null);
+    const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-    const fileInputRef = useRef(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -112,7 +112,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
 
 
     const handleFileChange = (e) => {
-        const selected = Array.from(e.target.files);
+        const selected: File[] = Array.from(e.target.files || []);
         if (selected.length > 0) {
             setFiles((prev) => [...prev, ...selected]);
             // Trigger OCR immediately - callback returns rag_available info

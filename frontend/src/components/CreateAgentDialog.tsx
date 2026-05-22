@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { FaXmark, FaWandMagicSparkles } from 'react-icons/fa6';
+import { createAgentSchema, firstError, type CreateAgentInput } from '../validation/schemas';
 import './CreateAgentDialog.css';
 
 const COLORS = [
@@ -8,16 +9,29 @@ const COLORS = [
     '#6366F1', '#0EA5E9',
 ];
 
-const CreateAgentDialog = ({ isOpen, onClose, onConfirm, initialPrompt = '' }) => {
+interface Props {
+    isOpen: boolean;
+    onClose: () => void;
+    onConfirm: (input: CreateAgentInput) => void | Promise<void>;
+    initialPrompt?: string;
+}
+
+const CreateAgentDialog = ({ isOpen, onClose, onConfirm, initialPrompt = '' }: Props) => {
     const [name, setName] = useState('');
     const [prompt, setPrompt] = useState(initialPrompt);
     const [color, setColor] = useState(COLORS[0]);
+    const [error, setError] = useState<string | null>(null);
 
     if (!isOpen) return null;
 
-    const handleConfirm = () => {
-        if (!name.trim() || !prompt.trim()) return;
-        onConfirm({ name: name.trim(), prompt: prompt.trim(), color });
+    const handleConfirm = async () => {
+        const parsed = createAgentSchema.safeParse({ name, prompt, color });
+        if (!parsed.success) {
+            setError(firstError(parsed.error));
+            return;
+        }
+        setError(null);
+        await onConfirm(parsed.data);
         setName('');
         setPrompt('');
         setColor(COLORS[0]);
@@ -34,13 +48,30 @@ const CreateAgentDialog = ({ isOpen, onClose, onConfirm, initialPrompt = '' }) =
                 </div>
 
                 <div className="create-agent-body">
+                    {error && (
+                        <div
+                            role="alert"
+                            style={{
+                                background: 'color-mix(in srgb, var(--danger-color) 10%, transparent)',
+                                color: 'var(--danger-color)',
+                                border: '1px solid var(--danger-color)',
+                                borderRadius: 'var(--radius-sm)',
+                                padding: '8px 12px',
+                                marginBottom: '12px',
+                                fontSize: 'var(--text-sm)',
+                            }}
+                        >
+                            {error}
+                        </div>
+                    )}
+
                     <div className="create-agent-field">
                         <label>Nome do Agente</label>
                         <input
                             type="text"
                             placeholder="Ex: Analista de Contratos"
                             value={name}
-                            onChange={(e) => setName(e.target.value)}
+                            onChange={(e) => { setName(e.target.value); if (error) setError(null); }}
                             autoFocus
                             id="create-agent-name"
                         />
@@ -64,9 +95,9 @@ const CreateAgentDialog = ({ isOpen, onClose, onConfirm, initialPrompt = '' }) =
                     <div className="create-agent-field">
                         <label>Prompt do Agente</label>
                         <textarea
-                            placeholder="Cole ou escreva o prompt do agente..."
+                            placeholder="Cole ou escreva o prompt do agente (mínimo 20 caracteres)..."
                             value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
+                            onChange={(e) => { setPrompt(e.target.value); if (error) setError(null); }}
                             id="create-agent-prompt"
                         />
                     </div>

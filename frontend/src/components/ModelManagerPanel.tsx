@@ -14,37 +14,37 @@ import './ModelManagerPanel.css';
 
 const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
     // ── Model list state ──
-    const [templates, setTemplates] = useState([]);
+    const [templates, setTemplates] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [query, setQuery] = useState('');
-    const [searchResults, setSearchResults] = useState(null);
+    const [searchResults, setSearchResults] = useState<any>(null);
     const [summary, setSummary] = useState('');
     const [searching, setSearching] = useState(false);
     const [searchPhase, setSearchPhase] = useState('');
     const [showResults, setShowResults] = useState(false);
     const [error, setError] = useState('');
     const [uploading, setUploading] = useState(false);
-    const [deleting, setDeleting] = useState(null);
-    const [confirmDelete, setConfirmDelete] = useState(null);
-    const fileInputRef = useRef(null);
-    const searchInputRef = useRef(null);
+    const [deleting, setDeleting] = useState<string | null>(null);
+    const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
 
     // ── Verification state ──
     const [verifyMode, setVerifyMode] = useState(false);
-    const [themes, setThemes] = useState([]);
+    const [themes, setThemes] = useState<any[]>([]);
     const [themesLoading, setThemesLoading] = useState(false);
     const [themesPhase, setThemesPhase] = useState('');
     const [themePage, setThemePage] = useState(0);
     const THEMES_PER_PAGE = 10;
 
     // Per-theme verification
-    const [verifyResults, setVerifyResults] = useState({}); // { themeTitle: result }
-    const [verifying, setVerifying] = useState(null); // themeTitle being verified
-    const [expandedTheme, setExpandedTheme] = useState(null);
-    const [expandedAlert, setExpandedAlert] = useState(null);
+    const [verifyResults, setVerifyResults] = useState<Record<string, any>>({});
+    const [verifying, setVerifying] = useState<string | null>(null);
+    const [expandedTheme, setExpandedTheme] = useState<string | null>(null);
+    const [expandedAlert, setExpandedAlert] = useState<string | null>(null);
 
     // Document viewer
-    const [selectedDoc, setSelectedDoc] = useState(null);
+    const [selectedDoc, setSelectedDoc] = useState<any>(null);
     const [loadingDoc, setLoadingDoc] = useState(false);
 
     useEffect(() => { loadTemplates(); }, []);
@@ -72,8 +72,8 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
             const data = await askTemplates(query);
             setSummary(data.summary || '');
             setSearchResults(data);
-        } catch (err) {
-            setError(err.message || 'Erro na busca.');
+        } catch (err: any) {
+            setError(err?.message || 'Erro na busca.');
         } finally {
             setSearching(false); setSearchPhase('');
         }
@@ -83,7 +83,7 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
     const handleUploadClick = () => { fileInputRef.current?.click(); };
 
     const handleFileChange = async (e) => {
-        const selected = Array.from(e.target.files);
+        const selected: File[] = Array.from(e.target.files || []);
         if (selected.length === 0) return;
         e.target.value = '';
         setUploading(true); setError('');
@@ -93,8 +93,8 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
                 onRagStatusChange({ indexed_chunks: result.indexed_chunks, has_dossier: result.has_dossier });
             }
             await loadTemplates();
-        } catch (err) {
-            setError(`Erro ao indexar: ${err.message}`);
+        } catch (err: any) {
+            setError(`Erro ao indexar: ${err?.message}`);
         } finally {
             setUploading(false);
         }
@@ -111,8 +111,8 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
                 const totalChunks = (updated.templates || []).reduce((acc, t) => acc + t.chunk_count, 0);
                 onRagStatusChange({ indexed_chunks: totalChunks, has_dossier: totalChunks > 0 });
             }
-        } catch (err) {
-            setError(`Erro ao remover: ${err.message}`);
+        } catch (err: any) {
+            setError(`Erro ao remover: ${err?.message}`);
         } finally {
             setDeleting(null);
         }
@@ -134,8 +134,8 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
             setTimeout(() => setThemesPhase('Identificando temas jurídicos...'), 2500);
             const data = await extractThemes();
             setThemes(data.themes || []);
-        } catch (err) {
-            setError(err.message || 'Erro ao extrair temas.');
+        } catch (err: any) {
+            setError(err?.message || 'Erro ao extrair temas.');
         } finally {
             setThemesLoading(false);
             setThemesPhase('');
@@ -152,10 +152,10 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
         try {
             const result = await verifyTheme(theme.title);
             setVerifyResults(prev => ({ ...prev, [theme.title]: result }));
-        } catch (err) {
+        } catch (err: any) {
             setVerifyResults(prev => ({
                 ...prev,
-                [theme.title]: { status: 'error', theme: theme.title, error: err.message }
+                [theme.title]: { status: 'error', theme: theme.title, error: err?.message }
             }));
         } finally {
             setVerifying(null);

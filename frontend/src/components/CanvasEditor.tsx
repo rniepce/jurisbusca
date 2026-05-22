@@ -88,20 +88,20 @@ const HEADING_OPTIONS = [
     { value: 'h4', label: 'Título 4', tag: 'H4' },
 ];
 
-const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, onFocusChat, isUpdating = false, conversationId = null }) => {
+const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, onFocusChat, isUpdating = false, conversationId }: any) => {
     const [copied, setCopied] = useState(false);
     const [flashKey, setFlashKey] = useState(0);
-    const [lastUpdated, setLastUpdated] = useState(null);
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
     const [headingDropdownOpen, setHeadingDropdownOpen] = useState(false);
     const [currentHeading, setCurrentHeading] = useState('Texto normal');
     const [activeFormats, setActiveFormats] = useState<Record<string, boolean>>({});
-    const [selectionFab, setSelectionFab] = useState(null); // { text, x, y }
+    const [selectionFab, setSelectionFab] = useState<{ text: string; x: number; y: number } | null>(null);
     const [autoSaveIndicator, setAutoSaveIndicator] = useState(false); // "Salvo ✓" badge
     const [draftToast, setDraftToast] = useState(false); // "Rascunho restaurado ✓" toast
-    const editorRef = useRef(null);
-    const headingRef = useRef(null);
-    const contentChangeTimer = useRef(null);
-    const autoSaveTimer = useRef(null);
+    const editorRef = useRef<HTMLDivElement | null>(null);
+    const headingRef = useRef<HTMLDivElement | null>(null);
+    const contentChangeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastLlmContent = useRef(''); // tracks LLM content to avoid overwriting user edits
 
     // Set content into the editor when it changes from LLM
@@ -204,7 +204,7 @@ const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, on
     }, [updateActiveFormats]);
 
     // ── Formatting commands ──
-    const execFormat = (command, value = null) => {
+    const execFormat = (command: string, value: string | undefined = undefined) => {
         editorRef.current?.focus();
         document.execCommand(command, false, value);
         updateActiveFormats();
@@ -225,15 +225,16 @@ const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, on
     // ── Content edit handler — marks edits as user-originated + debounced sync ──
     const handleInput = () => {
         if (editorRef.current) {
-            editorRef.current.dataset.source = 'user';
+            const editor = editorRef.current as HTMLDivElement & { _userTimeout?: ReturnType<typeof setTimeout> };
+            editor.dataset.source = 'user';
             // Clear the 'user' flag after a short delay so LLM updates can flow again
-            clearTimeout(editorRef.current._userTimeout);
-            editorRef.current._userTimeout = setTimeout(() => {
+            if (editor._userTimeout) clearTimeout(editor._userTimeout);
+            editor._userTimeout = setTimeout(() => {
                 if (editorRef.current) editorRef.current.dataset.source = '';
             }, 2000);
 
             // Debounced content sync → parent state
-            clearTimeout(contentChangeTimer.current);
+            if (contentChangeTimer.current) clearTimeout(contentChangeTimer.current);
             contentChangeTimer.current = setTimeout(() => {
                 if (editorRef.current && onContentChange) {
                     onContentChange(editorRef.current.innerText);
@@ -241,7 +242,7 @@ const CanvasEditor = ({ content, onClose, onContentChange, onSelectionChange, on
             }, 1000);
 
             // Auto-save to localStorage (debounced 2s)
-            clearTimeout(autoSaveTimer.current);
+            if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
             autoSaveTimer.current = setTimeout(() => {
                 if (editorRef.current && conversationId) {
                     const textContent = editorRef.current.innerText;

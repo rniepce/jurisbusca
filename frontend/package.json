@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:analyze": "ANALYZE=1 vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "npx serve dist -s -l ${PORT:-3000}"
@@ -17,7 +18,9 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-icons": "^5.5.0",
+    "rollup-plugin-visualizer": "^7.0.1",
     "serve": "^14.2.5",
+    "zod": "^4.4.3",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

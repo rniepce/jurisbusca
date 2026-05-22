@@ -1,0 +1,54 @@
+/* Skeleton shimmer — uses semantic CSS vars so it adapts to dark mode automatically. */
+
+.skel {
+    background: linear-gradient(
+        90deg,
+        var(--border-color) 0%,
+        color-mix(in srgb, var(--border-color) 50%, var(--bg-color)) 50%,
+        var(--border-color) 100%
+    );
+    background-size: 200% 100%;
+    animation: skel-shimmer 1.4s ease-in-out infinite;
+    display: block;
+}
+
+@keyframes skel-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .skel { animation: none; opacity: 0.6; }
+}
+
+/* Full panel layout */
+.skel-panel {
+    padding: 32px;
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.skel-panel-header {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 28px;
+}
+
+.skel-panel-header-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.skel-panel-body {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Inline use inside cards */
+.skel-inline {
+    padding: 12px 0;
+}

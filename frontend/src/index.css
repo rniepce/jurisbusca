@@ -63,6 +63,33 @@
   --sar: env(safe-area-inset-right, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
+
+  /* ── Surface aliases (used by ErrorBoundary, skeletons, future cards) ── */
+  --surface: var(--input-bg);
+  --text-primary: var(--text-color);
+  --text-secondary: var(--secondary-text-color);
+}
+
+/* ── Dark theme ─────────────────────────────────────────────────────── */
+/* Applied when <html data-theme="dark"> is set. Semantic tokens flip;
+   components using these vars adapt automatically. Components with
+   hard-coded colors will need a per-component audit. */
+:root[data-theme="dark"] {
+  --text-color: var(--gray-100);
+  --secondary-text-color: var(--gray-400);
+  --muted-text-color: var(--gray-300);
+  --bg-color: var(--gray-900);
+  --sidebar-bg: #111827;
+  --border-color: var(--gray-700);
+  --input-bg: var(--gray-800);
+  --surface: var(--gray-800);
+  --text-primary: var(--gray-100);
+  --text-secondary: var(--gray-400);
+  --primary-color: #60a5fa;
+  --accent-color: #3b82f6;
+  --shadow-soft: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
 }
 
 * {

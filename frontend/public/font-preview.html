@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>JurisBusca — Preview de Tipografia</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&family=IBM+Plex+Sans:wght@400;500;600&family=Lora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=DM+Sans:wght@400;500;600&family=Cormorant+Garamond:wght@500;600;700&family=Source+Serif+4:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+    :root {
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --accent: #1d4ed8;
+        --accent-soft: #eff6ff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Source Sans 3', system-ui, sans-serif;
+        padding: 48px 24px;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+    }
+    .container { max-width: 880px; margin: 0 auto; }
+    .page-header { margin-bottom: 48px; }
+    .page-header h1 { font-family: 'Bricolage Grotesque', sans-serif; font-size: 32px; font-weight: 800; letter-spacing: -0.02em; }
+    .page-header p { color: var(--muted); margin-top: 8px; font-size: 16px; }
+    .opt {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 36px 40px;
+        margin-bottom: 32px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .opt-label {
+        display: inline-block;
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        background: var(--accent-soft);
+        padding: 4px 10px;
+        border-radius: 6px;
+        margin-bottom: 16px;
+    }
+    .opt-display { font-size: 36px; line-height: 1.15; letter-spacing: -0.015em; margin-bottom: 14px; }
+    .opt-tagline { font-size: 17px; line-height: 1.55; color: var(--muted); margin-bottom: 24px; max-width: 70ch; }
+    .opt-h2 { font-size: 22px; margin: 24px 0 10px; font-weight: 600; letter-spacing: -0.005em; }
+    .opt-body { font-size: 15.5px; line-height: 1.65; margin-bottom: 14px; }
+    .opt-meta { font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; color: var(--muted); margin-top: 24px; padding-top: 16px; border-top: 1px dashed var(--border); }
+    .opt-meta strong { color: var(--text); font-weight: 600; }
+    .judicial-tag {
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        text-transform: uppercase;
+        margin-bottom: 8px;
+    }
+
+    /* Option A — Editorial / Magazine */
+    .opt-a .opt-display { font-family: 'Fraunces', serif; font-weight: 800; font-variation-settings: "opsz" 144; }
+    .opt-a .opt-h2 { font-family: 'Fraunces', serif; font-weight: 600; font-variation-settings: "opsz" 72; }
+    .opt-a .opt-tagline, .opt-a .opt-body { font-family: 'Inter', sans-serif; }
+
+    /* Option B — Modern Judicial */
+    .opt-b .opt-display { font-family: 'Lora', serif; font-weight: 700; }
+    .opt-b .opt-h2 { font-family: 'Lora', serif; font-weight: 600; }
+    .opt-b .opt-tagline, .opt-b .opt-body { font-family: 'Source Sans 3', sans-serif; }
+
+    /* Option C — Contemporary / Authority */
+    .opt-c .opt-display { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-variation-settings: "opsz" 96; }
+    .opt-c .opt-h2 { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; font-variation-settings: "opsz" 48; }
+    .opt-c .opt-tagline, .opt-c .opt-body { font-family: 'DM Sans', sans-serif; }
+
+    /* Option D — Classic / Traditional */
+    .opt-d .opt-display { font-family: 'Cormorant Garamond', serif; font-weight: 700; }
+    .opt-d .opt-h2 { font-family: 'Cormorant Garamond', serif; font-weight: 600; }
+    .opt-d .opt-tagline, .opt-d .opt-body { font-family: 'Source Serif 4', serif; }
+
+    .footer-note { font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; color: var(--muted); text-align: center; margin-top: 32px; padding: 24px; background: var(--surface); border-radius: 12px; border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="container">
+    <header class="page-header">
+        <h1>Preview de Tipografia — JurisBusca</h1>
+        <p>4 direções para escolher. Cada cartão mostra display + corpo + texto jurídico real, em escala próxima à do app.</p>
+    </header>
+
+    <!-- A -->
+    <section class="opt opt-a">
+        <span class="opt-label">Opção A · Editorial / Magazine</span>
+        <h2 class="opt-display">Decisão Monocrática nº 5.018.293/MG</h2>
+        <p class="opt-tagline">Vistos. Trata-se de agravo de instrumento interposto em face de decisão proferida pelo Juízo da 4ª Vara Cível.</p>
+        <div class="judicial-tag">Trecho · Fundamentação</div>
+        <h3 class="opt-h2">Da preliminar de ilegitimidade passiva</h3>
+        <p class="opt-body">A jurisprudência consolidada do Eg. Tribunal de Justiça de Minas Gerais sedimenta o entendimento de que, nas relações de consumo, a responsabilidade dos integrantes da cadeia de fornecimento é solidária, nos termos do art. 7º, parágrafo único, do Código de Defesa do Consumidor.</p>
+        <p class="opt-body">Nesse sentido, assim entende o Eg. TJMG: <em>"A ausência de regularização formal do imóvel não elide a responsabilidade da incorporadora, ainda quando configurada relação contratual com terceiros adquirentes."</em></p>
+        <div class="opt-meta"><strong>Display:</strong> Fraunces variable · <strong>Corpo:</strong> Inter — vibe: jornalismo refinado, gravitas editorial.</div>
+    </section>
+
+    <!-- B -->
+    <section class="opt opt-b">
+        <span class="opt-label">Opção B · TJMG Moderno</span>
+        <h2 class="opt-display">Decisão Monocrática nº 5.018.293/MG</h2>
+        <p class="opt-tagline">Vistos. Trata-se de agravo de instrumento interposto em face de decisão proferida pelo Juízo da 4ª Vara Cível.</p>
+        <div class="judicial-tag">Trecho · Fundamentação</div>
+        <h3 class="opt-h2">Da preliminar de ilegitimidade passiva</h3>
+        <p class="opt-body">A jurisprudência consolidada do Eg. Tribunal de Justiça de Minas Gerais sedimenta o entendimento de que, nas relações de consumo, a responsabilidade dos integrantes da cadeia de fornecimento é solidária, nos termos do art. 7º, parágrafo único, do Código de Defesa do Consumidor.</p>
+        <p class="opt-body">Nesse sentido, assim entende o Eg. TJMG: <em>"A ausência de regularização formal do imóvel não elide a responsabilidade da incorporadora, ainda quando configurada relação contratual com terceiros adquirentes."</em></p>
+        <div class="opt-meta"><strong>Display:</strong> Lora · <strong>Corpo:</strong> Source Sans 3 — vibe: profissional sóbrio, identidade TJMG contemporânea.</div>
+    </section>
+
+    <!-- C -->
+    <section class="opt opt-c">
+        <span class="opt-label">Opção C · Autoridade Contemporânea</span>
+        <h2 class="opt-display">Decisão Monocrática nº 5.018.293/MG</h2>
+        <p class="opt-tagline">Vistos. Trata-se de agravo de instrumento interposto em face de decisão proferida pelo Juízo da 4ª Vara Cível.</p>
+        <div class="judicial-tag">Trecho · Fundamentação</div>
+        <h3 class="opt-h2">Da preliminar de ilegitimidade passiva</h3>
+        <p class="opt-body">A jurisprudência consolidada do Eg. Tribunal de Justiça de Minas Gerais sedimenta o entendimento de que, nas relações de consumo, a responsabilidade dos integrantes da cadeia de fornecimento é solidária, nos termos do art. 7º, parágrafo único, do Código de Defesa do Consumidor.</p>
+        <p class="opt-body">Nesse sentido, assim entende o Eg. TJMG: <em>"A ausência de regularização formal do imóvel não elide a responsabilidade da incorporadora, ainda quando configurada relação contratual com terceiros adquirentes."</em></p>
+        <div class="opt-meta"><strong>Display:</strong> Bricolage Grotesque variable · <strong>Corpo:</strong> DM Sans — vibe: sans contemporâneo, leitura em tela impecável.</div>
+    </section>
+
+    <!-- D -->
+    <section class="opt opt-d">
+        <span class="opt-label">Opção D · Tradição Jurídica</span>
+        <h2 class="opt-display">Decisão Monocrática nº 5.018.293/MG</h2>
+        <p class="opt-tagline">Vistos. Trata-se de agravo de instrumento interposto em face de decisão proferida pelo Juízo da 4ª Vara Cível.</p>
+        <div class="judicial-tag">Trecho · Fundamentação</div>
+        <h3 class="opt-h2">Da preliminar de ilegitimidade passiva</h3>
+        <p class="opt-body">A jurisprudência consolidada do Eg. Tribunal de Justiça de Minas Gerais sedimenta o entendimento de que, nas relações de consumo, a responsabilidade dos integrantes da cadeia de fornecimento é solidária, nos termos do art. 7º, parágrafo único, do Código de Defesa do Consumidor.</p>
+        <p class="opt-body">Nesse sentido, assim entende o Eg. TJMG: <em>"A ausência de regularização formal do imóvel não elide a responsabilidade da incorporadora, ainda quando configurada relação contratual com terceiros adquirentes."</em></p>
+        <div class="opt-meta"><strong>Display:</strong> Cormorant Garamond · <strong>Corpo:</strong> Source Serif 4 — vibe: livro de direito, tradição forense, peso editorial.</div>
+    </section>
+
+    <div class="footer-note">
+        Aberto em <code>/font-preview.html</code> após <code>npm run dev</code> ou em produção. Quando escolher uma, é só me falar a letra (A/B/C/D) que eu aplico no <code>--font-family</code> + <code>--font-display</code>.
+    </div>
+</div>
+</body>
+</html>

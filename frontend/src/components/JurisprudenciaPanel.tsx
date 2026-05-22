@@ -5,7 +5,7 @@ import './JurisprudenciaPanel.css';
 
 const JurisprudenciaPanel = ({ onClose }) => {
     const [query, setQuery] = useState('');
-    const [results, setResults] = useState(null);
+    const [results, setResults] = useState<any>(null);
     const [summary, setSummary] = useState('');
     const [showResults, setShowResults] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -14,12 +14,12 @@ const JurisprudenciaPanel = ({ onClose }) => {
     const [error, setError] = useState('');
     const [anoInicio, setAnoInicio] = useState(2020);
     const [anoFim, setAnoFim] = useState(2026);
-    const [stats, setStats] = useState(null);
-    const [selectedDoc, setSelectedDoc] = useState(null);
+    const [stats, setStats] = useState<any>(null);
+    const [selectedDoc, setSelectedDoc] = useState<any>(null);
     const [loadingDoc, setLoadingDoc] = useState(false);
     const [copied, setCopied] = useState(false);
-    const [expandedSnippets, setExpandedSnippets] = useState(new Set());
-    const searchInputRef = useRef(null);
+    const [expandedSnippets, setExpandedSnippets] = useState<Set<string>>(new Set());
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
 
     // Load stats on mount
     useEffect(() => {
@@ -53,8 +53,8 @@ const JurisprudenciaPanel = ({ onClose }) => {
             });
             setSummary(data.summary || '');
             setResults(data);
-        } catch (err) {
-            setError(err.message || 'Erro na busca.');
+        } catch (err: any) {
+            setError(err?.message || 'Erro na busca.');
         } finally {
             setLoading(false);
             setLoadingPhase('');
@@ -72,8 +72,8 @@ const JurisprudenciaPanel = ({ onClose }) => {
         try {
             const doc = await getJurisprudenciaDoc(docId);
             setSelectedDoc(doc);
-        } catch (err) {
-            setError(err.message || 'Erro ao carregar documento.');
+        } catch (err: any) {
+            setError(err?.message || 'Erro ao carregar documento.');
         } finally {
             setLoadingDoc(false);
         }

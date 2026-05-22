@@ -1,12 +1,13 @@
 import { create } from 'zustand';
+import type {
+    Message,
+    Agent,
+    BatchPilotSession,
+    SelectedModel,
+    CustomAgent,
+} from '../types/chat';
 
-interface SelectedModel {
-    id: string;
-    name: string;
-    color: string;
-    llm: string;
-}
-
+// ── UI Store ───────────────────────────────────────────────────────────
 interface UIStoreState {
     sidebarOpen: boolean;
     canvasMode: boolean;
@@ -19,10 +20,6 @@ interface UIStoreState {
     setSelectedModel: (model: SelectedModel) => void;
 }
 
-/**
- * UI state store — manages sidebar, canvas mode, batch panel, and selected model.
- * Chat/message state remains in App.jsx due to heavy interdependencies with API calls.
- */
 export const useUIStore = create<UIStoreState>((set) => ({
     sidebarOpen: typeof window !== 'undefined' ? window.innerWidth > 768 : true,
     canvasMode: false,
@@ -36,37 +33,82 @@ export const useUIStore = create<UIStoreState>((set) => ({
     setSelectedModel: (model) => set({ selectedModel: model }),
 }));
 
-/**
- * Agent store — manages agent list and active agent selection.
- * Active agent selection is partially kept in App.jsx for backward-compat with callbacks.
- */
-export const useAgentStore = create((set) => ({
-    agents: [],
-    activeAgent: null,
+// ── Agent Store ────────────────────────────────────────────────────────
+interface AgentStoreState {
+    customAgents: CustomAgent[];
+    setCustomAgents: (agents: CustomAgent[]) => void;
+    addCustomAgent: (agent: CustomAgent) => void;
+    removeCustomAgent: (id: string) => void;
+}
 
-    setAgents: (agents) => set({ agents }),
-    setActiveAgent: (agent) => set({ activeAgent: agent }),
+export const useAgentStore = create<AgentStoreState>((set) => ({
+    customAgents: [],
+    setCustomAgents: (customAgents) => set({ customAgents }),
+    addCustomAgent: (agent) => set((s) => ({ customAgents: [agent, ...s.customAgents] })),
+    removeCustomAgent: (id) => set((s) => ({ customAgents: s.customAgents.filter((a) => a.id !== id) })),
 }));
 
-/**
- * Chat store — messages, conversations, loading and streaming state.
- * NOTE: This store is defined but the actual state management for messages
- * remains in App.jsx due to the deep integration with async API calls,
- * batch pilots, canvas, jurisprudence, and OCR flows.
- * Use this store for future migration as those flows are extracted.
- */
-export const useChatStore = create((set) => ({
-    messages: [],
-    conversations: [],
-    activeConversationId: null,
-    isLoading: false,
-    streamingMessage: '',
+// ── Chat Store ─────────────────────────────────────────────────────────
+// Single source of truth for chat-related state shared across many hooks.
 
-    setMessages: (messages) => set({ messages }),
-    addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
-    setConversations: (conversations) => set({ conversations }),
-    setActiveConversationId: (id) => set({ activeConversationId: id }),
+type Updater<T> = T | ((prev: T) => T);
+
+interface ChatStoreState {
+    messages: Message[];
+    conversationId: string | null;
+    uploadedText: string | null;
+    activeAgent: Agent | null;
+    styleDossier: string | null;
+    jurisContext: string;
+    isLoading: boolean;
+    batchPilotSession: BatchPilotSession | null;
+
+    setMessages: (m: Updater<Message[]>) => void;
+    addMessage: (m: Message) => void;
+    addMessages: (m: Message[]) => void;
+    setIsLoading: (val: boolean) => void;
+    setConversationId: (id: string | null) => void;
+    setUploadedText: (text: Updater<string | null>) => void;
+    setActiveAgent: (agent: Agent | null) => void;
+    setStyleDossier: (s: string | null) => void;
+    setJurisContext: (ctx: Updater<string>) => void;
+    setBatchPilotSession: (s: Updater<BatchPilotSession | null>) => void;
+    resetChat: () => void;
+}
+
+function resolve<T>(updater: Updater<T>, prev: T): T {
+    return typeof updater === 'function' ? (updater as (p: T) => T)(prev) : updater;
+}
+
+export const useChatStore = create<ChatStoreState>((set) => ({
+    messages: [],
+    conversationId: null,
+    uploadedText: null,
+    activeAgent: null,
+    styleDossier: null,
+    jurisContext: '',
+    isLoading: false,
+    batchPilotSession: null,
+
+    setMessages: (m) => set((s) => ({ messages: resolve(m, s.messages) })),
+    addMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
+    addMessages: (m) => set((s) => ({ messages: [...s.messages, ...m] })),
     setIsLoading: (val) => set({ isLoading: val }),
-    setStreamingMessage: (msg) => set({ streamingMessage: msg }),
-    clearMessages: () => set({ messages: [], activeConversationId: null }),
+    setConversationId: (id) => set({ conversationId: id }),
+    setUploadedText: (text) => set((s) => ({ uploadedText: resolve(text, s.uploadedText) })),
+    setActiveAgent: (agent) => set({ activeAgent: agent }),
+    setStyleDossier: (sd) => set({ styleDossier: sd }),
+    setJurisContext: (ctx) => set((s) => ({ jurisContext: resolve(ctx, s.jurisContext) })),
+    setBatchPilotSession: (sess) =>
+        set((s) => ({ batchPilotSession: resolve(sess, s.batchPilotSession) })),
+    resetChat: () =>
+        set({
+            messages: [],
+            conversationId: null,
+            uploadedText: null,
+            activeAgent: null,
+            jurisContext: '',
+            batchPilotSession: null,
+            isLoading: false,
+        }),
 }));
