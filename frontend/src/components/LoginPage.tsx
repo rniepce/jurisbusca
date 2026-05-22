@@ -112,18 +112,20 @@ export default function LoginPage({ onNavigateSignup, onNavigateForgot }: LoginP
                         </button>
 
                         {onNavigateForgot && (
-                            <div style={{ textAlign: 'center', marginTop: '12px' }}>
+                            <div style={{ textAlign: 'center', marginTop: '14px' }}>
                                 <button
                                     type="button"
-                                    className="text-primary hover-underline"
                                     onClick={onNavigateForgot}
                                     style={{
                                         background: 'none',
                                         border: 'none',
                                         cursor: 'pointer',
-                                        fontSize: 'var(--text-sm)',
-                                        color: 'var(--secondary-text-color)',
-                                        padding: '4px 8px',
+                                        fontSize: '0.875rem',
+                                        color: 'var(--primary-color, #3b82f6)',
+                                        padding: '6px 8px',
+                                        textDecoration: 'underline',
+                                        textUnderlineOffset: '3px',
+                                        fontWeight: 500,
                                     }}
                                 >
                                     Esqueci minha senha
