@@ -20,6 +20,7 @@ const ACCEPTED_TYPES = '.pdf,.docx,.txt';
 
 /** Engine padrão de OCR — sem mais escolha pelo usuário; backend usa Mistral DocAI. */
 const DEFAULT_OCR_ENGINE = 'mistral_doc_ai';
+const NO_OCR_ENGINE = 'none';
 const DEFAULT_COMPRESS = true;
 
 interface PrefillSignal {
@@ -53,6 +54,7 @@ const ChatInput = ({
     const [dropdownOpen, setDropdownOpen] = useState(false);
 
     const [files, setFiles] = useState<File[]>([]);
+    const [skipOcr, setSkipOcr] = useState(false);
     const [slmStatus, setSlmStatus] = useState({ available: false, mode: 'none' });
     const dropdownRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -131,7 +133,8 @@ const ChatInput = ({
         if (selected.length > 0) {
             setFiles((prev) => [...prev, ...selected]);
             if (onFilesUploaded) {
-                onFilesUploaded(selected, DEFAULT_OCR_ENGINE, DEFAULT_COMPRESS).catch(() => { });
+                const engine = skipOcr ? NO_OCR_ENGINE : DEFAULT_OCR_ENGINE;
+                onFilesUploaded(selected, engine, DEFAULT_COMPRESS).catch(() => { });
             }
         }
         e.target.value = '';
@@ -281,6 +284,19 @@ const ChatInput = ({
                             <span className="slot-label">{activeAgent.name}</span>
                         </div>
                     )}
+
+                    {/* Skip OCR toggle (atalho pra PDFs nativos quando o OCR está lento) */}
+                    <button
+                        type="button"
+                        className={`slot-btn ${skipOcr ? 'active' : ''}`}
+                        onClick={() => setSkipOcr((v) => !v)}
+                        title={skipOcr
+                            ? 'OCR desativado — usando apenas extração de texto nativo (rápido para PDFs digitais).'
+                            : 'OCR ativado (Mistral Doc AI). Clique para desativar e usar só extração nativa (mais rápido em PDFs já digitais).'}
+                    >
+                        <span aria-hidden="true">{skipOcr ? '🚫' : '🔍'}</span>
+                        <span className="slot-label">{skipOcr ? 'OCR off' : 'OCR'}</span>
+                    </button>
 
                     {/* Canvas toggle */}
                     <button
