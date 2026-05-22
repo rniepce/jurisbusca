@@ -36,6 +36,7 @@ const JurisprudenciaPanel = lazy(() => import('./components/JurisprudenciaPanel'
 const SustentacaoPanel = lazy(() => import('./components/sustentacao/SustentacaoPanel'));
 const ModelManagerPanel = lazy(() => import('./components/ModelManagerPanel'));
 const AgentBuilderChat = lazy(() => import('./components/AgentBuilderChat'));
+const LotePanel = lazy(() => import('./components/LotePanel'));
 
 // ── Route constants ──
 const ROUTES = {
@@ -48,6 +49,7 @@ const ROUTES = {
     sustentacao: '/sustentacao',
     modelos: '/modelos',
     agenteBuilder: '/agente-builder',
+    lote: '/lote',
 } as const;
 
 const PANEL_PATHS = new Set<string>([
@@ -55,6 +57,7 @@ const PANEL_PATHS = new Set<string>([
     ROUTES.sustentacao,
     ROUTES.modelos,
     ROUTES.agenteBuilder,
+    ROUTES.lote,
 ]);
 
 function MainApp() {
@@ -181,6 +184,18 @@ function MainApp() {
                             <SustentacaoPanel
                                 onClose={goHome}
                                 onOpenJurisprudencia={() => setShowJurisOverlay(true)}
+                            />
+                        </LazyPanel>
+                    }
+                />
+                <Route
+                    path={ROUTES.lote}
+                    element={
+                        <LazyPanel label="Análise em Lote" onReset={goHome}>
+                            <LotePanel
+                                onClose={goHome}
+                                onUpload={(files) => batch.handleXray(files)}
+                                isLoading={batch.xrayLoading}
                             />
                         </LazyPanel>
                     }

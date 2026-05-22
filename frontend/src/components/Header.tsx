@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FaKey, FaBook, FaCircleQuestion, FaSun, FaMoon, FaDesktop } from 'react-icons/fa6';
 import { LuPanelLeftClose, LuPanelLeftOpen } from 'react-icons/lu';
+import { NavLink } from 'react-router-dom';
 import { validateAzureKey } from '../services/api';
 import { useAuth } from './AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import logoSvg from '../assets/logo.svg';
 import './Header.css';
+
+const HEADER_TABS = [
+    { to: '/', label: 'Chat', end: true },
+    { to: '/sustentacao', label: 'Sessão', end: false },
+    { to: '/jurisprudencia', label: 'Jurisprudência', end: false },
+    { to: '/modelos', label: 'Modelos', end: false },
+] as const;
 
 const Header = ({ onMenuClick, isOpen, onOpenModelManager }) => {
     const [keyOpen, setKeyOpen] = useState(false);
@@ -91,6 +99,21 @@ const Header = ({ onMenuClick, isOpen, onOpenModelManager }) => {
                     <span className="brand-title">Assistente TJMG</span>
                 </div>
             </div>
+
+            <nav className="header-tabs" aria-label="Navegação principal">
+                {HEADER_TABS.map((tab) => (
+                    <NavLink
+                        key={tab.to}
+                        to={tab.to}
+                        end={tab.end}
+                        className={({ isActive }) =>
+                            `header-tab ${isActive ? 'active' : ''}`
+                        }
+                    >
+                        {tab.label}
+                    </NavLink>
+                ))}
+            </nav>
 
             <div className="header-right">
                 {/* API Key Configuration */}

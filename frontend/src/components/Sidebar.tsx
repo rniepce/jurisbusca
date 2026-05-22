@@ -5,8 +5,9 @@ import {
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
     FaBookOpen, FaPenNib, FaComments, FaClipboardCheck,
     FaWandMagicSparkles, FaTrash, FaShareNodes, FaEllipsisVertical, FaRobot,
-    FaGavel
+    FaGavel, FaLayerGroup, FaBook
 } from 'react-icons/fa6';
+import { useNavigate, useLocation } from 'react-router-dom';
 import './Sidebar.css';
 import agentDefinitions from '../config/agents';
 
@@ -36,10 +37,23 @@ const Sidebar = ({
     onOpenMemory,
     onOpenSustentacao,
 }: any) => {
+    const navigate = useNavigate();
+    const location = useLocation();
     const [agentsOpen, setAgentsOpen] = useState(true);
     const [customAgentsOpen, setCustomAgentsOpen] = useState(true);
     const [menuOpenId, setMenuOpenId] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
+
+    const goTo = (path: string) => {
+        navigate(path);
+        if (onCloseMobile) onCloseMobile();
+    };
+
+    const navItems = [
+        { path: '/lote', label: 'Análise em lote', icon: <FaLayerGroup size={13} /> },
+        { path: '/jurisprudencia', label: 'Jurisprudência', icon: <FaScaleBalanced size={13} /> },
+        { path: '/modelos', label: 'Gestor de Modelos', icon: <FaBook size={13} /> },
+    ];
 
     const handleAgentClick = (agent) => {
         if (onAgentSelect) onAgentSelect(agent);
@@ -97,6 +111,24 @@ const Sidebar = ({
                     <FaGavel size={13} />
                     <span>Sessão / Audiência</span>
                 </button>
+            </div>
+
+            {/* Navegação direta para painéis principais */}
+            <div className="sidebar-nav">
+                {navItems.map((item) => {
+                    const active = location.pathname === item.path;
+                    return (
+                        <button
+                            key={item.path}
+                            className={`sidebar-nav-link ${active ? 'active' : ''}`}
+                            onClick={() => goTo(item.path)}
+                            title={item.label}
+                        >
+                            <span className="sidebar-nav-icon" aria-hidden="true">{item.icon}</span>
+                            <span>{item.label}</span>
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Agents Section */}

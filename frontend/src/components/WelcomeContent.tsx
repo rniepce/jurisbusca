@@ -1,5 +1,6 @@
 import React from 'react';
 import { FaScaleBalanced, FaGavel, FaPaperclip, FaRobot } from 'react-icons/fa6';
+import { useAuth } from './AuthContext';
 import './WelcomeContent.css';
 
 interface Action {
@@ -18,12 +19,33 @@ interface Props {
     onOpenAgents?: () => void;
 }
 
+function getGreeting(): string {
+    const hour = new Date().getHours();
+    if (hour < 5) return 'Boa madrugada';
+    if (hour < 12) return 'Bom dia';
+    if (hour < 18) return 'Boa tarde';
+    return 'Boa noite';
+}
+
+function getFirstName(fullName?: string | null, email?: string | null): string {
+    if (fullName) return fullName.trim().split(/\s+/)[0];
+    if (email) return email.split('@')[0];
+    return '';
+}
+
 const WelcomeContent: React.FC<Props> = ({
     onOpenJurisprudencia,
     onOpenSustentacao,
     onAttachFile,
     onOpenAgents,
 }) => {
+    const { user } = useAuth();
+    const firstName = getFirstName(
+        user?.user_metadata?.full_name as string | undefined,
+        user?.email
+    );
+    const greeting = `${getGreeting()}${firstName ? `, ${firstName}` : ''}`;
+
     const actions: Action[] = [
         {
             id: 'sustentacao',
@@ -61,10 +83,8 @@ const WelcomeContent: React.FC<Props> = ({
 
     return (
         <div className="welcome-container">
-            <h1 className="welcome-title">Bem-vindo ao Assistente TJMG</h1>
-            <p className="welcome-hint">
-                Por onde quer começar?
-            </p>
+            <span className="welcome-greeting">{greeting}</span>
+            <h1 className="welcome-title">Como posso te ajudar hoje?</h1>
 
             <div className="welcome-actions" role="list">
                 {actions.map((a) => (
