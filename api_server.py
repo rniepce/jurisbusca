@@ -185,6 +185,28 @@ async def _catch_all_handler(request: Request, exc: Exception):
 # ── JWT Authentication (CESEC §2.2 — verificação de assinatura) ──────────────
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
 _SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip() or os.getenv("VITE_SUPABASE_URL", "").strip()
+_SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip() or os.getenv("VITE_SUPABASE_ANON_KEY", "").strip()
+_SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+
+# Aliases usados pelas rotas REST (custom-agents, etc.)
+_SUPA_URL = _SUPABASE_URL
+_SUPA_ANON_KEY = _SUPABASE_ANON_KEY
+
+# requests é importado no topo do arquivo; alias para uso interno
+import requests as _requests_lib
+
+def _supa_headers(token: str = "") -> dict:
+    """Headers para chamar a REST API do Supabase (PostgREST).
+    Usa o token do usuário (JWT) quando disponível para respeitar RLS;
+    cai para a anon key caso contrário."""
+    bearer = token if token else _SUPABASE_ANON_KEY
+    return {
+        "apikey": _SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {bearer}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+
 _security_scheme = HTTPBearer(auto_error=False)
 
 # JWKS client for RS256 tokens (modern Supabase projects)
