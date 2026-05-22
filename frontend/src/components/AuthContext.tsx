@@ -6,34 +6,44 @@ interface AuthContextType {
     user: User | null;
     session: Session | null;
     loading: boolean;
+    /** True when the current session originated from a password-recovery email link.
+     *  AppRoutes uses this to force-route to /reset-password regardless of `user`. */
+    passwordRecovery: boolean;
     signOut: () => Promise<void>;
+    clearPasswordRecovery: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
     user: null,
     session: null,
     loading: true,
+    passwordRecovery: false,
     signOut: async () => {},
+    clearPasswordRecovery: () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
+    const [passwordRecovery, setPasswordRecovery] = useState(false);
 
     useEffect(() => {
-        // Obter sessão inicial
+        // Initial session
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
         });
 
-        // Escutar mudanças de autenticação
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        // Auth state listener
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
+            // Supabase fires PASSWORD_RECOVERY when user lands from the reset email link.
+            // We keep the flag on until the user finishes resetting (or signs out).
+            if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
         });
 
         return () => subscription.unsubscribe();
@@ -41,10 +51,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const signOut = async () => {
         await supabase.auth.signOut();
+        setPasswordRecovery(false);
     };
 
+    const clearPasswordRecovery = () => setPasswordRecovery(false);
+
     return (
-        <AuthContext.Provider value={{ user, session, loading, signOut }}>
+        <AuthContext.Provider
+            value={{ user, session, loading, passwordRecovery, signOut, clearPasswordRecovery }}
+        >
             {children}
         </AuthContext.Provider>
     );

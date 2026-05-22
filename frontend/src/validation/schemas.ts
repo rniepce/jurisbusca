@@ -24,6 +24,21 @@ export const signupSchema = z
         path: ['confirmPassword'],
     });
 
+// ── Password recovery ──────────────────────────────────────────────────
+export const forgotPasswordSchema = z.object({
+    email: z.string().trim().min(1, 'Informe o email.').email('Email inválido.'),
+});
+
+export const resetPasswordSchema = z
+    .object({
+        password: z.string().min(6, 'A nova senha deve ter pelo menos 6 caracteres.'),
+        confirmPassword: z.string(),
+    })
+    .refine((d) => d.password === d.confirmPassword, {
+        message: 'As senhas não coincidem.',
+        path: ['confirmPassword'],
+    });
+
 // ── Custom agent creation ──────────────────────────────────────────────
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 export const createAgentSchema = z.object({
@@ -41,3 +56,5 @@ export function firstError(err: z.ZodError): string {
 export type LoginInput = z.infer<typeof loginSchema>;
 export type SignupInput = z.infer<typeof signupSchema>;
 export type CreateAgentInput = z.infer<typeof createAgentSchema>;
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

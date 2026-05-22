@@ -1,40 +1,48 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 import { AiOutlineLoading3Quarters } from 'react-icons/ai';
-import { loginSchema, firstError } from '../validation/schemas';
+import { forgotPasswordSchema, firstError } from '../validation/schemas';
 import logoSvg from '../assets/logo.svg';
 import './AuthPage.css';
 
-interface LoginPageProps {
-    onNavigateSignup: () => void;
-    onNavigateForgot?: () => void;
+interface Props {
+    onNavigateLogin: () => void;
 }
 
-export default function LoginPage({ onNavigateSignup, onNavigateForgot }: LoginPageProps) {
-    const [isLoading, setIsLoading] = useState(false);
+export default function ForgotPasswordPage({ onNavigateLogin }: Props) {
     const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setErrorMsg(null);
+        setSuccessMsg(null);
 
-        const parsed = loginSchema.safeParse({ email, password });
+        const parsed = forgotPasswordSchema.safeParse({ email });
         if (!parsed.success) {
             setErrorMsg(firstError(parsed.error));
             return;
         }
 
         setIsLoading(true);
-        const { error } = await supabase.auth.signInWithPassword({
-            email: parsed.data.email,
-            password: parsed.data.password,
+        // Supabase envia o usuário de volta para esta URL com um token na hash.
+        // O SDK detecta automaticamente e dispara o evento PASSWORD_RECOVERY.
+        const redirectTo = `${window.location.origin}/reset-password`;
+        const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+            redirectTo,
         });
+
+        setIsLoading(false);
 
         if (error) {
             setErrorMsg(error.message);
-            setIsLoading(false);
+        } else {
+            // Mensagem genérica de propósito: não revela se o email existe (evita user enumeration).
+            setSuccessMsg(
+                'Se houver uma conta vinculada a este email, enviamos um link de recuperação. Verifique sua caixa de entrada (e o spam).'
+            );
         }
     };
 
@@ -50,18 +58,28 @@ export default function LoginPage({ onNavigateSignup, onNavigateForgot }: LoginP
                     <img src={logoSvg} alt="Assistente" className="auth-logo" />
                     <div>
                         <h2 className="auth-title">
-                            Entrar no <span className="text-gradient">Assistente</span>
+                            Recuperar <span className="text-gradient">Senha</span>
                         </h2>
                         <p className="auth-description">
-                            Autenticação Inteligente
+                            Vamos enviar um link de redefinição para seu email.
                         </p>
                     </div>
                 </div>
 
                 <div className="auth-content">
                     {errorMsg && (
-                        <div className="auth-error">
-                            ⚠️ {errorMsg === 'Invalid login credentials' ? 'Email ou senha incorretos' : errorMsg}
+                        <div className="auth-error">⚠️ {errorMsg}</div>
+                    )}
+                    {successMsg && (
+                        <div
+                            className="auth-error"
+                            style={{
+                                background: 'color-mix(in srgb, var(--success-color) 10%, transparent)',
+                                color: 'var(--success-color)',
+                                borderColor: 'var(--success-color)',
+                            }}
+                        >
+                            ✅ {successMsg}
                         </div>
                     )}
 
@@ -74,72 +92,38 @@ export default function LoginPage({ onNavigateSignup, onNavigateForgot }: LoginP
                                 type="email"
                                 placeholder="seu@email.com"
                                 required
-                                disabled={isLoading}
+                                disabled={isLoading || !!successMsg}
                                 className="auth-input"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label htmlFor="password">Senha</label>
-                            <input
-                                id="password"
-                                name="password"
-                                type="password"
-                                placeholder="••••••••"
-                                required
-                                disabled={isLoading}
-                                className="auth-input"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
+                                autoFocus
                             />
                         </div>
 
                         <button
                             type="submit"
                             className="auth-btn w-full"
-                            disabled={isLoading}
+                            disabled={isLoading || !!successMsg}
                         >
                             {isLoading ? (
                                 <>
                                     <AiOutlineLoading3Quarters className="spinner" />
-                                    Entrando...
+                                    Enviando...
                                 </>
                             ) : (
-                                "Entrar"
+                                'Enviar link de recuperação'
                             )}
                         </button>
-
-                        {onNavigateForgot && (
-                            <div style={{ textAlign: 'center', marginTop: '12px' }}>
-                                <button
-                                    type="button"
-                                    className="text-primary hover-underline"
-                                    onClick={onNavigateForgot}
-                                    style={{
-                                        background: 'none',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        fontSize: 'var(--text-sm)',
-                                        color: 'var(--secondary-text-color)',
-                                        padding: '4px 8px',
-                                    }}
-                                >
-                                    Esqueci minha senha
-                                </button>
-                            </div>
-                        )}
                     </form>
 
                     <p className="auth-footer">
-                        Não tem conta?{" "}
+                        Lembrou da senha?{' '}
                         <button
                             type="button"
                             className="text-primary hover-underline font-medium"
-                            onClick={onNavigateSignup}
+                            onClick={onNavigateLogin}
                         >
-                            Criar conta
+                            Voltar para o login
                         </button>
                     </p>
                 </div>

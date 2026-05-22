@@ -11,6 +11,8 @@ import MemoryPanel from './components/MemoryPanel';
 import ShareAgentDialog from './components/ShareAgentDialog';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
+import ForgotPasswordPage from './components/ForgotPasswordPage';
+import ResetPasswordPage from './components/ResetPasswordPage';
 import LazyPanel from './components/LazyPanel';
 import { AuthProvider, useAuth } from './components/AuthContext';
 import { getTemplateStatus } from './services/api';
@@ -40,6 +42,8 @@ const ROUTES = {
     home: '/',
     login: '/login',
     signup: '/signup',
+    forgotPassword: '/forgot-password',
+    resetPassword: '/reset-password',
     jurisprudencia: '/jurisprudencia',
     sustentacao: '/sustentacao',
     modelos: '/modelos',
@@ -367,7 +371,7 @@ function App() {
 }
 
 function AppRoutes() {
-    const { user, loading } = useAuth();
+    const { user, loading, passwordRecovery } = useAuth();
     const navigate = useNavigate();
 
     if (loading) {
@@ -378,11 +382,34 @@ function AppRoutes() {
         );
     }
 
+    // Password recovery overrides normal routing — user must finish reset before anything else.
+    if (passwordRecovery) {
+        return (
+            <Routes>
+                <Route path="*" element={<ResetPasswordPage onDone={() => navigate(ROUTES.login)} />} />
+            </Routes>
+        );
+    }
+
     if (!user) {
         return (
             <Routes>
-                <Route path={ROUTES.login} element={<LoginPage onNavigateSignup={() => navigate(ROUTES.signup)} />} />
+                <Route
+                    path={ROUTES.login}
+                    element={
+                        <LoginPage
+                            onNavigateSignup={() => navigate(ROUTES.signup)}
+                            onNavigateForgot={() => navigate(ROUTES.forgotPassword)}
+                        />
+                    }
+                />
                 <Route path={ROUTES.signup} element={<SignupPage onNavigateLogin={() => navigate(ROUTES.login)} />} />
+                <Route
+                    path={ROUTES.forgotPassword}
+                    element={<ForgotPasswordPage onNavigateLogin={() => navigate(ROUTES.login)} />}
+                />
+                {/* Direct visits to /reset-password without a recovery session land back at login. */}
+                <Route path={ROUTES.resetPassword} element={<Navigate to={ROUTES.login} replace />} />
                 <Route path="*" element={<Navigate to={ROUTES.login} replace />} />
             </Routes>
         );
@@ -392,6 +419,7 @@ function AppRoutes() {
         <Routes>
             <Route path={ROUTES.login} element={<Navigate to={ROUTES.home} replace />} />
             <Route path={ROUTES.signup} element={<Navigate to={ROUTES.home} replace />} />
+            <Route path={ROUTES.forgotPassword} element={<Navigate to={ROUTES.home} replace />} />
             <Route path="/*" element={<MainApp />} />
         </Routes>
     );
