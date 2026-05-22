@@ -76,6 +76,12 @@ function MainApp() {
     const [showMemoryPanel, setShowMemoryPanel] = useState(false);
     const [showJurisOverlay, setShowJurisOverlay] = useState(false);
     const [ragStatus, setRagStatus] = useState<RagStatus | null>(null);
+    // Prefill signal — quick-action chip clicks bump `key` to inject text into the chat textarea.
+    const [chatPrefill, setChatPrefill] = useState<{ text: string; key: number } | null>(null);
+
+    const handleQuickAction = useCallback((prompt: string) => {
+        setChatPrefill({ text: prompt, key: Date.now() });
+    }, []);
 
     // Hooks own their respective flows
     const canvas = useCanvas();
@@ -233,13 +239,14 @@ function MainApp() {
                                 onOpenSustentacao={() => navigate(ROUTES.sustentacao)}
                                 onAttachFile={() => {
                                     canvas.chatTextareaRef.current?.focus();
-                                    const attachBtn = document.querySelector('[aria-label="Anexar processo"]') as HTMLButtonElement | null;
+                                    const attachBtn = document.querySelector('[aria-label^="Anexar processo"]') as HTMLButtonElement | null;
                                     attachBtn?.click();
                                 }}
                                 onOpenAgents={() => {
                                     if (!sidebarOpen) setSidebarOpen(true);
                                     setTimeout(() => document.getElementById('agent-gabinete-2.0')?.focus(), 100);
                                 }}
+                                onQuickAction={handleQuickAction}
                             />
                         )
                     }
@@ -336,6 +343,7 @@ function MainApp() {
                         canvasSelection={canvas.canvasSelection}
                         onCanvasToggle={canvas.handleCanvasToggle}
                         chatTextareaRef={canvas.chatTextareaRef}
+                        prefill={chatPrefill}
                     />
                 )}
             </div>

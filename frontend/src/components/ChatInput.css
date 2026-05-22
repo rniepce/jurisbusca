@@ -841,3 +841,273 @@
         right: 8px;
     }
 }
+/* ═══════════════════════════════════════════════════════════════════════
+   INPUT CARD — design "Onda 2" (inspirado em apps modernos de chat IA)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.input-card {
+    position: relative;
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: 16px;
+    padding: 14px 16px 12px;
+    margin: 8px 12px 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input-card:focus-within {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 15%, transparent),
+                0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+.input-card-textarea {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text-color);
+    font-family: var(--font-family);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    resize: none;
+    padding: 0;
+    min-height: 56px;
+    max-height: 260px;
+}
+
+.input-card-textarea::placeholder {
+    color: var(--gray-400);
+}
+
+.input-card-textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ── Send circular button ── */
+.input-card-send {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: var(--gray-200);
+    color: var(--gray-500);
+    cursor: not-allowed;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.input-card-send.active {
+    background: linear-gradient(135deg, #1a56db, #2563eb);
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+
+.input-card-send.active:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+}
+
+/* ── Slot row ── */
+.input-card-slots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--gray-100);
+}
+
+.slot-wrapper {
+    position: relative;
+}
+
+.slot-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: transparent;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: var(--font-family);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--gray-700);
+    transition: all 0.12s ease;
+    line-height: 1.2;
+}
+
+.slot-btn:hover:not(:disabled) {
+    background: var(--gray-50);
+    border-color: var(--gray-300);
+    color: var(--gray-900);
+}
+
+.slot-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.slot-btn.active,
+.slot-btn.has-content,
+.slot-btn.open {
+    background: color-mix(in srgb, var(--primary-color) 8%, transparent);
+    border-color: color-mix(in srgb, var(--primary-color) 30%, transparent);
+    color: var(--primary-color);
+}
+
+.slot-btn.slot-agent {
+    cursor: default;
+}
+
+.slot-btn.slot-xray {
+    background: linear-gradient(135deg, #fff7ed, #ffedd5);
+    border-color: #fb923c;
+    color: #c2410c;
+    font-weight: 600;
+}
+
+.slot-btn.slot-xray:hover:not(:disabled) {
+    background: linear-gradient(135deg, #ffedd5, #fed7aa);
+    box-shadow: 0 2px 6px rgba(251, 146, 60, 0.25);
+}
+
+.slot-label {
+    white-space: nowrap;
+}
+
+.slot-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.slot-chevron {
+    color: var(--gray-400);
+    transition: transform 0.18s ease;
+}
+
+.slot-chevron.rotated {
+    transform: rotate(180deg);
+}
+
+/* ── Slot dropdown (LLM picker) ── */
+.slot-dropdown {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    min-width: 220px;
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+    z-index: 50;
+    padding: 6px;
+    animation: slot-dropdown-in 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slot-dropdown-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.slot-dropdown-header {
+    padding: 6px 10px 8px;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--gray-500);
+    font-weight: 600;
+}
+
+.slot-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: var(--font-family);
+    font-size: 0.875rem;
+    color: var(--gray-800);
+    text-align: left;
+    transition: background 0.1s ease;
+}
+
+.slot-dropdown-item:hover { background: var(--gray-100); }
+.slot-dropdown-item.selected { background: color-mix(in srgb, var(--primary-color) 10%, transparent); color: var(--primary-color); font-weight: 600; }
+.slot-dropdown-name { flex: 1; }
+
+/* ── File chips inside the card ── */
+.input-card-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--gray-100);
+}
+
+/* ── Dark mode ── */
+:root[data-theme="dark"] .input-card {
+    background: var(--sidebar-bg);
+    border-color: var(--gray-700);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+:root[data-theme="dark"] .input-card:focus-within {
+    border-color: var(--primary-color);
+}
+:root[data-theme="dark"] .input-card-textarea {
+    color: var(--gray-50);
+}
+:root[data-theme="dark"] .input-card-slots,
+:root[data-theme="dark"] .input-card-files {
+    border-top-color: var(--gray-700);
+}
+:root[data-theme="dark"] .slot-btn {
+    border-color: var(--gray-700);
+    color: var(--gray-300);
+}
+:root[data-theme="dark"] .slot-btn:hover:not(:disabled) {
+    background: var(--gray-800);
+    border-color: var(--gray-600);
+    color: var(--gray-100);
+}
+:root[data-theme="dark"] .slot-dropdown {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+}
+:root[data-theme="dark"] .slot-dropdown-item { color: var(--gray-100); }
+:root[data-theme="dark"] .slot-dropdown-item:hover { background: var(--gray-700); }
+:root[data-theme="dark"] .input-card-send:not(.active) {
+    background: var(--gray-700);
+    color: var(--gray-400);
+}
+
+@media (max-width: 640px) {
+    .input-card {
+        margin: 8px 8px 12px;
+        padding: 12px 14px 10px;
+    }
+    .input-card-send {
+        top: 10px;
+        right: 10px;
+        width: 32px;
+        height: 32px;
+    }
+}

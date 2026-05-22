@@ -1,15 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
-    FaPaperclip, FaBook, FaSlash,
-    FaArrowRotateRight, FaChevronDown, FaCheck,
-    FaXmark, FaFile, FaDatabase,
-    FaBullseye, FaTableColumns
+    FaPaperclip, FaChevronDown, FaCheck,
+    FaXmark, FaFile, FaDatabase, FaTableColumns,
+    FaRobot,
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
 import { getSlmStatus } from '../services/api';
 import './ChatInput.css';
-
-
 
 const LLM_OPTIONS = [
     { id: 'gpt53', name: 'GPT-5.3', color: '#4285F4', deployment: 'gpt-5.3-chat' },
@@ -24,34 +21,71 @@ const ACCEPTED_TYPES = '.pdf,.docx,.txt';
 const DEFAULT_OCR_ENGINE = 'mistral_doc_ai';
 const DEFAULT_COMPRESS = true;
 
-const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle: _onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange: _onRagStatusChange, activeAgent: _activeAgent = null, jurisEnabled: _jurisEnabled = false, canvasOpen = false, canvasSelection = null, onCanvasToggle, chatTextareaRef }: any) => {
+interface PrefillSignal {
+    text: string;
+    key: number; // changes to retrigger
+}
+
+const ChatInput = ({
+    onSend,
+    onXray,
+    onFilesUploaded,
+    onStyleReport: _onStyleReport,
+    onModelChange,
+    onOpenModelManager,
+    onJurisprudenceToggle: _onJurisprudenceToggle,
+    isLoading = false,
+    ocrProcessing = false,
+    hasContext = false,
+    ragStatus = null,
+    onRagStatusChange: _onRagStatusChange,
+    activeAgent = null,
+    jurisEnabled: _jurisEnabled = false,
+    canvasOpen = false,
+    canvasSelection = null,
+    onCanvasToggle,
+    chatTextareaRef,
+    prefill,
+}: any) => {
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(LLM_OPTIONS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
-    const [showOverflow, setShowOverflow] = useState(false);
-    const overflowRef = useRef<HTMLDivElement | null>(null);
 
     const [files, setFiles] = useState<File[]>([]);
     const [slmStatus, setSlmStatus] = useState({ available: false, mode: 'none' });
     const dropdownRef = useRef<HTMLDivElement | null>(null);
-
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-    // Close dropdowns when clicking outside
+    // External prefill — when a quick-action chip is clicked, set the textarea text and focus it.
     useEffect(() => {
-        const handleClickOutside = (e) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        if (prefill && typeof prefill.text === 'string') {
+            setMessage(prefill.text);
+            // Defer focus to next tick so the textarea has the new value mounted
+            setTimeout(() => {
+                const ta = chatTextareaRef?.current;
+                if (ta) {
+                    ta.focus();
+                    // Move caret to end
+                    const len = prefill.text.length;
+                    ta.setSelectionRange(len, len);
+                }
+            }, 0);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [prefill?.key]);
+
+    // Close model dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
                 setDropdownOpen(false);
-            }
-            if (overflowRef.current && !overflowRef.current.contains(e.target)) {
-                setShowOverflow(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Poll SLM server status every 30s
+    // Poll SLM status periodically (only relevant when picking "SLMs Locais")
     useEffect(() => {
         const checkSlm = () => getSlmStatus().then(setSlmStatus).catch(() => { });
         checkSlm();
@@ -62,7 +96,6 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
     const handleSend = () => {
         if (isLoading) return;
         if (message.trim() || files.length > 0 || hasContext) {
-            // Pass both engine version and LLM choice
             const combinedModel = { id: selectedModel.id, name: selectedModel.name, color: selectedModel.color, llm: selectedModel.deployment };
             if (onSend) onSend(message, combinedModel, files, DEFAULT_OCR_ENGINE, [], false);
             setMessage('');
@@ -76,35 +109,26 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
         setFiles([]);
     };
 
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleSend();
         }
     };
 
-    const handleSelectModel = (model) => {
+    const handleSelectModel = (model: typeof LLM_OPTIONS[number]) => {
         setSelectedModel(model);
         const combinedModel = { id: model.id, name: model.name, color: model.color, llm: model.deployment };
-        if (onModelChange) {
-            onModelChange(combinedModel);
-        }
+        if (onModelChange) onModelChange(combinedModel);
         setDropdownOpen(false);
     };
 
+    const handleFileClick = () => fileInputRef.current?.click();
 
-
-    const handleFileClick = () => {
-        fileInputRef.current?.click();
-    };
-
-
-
-    const handleFileChange = (e) => {
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const selected: File[] = Array.from(e.target.files || []);
         if (selected.length > 0) {
             setFiles((prev) => [...prev, ...selected]);
-            // Trigger OCR immediately
             if (onFilesUploaded) {
                 onFilesUploaded(selected, DEFAULT_OCR_ENGINE, DEFAULT_COMPRESS).catch(() => { });
             }
@@ -112,180 +136,29 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
         e.target.value = '';
     };
 
+    const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index));
 
-
-    const removeFile = (index) => {
-        setFiles((prev) => prev.filter((_, i) => i !== index));
-    };
-
-    // eslint-disable-next-line no-unused-vars
-    const _removeTemplate = (_index) => { /* placeholder — templateFiles state not yet used */ };
-
-    const formatSize = (bytes) => {
+    const formatSize = (bytes: number) => {
         if (bytes < 1024) return `${bytes} B`;
         if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
+    const canSend = (message.trim().length > 0 || files.length > 0 || hasContext) && !isLoading;
+
     return (
         <div className="chat-footer">
-            {/* Toolbar */}
-            <div className="chat-toolbar">
-                <div className="toolbar-left">
-                    <div className="model-selector-wrapper" ref={dropdownRef}>
-                        <button
-                            className={`toolbar-btn model-selector ${dropdownOpen ? 'open' : ''}`}
-                            onClick={() => setDropdownOpen(!dropdownOpen)}
-                            aria-label="Selecionar LLM"
-                            aria-expanded={dropdownOpen}
-                        >
-                            <span
-                                className="model-dot"
-                                style={{ background: selectedModel.color }}
-                            />
-                            <span className="model-label">{selectedModel.name}</span>
-                            <FaChevronDown size={10} className={`chevron ${dropdownOpen ? 'rotated' : ''}`} />
-                        </button>
-
-                        {dropdownOpen && (
-                            <div className="model-dropdown">
-                                <div className="dropdown-header">Selecionar LLM</div>
-                                {LLM_OPTIONS.map((model) => (
-                                    <button
-                                        key={model.id}
-                                        className={`dropdown-item ${selectedModel.id === model.id ? 'selected' : ''}`}
-                                        onClick={() => handleSelectModel(model)}
-                                    >
-                                        <span
-                                            className="model-dot"
-                                            style={{ background: model.color }}
-                                        />
-                                        <span className="dropdown-item-name">{model.name}</span>
-                                        {model.id === 'local' && (
-                                            <span
-                                                className={`slm-status-dot ${slmStatus.available ? 'online' : 'offline'}`}
-                                                title={slmStatus.available
-                                                    ? `SLM Conectado (${slmStatus.mode})`
-                                                    : 'SLM Desconectado'}
-                                            />
-                                        )}
-                                        {selectedModel.id === model.id && (
-                                            <FaCheck size={12} className="dropdown-check" />
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    <button
-                        className="toolbar-btn"
-                        aria-label="Anexar processo (PDF/DOCX)"
-                        title="Anexar processo — envie um PDF ou DOCX para análise"
-                        onClick={handleFileClick}
-                    >
-                        <FaPaperclip />
-                    </button>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept={ACCEPTED_TYPES}
-                        multiple
-                        onChange={handleFileChange}
-                        style={{ display: 'none' }}
-                    />
-
-                    {/* Secondary toolbar buttons — hidden on mobile, shown in overflow menu */}
-                    <div className="toolbar-secondary-group">
-                        <button
-                            className="toolbar-btn"
-                            aria-label="Gestor de Modelos"
-                            title="Gestor de Modelos — gerencie minutas-padrão e modelos de decisão"
-                            onClick={() => onOpenModelManager && onOpenModelManager()}
-                        >
-                            <FaBook />
-                        </button>
-                        <button
-                            className={`toolbar-btn canvas-toggle-btn ${canvasOpen ? 'canvas-active' : ''}`}
-                            aria-label={canvasOpen ? 'Fechar Canvas' : 'Abrir Canvas'}
-                            title={canvasOpen ? 'Fechar modo Canvas' : 'Abrir modo Canvas (editor de minuta)'}
-                            onClick={() => onCanvasToggle && onCanvasToggle()}
-                        >
-                            <FaTableColumns />
-                            {canvasOpen && <span className="canvas-indicator">Canvas</span>}
-                        </button>
-                    </div>
-
-                    {/* Overflow menu button — visible on mobile only */}
-                    <div className="toolbar-overflow-wrapper" ref={overflowRef}>
-                        <button
-                            className="toolbar-btn toolbar-overflow-btn"
-                            aria-label="Mais opções"
-                            aria-expanded={showOverflow}
-                            onClick={() => setShowOverflow((v) => !v)}
-                        >
-                            ⋯
-                        </button>
-                        {showOverflow && (
-                            <div className="toolbar-overflow-menu">
-                                <button
-                                    className="toolbar-btn"
-                                    aria-label="Gestor de Modelos"
-                                    title="Gestor de Modelos — gerencie minutas-padrão e modelos de decisão"
-                                    onClick={() => { onOpenModelManager && onOpenModelManager(); setShowOverflow(false); }}
-                                >
-                                    <FaBook /> <span style={{ marginLeft: 6, fontSize: 12 }}>Modelos</span>
-                                </button>
-                                <button
-                                    className="toolbar-btn"
-                                    aria-label="Prompts"
-                                    onClick={() => setShowOverflow(false)}
-                                >
-                                    <FaSlash /> <span style={{ marginLeft: 6, fontSize: 12 }}>Prompts</span>
-                                </button>
-                                <button
-                                    className={`toolbar-btn canvas-toggle-btn ${canvasOpen ? 'canvas-active' : ''}`}
-                                    aria-label={canvasOpen ? 'Fechar Canvas' : 'Abrir Canvas'}
-                                    onClick={() => { onCanvasToggle && onCanvasToggle(); setShowOverflow(false); }}
-                                >
-                                    <FaTableColumns /> <span style={{ marginLeft: 6, fontSize: 12 }}>Canvas</span>
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-                <div className="toolbar-right">
-                    <button className="toolbar-btn" aria-label="Recarregar"><FaArrowRotateRight /></button>
-                </div>
-            </div>
-
-            {/* File Chips */}
-            {files.length > 0 && (
-                <div className="file-chips">
-                    {files.map((file, idx) => (
-                        <div key={`proc-${file.name}-${idx}`} className="file-chip">
-                            <FaFile size={12} className="file-chip-icon" />
-                            <span className="file-chip-name">{file.name}</span>
-                            <span className="file-chip-size">{formatSize(file.size)}</span>
-                            <button
-                                className="file-chip-remove"
-                                onClick={() => removeFile(idx)}
-                                aria-label={`Remover ${file.name}`}
-                            >
-                                <FaXmark size={10} />
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {/* RAG status indicator (managed via ModelManagerPanel) */}
+            {/* RAG indicator (only shown when templates indexed) */}
             {ragStatus && ragStatus.indexed_chunks > 0 && (
                 <div className="template-bar">
-                    <div className="template-pill rag-active" onClick={() => onOpenModelManager && onOpenModelManager()} style={{ cursor: 'pointer' }}>
+                    <button
+                        className="template-pill rag-active"
+                        onClick={() => onOpenModelManager && onOpenModelManager()}
+                        type="button"
+                    >
                         <FaDatabase size={12} />
-                        <span>📚 {ragStatus.indexed_chunks} chunks indexados {ragStatus.has_dossier ? '+ estilo' : ''}</span>
-                    </div>
+                        <span>{ragStatus.indexed_chunks} chunks indexados{ragStatus.has_dossier ? ' + estilo' : ''}</span>
+                    </button>
                 </div>
             )}
 
@@ -301,42 +174,160 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
                 </div>
             )}
 
-            {/* Input Area */}
-            <div className="chat-input-box">
+            {/* === Input Card === */}
+            <div className="input-card">
                 <textarea
                     ref={chatTextareaRef}
-                    className="chat-textarea"
-                    placeholder={isLoading ? 'Processando...' : ocrProcessing ? 'Executando OCR...' : canvasOpen ? 'Digite uma instrução para editar o documento no Canvas...' : 'Insira o seu prompt aqui'}
+                    className="input-card-textarea"
+                    placeholder={
+                        isLoading ? 'Processando...' :
+                        ocrProcessing ? 'Executando OCR...' :
+                        canvasOpen ? 'Digite uma instrução para editar o documento no Canvas...' :
+                        'Insira o seu prompt aqui'
+                    }
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
                     rows={3}
                     disabled={isLoading || ocrProcessing}
                 />
-                {files.length >= 2 && (
-                    <button
-                        className="xray-btn"
-                        onClick={handleXray}
-                        disabled={isLoading}
-                        aria-label="Raio-X"
-                        title="Analisar carteira (Raio-X)"
-                    >
-                        ⚡ Raio-X
-                    </button>
-                )}
-                <button
-                    className={`send-btn ${(message.trim() || files.length > 0 || hasContext) && !isLoading ? 'active' : ''}`}
-                    onClick={handleSend}
-                    disabled={isLoading}
-                    aria-label="Enviar"
-                >
-                    <IoSend size={14} />
-                </button>
-            </div>
 
+                <button
+                    className={`input-card-send ${canSend ? 'active' : ''}`}
+                    onClick={handleSend}
+                    disabled={!canSend}
+                    aria-label="Enviar"
+                    title="Enviar (Enter)"
+                >
+                    <IoSend size={15} />
+                </button>
+
+                {/* Slot row — visible context controls */}
+                <div className="input-card-slots">
+                    {/* LLM model picker */}
+                    <div className="slot-wrapper" ref={dropdownRef}>
+                        <button
+                            type="button"
+                            className={`slot-btn slot-model ${dropdownOpen ? 'open' : ''}`}
+                            onClick={() => setDropdownOpen((v) => !v)}
+                            aria-haspopup="listbox"
+                            aria-expanded={dropdownOpen}
+                            title="Trocar modelo"
+                        >
+                            <span className="slot-dot" style={{ background: selectedModel.color }} />
+                            <span className="slot-label">{selectedModel.name}</span>
+                            <FaChevronDown size={9} className={`slot-chevron ${dropdownOpen ? 'rotated' : ''}`} />
+                        </button>
+
+                        {dropdownOpen && (
+                            <div className="slot-dropdown" role="listbox">
+                                <div className="slot-dropdown-header">Modelo de IA</div>
+                                {LLM_OPTIONS.map((model) => (
+                                    <button
+                                        key={model.id}
+                                        type="button"
+                                        className={`slot-dropdown-item ${selectedModel.id === model.id ? 'selected' : ''}`}
+                                        onClick={() => handleSelectModel(model)}
+                                    >
+                                        <span className="slot-dot" style={{ background: model.color }} />
+                                        <span className="slot-dropdown-name">{model.name}</span>
+                                        {model.id === 'local' && (
+                                            <span
+                                                className={`slm-status-dot ${slmStatus.available ? 'online' : 'offline'}`}
+                                                title={slmStatus.available ? `SLM Conectado (${slmStatus.mode})` : 'SLM Desconectado'}
+                                            />
+                                        )}
+                                        {selectedModel.id === model.id && <FaCheck size={11} />}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Anexar processo */}
+                    <button
+                        type="button"
+                        className={`slot-btn ${files.length > 0 ? 'has-content' : ''}`}
+                        onClick={handleFileClick}
+                        title="Anexar processo — envie um PDF ou DOCX para análise"
+                        disabled={ocrProcessing}
+                    >
+                        <FaPaperclip size={13} />
+                        <span className="slot-label">
+                            {files.length === 0
+                                ? 'Anexar'
+                                : files.length === 1
+                                    ? '1 arquivo'
+                                    : `${files.length} arquivos`}
+                        </span>
+                    </button>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept={ACCEPTED_TYPES}
+                        multiple
+                        onChange={handleFileChange}
+                        style={{ display: 'none' }}
+                    />
+
+                    {/* Agente ativo */}
+                    {activeAgent && (
+                        <div
+                            className="slot-btn slot-agent active"
+                            title={`Agente ativo: ${activeAgent.name}`}
+                        >
+                            <FaRobot size={13} style={{ color: activeAgent.color || 'var(--primary-color)' }} />
+                            <span className="slot-label">{activeAgent.name}</span>
+                        </div>
+                    )}
+
+                    {/* Canvas toggle */}
+                    <button
+                        type="button"
+                        className={`slot-btn ${canvasOpen ? 'active' : ''}`}
+                        onClick={() => onCanvasToggle && onCanvasToggle()}
+                        title={canvasOpen ? 'Fechar Canvas (editor de minuta)' : 'Abrir Canvas (editor de minuta)'}
+                    >
+                        <FaTableColumns size={12} />
+                        <span className="slot-label">Canvas</span>
+                    </button>
+
+                    {/* X-Ray (only when 2+ files attached) */}
+                    {files.length >= 2 && (
+                        <button
+                            type="button"
+                            className="slot-btn slot-xray"
+                            onClick={handleXray}
+                            disabled={isLoading}
+                            title="Raio-X — classificar e agrupar os processos anexados"
+                        >
+                            ⚡ <span className="slot-label">Raio-X</span>
+                        </button>
+                    )}
+                </div>
+
+                {/* File chips — only when files attached */}
+                {files.length > 0 && (
+                    <div className="input-card-files">
+                        {files.map((file, idx) => (
+                            <div key={`f-${file.name}-${idx}`} className="file-chip">
+                                <FaFile size={11} className="file-chip-icon" />
+                                <span className="file-chip-name">{file.name}</span>
+                                <span className="file-chip-size">{formatSize(file.size)}</span>
+                                <button
+                                    className="file-chip-remove"
+                                    onClick={() => removeFile(idx)}
+                                    aria-label={`Remover ${file.name}`}
+                                >
+                                    <FaXmark size={10} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
 
 export default ChatInput;
-
