@@ -1,0 +1,508 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   DARK THEME OVERRIDES
+   ═══════════════════════════════════════════════════════════════════════
+   Carregado em main.tsx depois do index.css. Cobre componentes legados que
+   usam cores hardcoded em vez das variáveis semânticas. Quando um
+   componente for migrado para usar var(--bg-color), var(--surface), etc.,
+   o override aqui pode ser removido.
+
+   Estratégia:
+     - Reescrever backgrounds brancos (#fff, #ffffff) para o sidebar-bg
+       (#111827) ou gray-800
+     - Inverter cores de texto escuras para gray-50/100/300
+     - Ajustar bordas claras para gray-700
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+:root[data-theme="dark"] .sidebar {
+    background: var(--sidebar-bg);
+    border-right-color: var(--gray-700);
+}
+
+:root[data-theme="dark"] .sustentacao-btn {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-200);
+}
+
+:root[data-theme="dark"] .sustentacao-btn:hover {
+    background: var(--gray-700);
+    border-color: #f59e0b;
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .section-toggle,
+:root[data-theme="dark"] .section-label,
+:root[data-theme="dark"] .section-label-static {
+    color: var(--gray-400);
+}
+
+:root[data-theme="dark"] .section-toggle:hover {
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .agent-card {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+}
+
+:root[data-theme="dark"] .agent-card:hover {
+    background: var(--gray-700);
+}
+
+:root[data-theme="dark"] .agent-card.active {
+    background: color-mix(in srgb, var(--primary-color) 18%, var(--gray-800));
+    border-color: var(--primary-color);
+}
+
+:root[data-theme="dark"] .agent-name {
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .agent-desc {
+    color: var(--gray-400);
+}
+
+:root[data-theme="dark"] .create-agent-sidebar-btn {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-200);
+}
+
+:root[data-theme="dark"] .create-agent-sidebar-btn:hover {
+    background: var(--gray-700);
+    border-color: #8B5CF6;
+    color: #c4b5fd;
+}
+
+:root[data-theme="dark"] .sidebar-divider {
+    background: var(--gray-700);
+}
+
+:root[data-theme="dark"] .sidebar-search {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .sidebar-search::placeholder {
+    color: var(--gray-500);
+}
+
+:root[data-theme="dark"] .history-item {
+    color: var(--gray-300);
+}
+
+:root[data-theme="dark"] .history-item:hover {
+    background: var(--gray-800);
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .history-group-label {
+    color: var(--gray-500);
+}
+
+:root[data-theme="dark"] .history-empty-text,
+:root[data-theme="dark"] .history-no-results {
+    color: var(--gray-500);
+}
+
+:root[data-theme="dark"] .sidebar-icon-btn {
+    color: var(--gray-400);
+}
+
+:root[data-theme="dark"] .sidebar-icon-btn:hover {
+    background: var(--gray-800);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .agent-menu-btn {
+    color: var(--gray-400);
+}
+
+:root[data-theme="dark"] .agent-menu-btn:hover {
+    background: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .agent-context-menu {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+}
+
+:root[data-theme="dark"] .context-menu-item {
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .context-menu-item:hover {
+    background: var(--gray-700);
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+:root[data-theme="dark"] .top-header {
+    background: var(--sidebar-bg);
+    border-bottom-color: var(--gray-700);
+}
+
+:root[data-theme="dark"] .brand-title {
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .menu-toggle {
+    color: var(--gray-200);
+}
+
+:root[data-theme="dark"] .menu-toggle:hover {
+    background: var(--gray-800);
+}
+
+:root[data-theme="dark"] .header-icon-btn {
+    color: var(--gray-300);
+}
+
+:root[data-theme="dark"] .header-icon-btn:hover {
+    background: var(--gray-800);
+    color: var(--gray-50);
+}
+
+/* ── ChatArea (mensagens, cards) ──────────────────────────────────────── */
+:root[data-theme="dark"] .chat-area,
+:root[data-theme="dark"] .chat-content,
+:root[data-theme="dark"] .messages-container {
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+:root[data-theme="dark"] .message-bubble.user,
+:root[data-theme="dark"] .message-user .message-bubble {
+    background: color-mix(in srgb, var(--primary-color) 25%, var(--gray-800));
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .message-bubble.assistant,
+:root[data-theme="dark"] .message-assistant .message-bubble {
+    background: var(--gray-800);
+    color: var(--gray-100);
+    border: 1px solid var(--gray-700);
+}
+
+:root[data-theme="dark"] .agent-activation-card {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .agent-activation-name {
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .agent-activation-desc {
+    color: var(--gray-300);
+}
+
+:root[data-theme="dark"] .ocr-preview-card,
+:root[data-theme="dark"] .ocr-preview {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .qa-review-btn {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .markdown-content,
+:root[data-theme="dark"] .message-bubble p,
+:root[data-theme="dark"] .message-bubble li,
+:root[data-theme="dark"] .message-bubble strong {
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .markdown-content h1,
+:root[data-theme="dark"] .markdown-content h2,
+:root[data-theme="dark"] .markdown-content h3 {
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .markdown-content code {
+    background: var(--gray-900);
+    color: #fbbf24;
+}
+
+:root[data-theme="dark"] .markdown-content pre {
+    background: var(--gray-900);
+    border: 1px solid var(--gray-700);
+}
+
+:root[data-theme="dark"] .markdown-content blockquote {
+    border-left-color: var(--primary-color);
+    color: var(--gray-300);
+}
+
+:root[data-theme="dark"] .markdown-content a {
+    color: #60a5fa;
+}
+
+:root[data-theme="dark"] .message-meta,
+:root[data-theme="dark"] .message-timestamp,
+:root[data-theme="dark"] .message-model-tag {
+    color: var(--gray-500);
+}
+
+/* ── ChatInput (input card já tem overrides; complementos extras) ────── */
+:root[data-theme="dark"] .chat-footer {
+    background: transparent;
+}
+
+:root[data-theme="dark"] .template-pill {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .template-pill:hover {
+    background: var(--gray-700);
+}
+
+:root[data-theme="dark"] .canvas-context-badge {
+    background: color-mix(in srgb, var(--primary-color) 12%, var(--gray-800));
+    border-color: var(--primary-color);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .file-chip {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .file-chip-size {
+    color: var(--gray-400);
+}
+
+:root[data-theme="dark"] .file-chip-remove {
+    color: var(--gray-400);
+}
+
+:root[data-theme="dark"] .file-chip-remove:hover {
+    color: var(--danger-color);
+    background: var(--gray-700);
+}
+
+/* ── WelcomeContent ───────────────────────────────────────────────────── */
+:root[data-theme="dark"] .welcome-action-card {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .welcome-action-card:not(:disabled):hover {
+    background: var(--gray-700);
+    border-color: var(--gray-600);
+}
+
+:root[data-theme="dark"] .welcome-action-title {
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .welcome-action-desc {
+    color: var(--gray-400);
+}
+
+:root[data-theme="dark"] .welcome-action-icon {
+    color: var(--primary-color);
+}
+
+/* ── BatchPanel ───────────────────────────────────────────────────────── */
+:root[data-theme="dark"] .batch-panel {
+    background: var(--sidebar-bg);
+    border-left-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .batch-card {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .batch-card:hover {
+    background: var(--gray-700);
+}
+
+/* ── Dialogs (Create Agent, Share Agent, Memory) ─────────────────────── */
+:root[data-theme="dark"] .create-agent-overlay,
+:root[data-theme="dark"] .memory-panel-overlay,
+:root[data-theme="dark"] .share-agent-overlay {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme="dark"] .create-agent-dialog,
+:root[data-theme="dark"] .memory-panel-content,
+:root[data-theme="dark"] .share-agent-dialog {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .create-agent-header h2,
+:root[data-theme="dark"] .memory-panel-header h2,
+:root[data-theme="dark"] .share-agent-header h2 {
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .create-agent-field label,
+:root[data-theme="dark"] .memory-panel-field label {
+    color: var(--gray-300);
+}
+
+:root[data-theme="dark"] .create-agent-field input,
+:root[data-theme="dark"] .create-agent-field textarea,
+:root[data-theme="dark"] .memory-panel-textarea,
+:root[data-theme="dark"] .share-agent-input {
+    background: var(--gray-900);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .create-agent-field input::placeholder,
+:root[data-theme="dark"] .create-agent-field textarea::placeholder,
+:root[data-theme="dark"] .memory-panel-textarea::placeholder {
+    color: var(--gray-500);
+}
+
+:root[data-theme="dark"] .btn-cancel {
+    background: var(--gray-700);
+    color: var(--gray-100);
+    border-color: var(--gray-600);
+}
+
+:root[data-theme="dark"] .btn-cancel:hover {
+    background: var(--gray-600);
+}
+
+/* ── Auth pages (Login / Signup / Forgot / Reset) ────────────────────── */
+:root[data-theme="dark"] .auth-container {
+    background: var(--bg-color);
+}
+
+:root[data-theme="dark"] .auth-card {
+    background: var(--sidebar-bg);
+    border-color: var(--gray-700);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+:root[data-theme="dark"] .auth-title {
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .auth-description,
+:root[data-theme="dark"] .auth-footer {
+    color: var(--gray-300);
+}
+
+:root[data-theme="dark"] .auth-form .form-group label {
+    color: var(--gray-300);
+}
+
+:root[data-theme="dark"] .auth-input {
+    background: var(--gray-900);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .auth-input::placeholder {
+    color: var(--gray-500);
+}
+
+:root[data-theme="dark"] .auth-input:focus {
+    border-color: var(--primary-color);
+}
+
+:root[data-theme="dark"] .auth-error {
+    background: color-mix(in srgb, var(--danger-color) 12%, var(--gray-800));
+    color: #fca5a5;
+    border: 1px solid color-mix(in srgb, var(--danger-color) 40%, transparent);
+}
+
+/* ── Panels (Jurisprudência, Sustentação, Modelos, Lote, Memória) ────── */
+:root[data-theme="dark"] .juris-panel,
+:root[data-theme="dark"] .sustentacao-panel,
+:root[data-theme="dark"] .model-manager-panel,
+:root[data-theme="dark"] .memory-panel {
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+:root[data-theme="dark"] .juris-header,
+:root[data-theme="dark"] .sustentacao-header,
+:root[data-theme="dark"] .model-manager-header {
+    background: var(--sidebar-bg);
+    border-bottom-color: var(--gray-700);
+}
+
+:root[data-theme="dark"] .juris-header h2,
+:root[data-theme="dark"] .sustentacao-header h2,
+:root[data-theme="dark"] .model-manager-header h2 {
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .juris-search-input,
+:root[data-theme="dark"] .model-search-input {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .juris-result-card,
+:root[data-theme="dark"] .model-card,
+:root[data-theme="dark"] .sustentacao-card,
+:root[data-theme="dark"] .juris-doc-card {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+    color: var(--gray-100);
+}
+
+:root[data-theme="dark"] .juris-result-card:hover,
+:root[data-theme="dark"] .model-card:hover {
+    background: var(--gray-700);
+}
+
+/* ── CanvasEditor ────────────────────────────────────────────────────── */
+:root[data-theme="dark"] .canvas-editor {
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+:root[data-theme="dark"] .canvas-toolbar {
+    background: var(--sidebar-bg);
+    border-bottom-color: var(--gray-700);
+}
+
+:root[data-theme="dark"] .canvas-content {
+    background: var(--sidebar-bg);
+    color: var(--gray-100);
+    border-color: var(--gray-700);
+}
+
+:root[data-theme="dark"] .canvas-toolbar-btn {
+    color: var(--gray-300);
+}
+
+:root[data-theme="dark"] .canvas-toolbar-btn:hover,
+:root[data-theme="dark"] .canvas-toolbar-btn.active {
+    background: var(--gray-800);
+    color: var(--gray-50);
+}
+
+/* ── Welcome action cards: accent-* (use border tint) ─────────────────── */
+:root[data-theme="dark"] .welcome-action-card.accent-blue:hover { border-color: #60a5fa; }
+:root[data-theme="dark"] .welcome-action-card.accent-amber:hover { border-color: #fbbf24; }
+:root[data-theme="dark"] .welcome-action-card.accent-purple:hover { border-color: #c084fc; }
+:root[data-theme="dark"] .welcome-action-card.accent-green:hover { border-color: #4ade80; }
