@@ -9,6 +9,7 @@ import { getSlmStatus } from '../services/api';
 import './ChatInput.css';
 
 const LLM_OPTIONS = [
+    { id: 'deepseek', name: 'DeepSeek V4 Pro', color: '#0891B2', deployment: 'DeepSeek-V4-Pro' },
     { id: 'gpt53', name: 'GPT-5.3', color: '#4285F4', deployment: 'gpt-5.3-chat' },
     { id: 'gemini', name: 'Gemini 3.1 Pro', color: '#34A853', deployment: 'gemini-3.1-pro' },
     { id: 'claude', name: 'Claude Sonnet 4.6', color: '#D97706', deployment: 'claude-sonnet-4-6' },

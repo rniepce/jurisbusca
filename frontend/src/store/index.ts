@@ -24,7 +24,7 @@ export const useUIStore = create<UIStoreState>((set) => ({
     sidebarOpen: typeof window !== 'undefined' ? window.innerWidth > 768 : true,
     canvasMode: false,
     batchPanelOpen: false,
-    selectedModel: { id: 'gpt53', name: 'GPT-5.3', color: '#4285F4', llm: 'gpt-5.3-chat' },
+    selectedModel: { id: 'deepseek', name: 'DeepSeek V4 Pro', color: '#0891B2', llm: 'DeepSeek-V4-Pro' },
 
     setSidebarOpen: (val) => set({ sidebarOpen: val }),
     toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),

@@ -559,6 +559,40 @@ def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key:
             **kwargs,
         )
 
+    # ── Azure AI Foundry — DeepSeek (e demais modelos servidos pelo endpoint OpenAI-compatível) ──
+    # Endpoint estilo "v1": https://<resource>.services.ai.azure.com/openai/v1/
+    # Diferente do endpoint Azure OpenAI tradicional. Usa autenticação via api_key e o
+    # SDK OpenAI nativo (que LangChain expõe via ChatOpenAI).
+    if deployment.lower().startswith("deepseek"):
+        if not HAS_OPENAI:
+            raise ImportError("langchain-openai não instalado. Execute: pip install langchain-openai")
+
+        foundry_endpoint = os.getenv(
+            "AZURE_AI_FOUNDRY_ENDPOINT",
+            "https://assistente-web-resource.services.ai.azure.com/openai/v1/",
+        )
+        # A chave pode ser dedicada ou compartilhada com a do Azure OpenAI clássico
+        # (em muitos setups é a mesma resource).
+        foundry_key = api_key or os.getenv("AZURE_AI_FOUNDRY_KEY") or os.getenv("AZURE_OPENAI_API_KEY", "")
+
+        if not foundry_key:
+            raise ValueError(
+                "AZURE_AI_FOUNDRY_KEY ou AZURE_OPENAI_API_KEY deve estar configurada para usar DeepSeek."
+            )
+
+        # ChatOpenAI usa max_tokens (não max_completion_tokens) — converter se necessário
+        if 'max_completion_tokens' in kwargs:
+            kwargs['max_tokens'] = kwargs.pop('max_completion_tokens')
+
+        print(f"🔵 DeepSeek (Azure AI Foundry): {deployment} via {foundry_endpoint}")
+        return ChatOpenAI(
+            model=deployment,
+            base_url=foundry_endpoint,
+            api_key=foundry_key,
+            temperature=temperature,
+            **kwargs,
+        )
+
     # ── Standard Azure OpenAI models (GPT-5.3, etc.) ──
     if not HAS_AZURE_OPENAI:
         raise ImportError("langchain-openai não instalado. Execute: pip install langchain-openai")
