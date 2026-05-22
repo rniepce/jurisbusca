@@ -20,14 +20,9 @@ const LLM_OPTIONS = [
 
 const ACCEPTED_TYPES = '.pdf,.docx,.txt';
 
-const OCR_ENGINES = [
-    { id: 'mistral_doc_ai', label: 'Mistral DocAI' },
-    { id: 'marker', label: 'Marker (PDF→MD)' },
-    { id: 'none', label: 'Sem OCR' },
-    { id: 'gpt4o_mini', label: 'GPT-4o mini' },
-    { id: 'paddle', label: 'PaddleOCR' },
-    { id: 'deepseek', label: 'DeepSeek-OCR' },
-];
+/** Engine padrão de OCR — sem mais escolha pelo usuário; backend usa Mistral DocAI. */
+const DEFAULT_OCR_ENGINE = 'mistral_doc_ai';
+const DEFAULT_COMPRESS = true;
 
 const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleReport, onModelChange, onOpenModelManager, onJurisprudenceToggle: _onJurisprudenceToggle, isLoading = false, ocrProcessing = false, hasContext = false, ragStatus = null, onRagStatusChange: _onRagStatusChange, activeAgent: _activeAgent = null, jurisEnabled: _jurisEnabled = false, canvasOpen = false, canvasSelection = null, onCanvasToggle, chatTextareaRef }: any) => {
     const [message, setMessage] = useState('');
@@ -37,12 +32,6 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
     const overflowRef = useRef<HTMLDivElement | null>(null);
 
     const [files, setFiles] = useState<File[]>([]);
-    const [ocrEngine, setOcrEngine] = useState(OCR_ENGINES[0].id);
-    const [compressEnabled, setCompressEnabled] = useState(false);
-    const [ragEnabled, setRagEnabled] = useState(false);
-    const [ragAvailable, setRagAvailable] = useState(false);
-    const [_indexing, _setIndexing] = useState(false);
-    const [_indexSuccess, _setIndexSuccess] = useState(false);
     const [slmStatus, setSlmStatus] = useState({ available: false, mode: 'none' });
     const dropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -75,7 +64,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
         if (message.trim() || files.length > 0 || hasContext) {
             // Pass both engine version and LLM choice
             const combinedModel = { id: selectedModel.id, name: selectedModel.name, color: selectedModel.color, llm: selectedModel.deployment };
-            if (onSend) onSend(message, combinedModel, files, ocrEngine, [], false);
+            if (onSend) onSend(message, combinedModel, files, DEFAULT_OCR_ENGINE, [], false);
             setMessage('');
             setFiles([]);
         }
@@ -115,13 +104,9 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
         const selected: File[] = Array.from(e.target.files || []);
         if (selected.length > 0) {
             setFiles((prev) => [...prev, ...selected]);
-            // Trigger OCR immediately - callback returns rag_available info
+            // Trigger OCR immediately
             if (onFilesUploaded) {
-                onFilesUploaded(selected, ocrEngine, compressEnabled).then((results) => {
-                    if (results && results.some((r) => r.rag_available)) {
-                        setRagAvailable(true);
-                    }
-                }).catch(() => { });
+                onFilesUploaded(selected, DEFAULT_OCR_ENGINE, DEFAULT_COMPRESS).catch(() => { });
             }
         }
         e.target.value = '';
@@ -349,41 +334,6 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
                 </button>
             </div>
 
-            <div className="ocr-bar">
-
-                <span className="ocr-label">OCR:</span>
-                {OCR_ENGINES.map((engine) => (
-                    <button
-                        key={engine.id}
-                        className={`ocr-option ${ocrEngine === engine.id ? 'active' : ''}`}
-                        onClick={() => setOcrEngine(engine.id)}
-                    >
-                        {engine.label}
-                    </button>
-                ))}
-                <span className="ocr-separator" />
-                <label className="compress-toggle" title="Comprimir PDF para otimizar análise (reduz imagens, preserva texto)">
-                    <input
-                        type="checkbox"
-                        checked={compressEnabled}
-                        onChange={(e) => setCompressEnabled(e.target.checked)}
-                    />
-                    <span className="compress-label">📦 Comprimir</span>
-                </label>
-                {ragAvailable && (
-                    <>
-                        <span className="ocr-separator" />
-                        <label className={`compress-toggle rag-toggle ${ragEnabled ? 'rag-active' : ''}`} title="RAG: enviar apenas trechos relevantes ao LLM (economiza tokens e melhora precisão)">
-                            <input
-                                type="checkbox"
-                                checked={ragEnabled}
-                                onChange={(e) => setRagEnabled(e.target.checked)}
-                            />
-                            <span className="compress-label">🎯 RAG Processo</span>
-                        </label>
-                    </>
-                )}
-            </div>
         </div>
     );
 };

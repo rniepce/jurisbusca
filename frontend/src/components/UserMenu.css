@@ -1,0 +1,188 @@
+.user-menu-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+/* ── Trigger button ── */
+.user-menu-trigger {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: var(--font-family);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--gray-800);
+    text-align: left;
+    transition: all 0.15s ease;
+}
+
+.user-menu-trigger:hover,
+.user-menu-trigger.open {
+    background: var(--gray-100);
+    border-color: var(--gray-200);
+}
+
+.user-menu-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1a56db, #3b82f6);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    letter-spacing: 0;
+}
+
+.user-menu-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-menu-chevron {
+    color: var(--gray-500);
+    transition: transform 0.18s ease;
+    flex-shrink: 0;
+}
+
+.user-menu-trigger.open .user-menu-chevron {
+    transform: rotate(180deg);
+}
+
+/* ── Popover ── */
+.user-menu-popover {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+    z-index: 100;
+    animation: user-menu-in 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes user-menu-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.user-menu-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 14px 12px;
+}
+
+.user-menu-header-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1a56db, #3b82f6);
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.user-menu-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.user-menu-header-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--gray-900);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-menu-header-email {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-menu-divider {
+    height: 1px;
+    background: var(--gray-200);
+    margin: 0;
+}
+
+/* ── Menu items ── */
+.user-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-family);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--gray-800);
+    text-align: left;
+    transition: background 0.1s ease;
+}
+
+.user-menu-item:hover {
+    background: var(--gray-100);
+}
+
+.user-menu-item.danger {
+    color: var(--danger-color);
+}
+
+.user-menu-item.danger:hover {
+    background: color-mix(in srgb, var(--danger-color) 8%, transparent);
+}
+
+/* ── Dark mode ── */
+:root[data-theme="dark"] .user-menu-trigger {
+    color: var(--gray-100);
+}
+:root[data-theme="dark"] .user-menu-trigger:hover,
+:root[data-theme="dark"] .user-menu-trigger.open {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+}
+:root[data-theme="dark"] .user-menu-popover {
+    background: var(--gray-800);
+    border-color: var(--gray-700);
+}
+:root[data-theme="dark"] .user-menu-header-name {
+    color: var(--gray-50);
+}
+:root[data-theme="dark"] .user-menu-divider {
+    background: var(--gray-700);
+}
+:root[data-theme="dark"] .user-menu-item {
+    color: var(--gray-100);
+}
+:root[data-theme="dark"] .user-menu-item:hover {
+    background: var(--gray-700);
+}

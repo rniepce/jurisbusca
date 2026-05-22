@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-    FaPlus, FaGear, FaCircleUser,
+    FaPlus,
     FaChevronDown, FaChevronRight,
     FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
     FaBookOpen, FaPenNib, FaComments, FaClipboardCheck,
@@ -8,6 +8,7 @@ import {
     FaGavel, FaLayerGroup, FaBook
 } from 'react-icons/fa6';
 import { useNavigate, useLocation } from 'react-router-dom';
+import UserMenu from './UserMenu';
 import './Sidebar.css';
 import agentDefinitions from '../config/agents';
 
@@ -289,16 +290,11 @@ const Sidebar = ({
                 )}
             </div>
 
-            {/* Bottom Icons */}
+            {/* User menu (Configurações + Sair) */}
             <div className="sidebar-bottom">
                 <div className="sidebar-divider" />
-                <div className="sidebar-bottom-icons">
-                    <button className="sidebar-icon-btn" aria-label="Configurações" id="btn-settings" onClick={onOpenMemory}>
-                        <FaGear />
-                    </button>
-                    <button className="sidebar-icon-btn" aria-label="Perfil" id="btn-profile">
-                        <FaCircleUser />
-                    </button>
+                <div className="sidebar-bottom-user">
+                    <UserMenu onOpenMemory={onOpenMemory} />
                 </div>
             </div>
         </nav>
