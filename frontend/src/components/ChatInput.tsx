@@ -193,7 +193,12 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
                         )}
                     </div>
 
-                    <button className="toolbar-btn" aria-label="Anexar processo" onClick={handleFileClick}>
+                    <button
+                        className="toolbar-btn"
+                        aria-label="Anexar processo (PDF/DOCX)"
+                        title="Anexar processo — envie um PDF ou DOCX para análise"
+                        onClick={handleFileClick}
+                    >
                         <FaPaperclip />
                     </button>
                     <input
@@ -207,7 +212,12 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
 
                     {/* Secondary toolbar buttons — hidden on mobile, shown in overflow menu */}
                     <div className="toolbar-secondary-group">
-                        <button className="toolbar-btn" aria-label="Modelos de decisão" onClick={() => onOpenModelManager && onOpenModelManager()}>
+                        <button
+                            className="toolbar-btn"
+                            aria-label="Gestor de Modelos"
+                            title="Gestor de Modelos — gerencie minutas-padrão e modelos de decisão"
+                            onClick={() => onOpenModelManager && onOpenModelManager()}
+                        >
                             <FaBook />
                         </button>
                         <button
@@ -235,7 +245,8 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
                             <div className="toolbar-overflow-menu">
                                 <button
                                     className="toolbar-btn"
-                                    aria-label="Modelos de decisão"
+                                    aria-label="Gestor de Modelos"
+                                    title="Gestor de Modelos — gerencie minutas-padrão e modelos de decisão"
                                     onClick={() => { onOpenModelManager && onOpenModelManager(); setShowOverflow(false); }}
                                 >
                                     <FaBook /> <span style={{ marginLeft: 6, fontSize: 12 }}>Modelos</span>
