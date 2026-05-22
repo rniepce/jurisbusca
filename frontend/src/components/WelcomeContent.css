@@ -10,11 +10,11 @@
 }
 
 .welcome-title {
-    font-size: 2.25rem;
-    font-weight: 800;
+    font-size: 2.5rem;
+    font-weight: 700;
     color: var(--gray-900);
-    letter-spacing: -0.025em;
-    line-height: 1.15;
+    letter-spacing: -0.015em;
+    line-height: 1.1;
     margin: 0 0 var(--space-3) 0;
 }
 
