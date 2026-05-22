@@ -310,7 +310,7 @@ const ChatInput = ({ onSend, onXray, onFilesUploaded, onStyleReport: _onStyleRep
                 <textarea
                     ref={chatTextareaRef}
                     className="chat-textarea"
-                    placeholder={isLoading ? 'Processando...' : ocrProcessing ? 'Executando OCR...' : canvasOpen ? 'Digite uma instrução para editar o documento no Canvas...' : 'Insira o seu prompt aqui. @ para modelos, / para prompts'}
+                    placeholder={isLoading ? 'Processando...' : ocrProcessing ? 'Executando OCR...' : canvasOpen ? 'Digite uma instrução para editar o documento no Canvas...' : 'Insira o seu prompt aqui'}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
