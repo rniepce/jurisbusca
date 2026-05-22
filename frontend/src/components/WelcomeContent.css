@@ -10,17 +10,30 @@
 }
 
 .welcome-title {
-    font-size: var(--text-2xl);
-    font-weight: 700;
-    color: var(--text-color);
-    margin: 0 0 var(--space-2) 0;
+    font-size: 2.25rem;
+    font-weight: 800;
+    color: var(--gray-900);
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+    margin: 0 0 var(--space-3) 0;
 }
 
 .welcome-hint {
-    font-size: var(--text-md);
-    color: var(--secondary-text-color);
+    font-size: 1.0625rem;
+    font-weight: 500;
+    color: var(--gray-600);
     margin: 0;
     max-width: 500px;
+    line-height: 1.5;
+}
+
+/* Dark theme override — keep contrast strong */
+:root[data-theme="dark"] .welcome-title {
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .welcome-hint {
+    color: var(--gray-300);
 }
 
 /* ── Action Cards (grid 2×2) ──────────────────────────────────── */
