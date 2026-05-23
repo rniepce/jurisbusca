@@ -1,6 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
-  <rect width="100" height="100" rx="12" fill="#8B1A1A"/>
-  <path d="M50 15 L85 80 H15 Z" stroke="white" stroke-width="6" stroke-linejoin="round" fill="none"/>
-  <path d="M50 35 L70 72 H30 Z" stroke="white" stroke-width="4" stroke-linejoin="round" fill="none"/>
-  <path d="M35 72 Q50 50 65 72" stroke="white" stroke-width="4" fill="none" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Background circle (red brand) -->
+  <circle cx="50" cy="50" r="50" fill="#8B1A1A"/>
+
+  <!-- Antenna (line + dot above the bubble) -->
+  <circle cx="50" cy="18" r="2.6" fill="#fff"/>
+  <line x1="50" y1="20" x2="50" y2="28" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/>
+
+  <!-- Chat bubble with tail (rounded rect + triangular tail bottom-left) -->
+  <path d="M 30 30
+           H 70
+           Q 76 30 76 36
+           V 60
+           Q 76 66 70 66
+           H 40
+           L 32 76
+           L 34 66
+           H 30
+           Q 24 66 24 60
+           V 36
+           Q 24 30 30 30 Z"
+        fill="none"
+        stroke="#fff"
+        stroke-width="3"
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
+
+  <!-- Eyes (filled rounded squares) -->
+  <rect x="36" y="42" width="6.5" height="6.5" rx="1.2" fill="#fff"/>
+  <rect x="57.5" y="42" width="6.5" height="6.5" rx="1.2" fill="#fff"/>
+
+  <!-- Smile -->
+  <path d="M 40 54 Q 50 60 60 54"
+        fill="none"
+        stroke="#fff"
+        stroke-width="2.6"
+        stroke-linecap="round"/>
 </svg>
