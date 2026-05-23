@@ -277,26 +277,32 @@ def clean_text(text: str) -> str:
 
 def get_embedding_function(api_key=None):
     """
-    Factory centralizada de embeddings — usa Azure OpenAI (text-embedding-3-small).
+    Factory centralizada de embeddings — usa Azure OpenAI (text-embedding-3-small por padrão).
     api_key: se fornecida, tem prioridade sobre a variável de ambiente.
+
+    Ajustes contra rate-limit (429):
+    - chunk_size=64: mais textos por request, menos requests/minuto (RPM).
+    - max_retries=10: tolera backoffs de até ~10min sem falhar.
     """
     from langchain_openai import AzureOpenAIEmbeddings
-    
+
     azure_key = api_key or os.getenv("AZURE_OPENAI_API_KEY", "")
     azure_endpoint = os.getenv("AZURE_OPENAI_EMBEDDING_ENDPOINT", os.getenv("AZURE_OPENAI_ENDPOINT", ""))
     deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
-    
+
     if not azure_key or not azure_endpoint:
         raise ValueError(
             "AZURE_OPENAI_API_KEY e AZURE_OPENAI_EMBEDDING_ENDPOINT devem estar configurados "
             "no .env para usar embeddings."
         )
-    
+
     return AzureOpenAIEmbeddings(
         azure_deployment=deployment,
         azure_endpoint=azure_endpoint,
         api_key=azure_key,
         api_version="2024-12-01-preview",
+        chunk_size=64,
+        max_retries=10,
     )
 
 def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choice="mistral_doc_ai", compress=True, vectorize=True, progress_callback=None):
@@ -432,20 +438,36 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
             splits = text_splitter.split_documents(docs)
             _progress(f"📦 {len(splits)} chunks por caracteres criados", 75)
         
-        # Cria Vector Store em memória (ephemeral)
+        # Cria Vector Store em memória (ephemeral), em LOTES para evitar rate-limit
         try:
-            _progress(f"🔗 Vetorizando {len(splits)} chunks com embeddings...", 80)
             embedding_function = get_embedding_function(api_key=api_key)
 
-            # Timeout para a vetorização inteira (5 min max) — usa thread, compatível com background tasks
-            RAG_TIMEOUT = 300
+            # Ingere em batches de N chunks por vez com pequeno throttle entre eles.
+            # Permite reportar progresso real (em vez de 80 → 95 instantâneo) e
+            # reduz a chance de hitting rate limit do Azure embedding.
+            BATCH_SIZE = 32
+            SLEEP_BETWEEN_BATCHES = 0.5  # segundos
+            RAG_TIMEOUT = 600            # 10 min — generoso para PDFs com 300+ chunks
+            total = len(splits)
+
+            _progress(f"🔗 Vetorizando {total} chunks (lotes de {BATCH_SIZE})...", 80)
 
             def _do_vectorize():
-                vs = Chroma.from_documents(
-                    documents=splits,
-                    embedding=embedding_function,
-                    collection_name="temp_process_analysis"
+                import time as _ts
+                # Cria Chroma vazio e adiciona em lotes para reportar progresso
+                vs = Chroma(
+                    embedding_function=embedding_function,
+                    collection_name="temp_process_analysis",
                 )
+                for i in range(0, total, BATCH_SIZE):
+                    batch = splits[i:i + BATCH_SIZE]
+                    vs.add_documents(batch)
+                    done = min(i + BATCH_SIZE, total)
+                    # 80% início -> 95% fim da vetorização (faixa de 15 pontos)
+                    pct = 80 + int(15 * done / total) if total else 95
+                    _progress(f"🔗 Vetorizando: {done}/{total} chunks", pct)
+                    if done < total:
+                        _ts.sleep(SLEEP_BETWEEN_BATCHES)
                 return vs.as_retriever(search_kwargs={"k": 15})
 
             try:
@@ -454,15 +476,16 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
                     retriever = _future.result(timeout=RAG_TIMEOUT)
             except concurrent.futures.TimeoutError:
                 raise TimeoutError(f"Vetorização excedeu {RAG_TIMEOUT}s")
-            
-            _progress(f"✅ RAG indexado: {len(splits)} chunks vetorizados", 95)
+
+            _progress(f"✅ RAG indexado: {total} chunks vetorizados", 95)
             return full_text, retriever
-            
-        except TimeoutError as e:
-            _progress(f"⚠️ RAG Timeout. Retornando texto sem vetorização.", 95)
+
+        except TimeoutError:
+            _progress("⚠️ RAG Timeout. Retornando texto sem vetorização.", 95)
             return full_text, None
         except Exception as e:
-            _progress(f"⚠️ Erro na vetorização. Retornando texto sem retriever.", 95)
+            print(f"⚠️ Erro na vetorização: {type(e).__name__}: {e}")
+            _progress("⚠️ Erro na vetorização. Retornando texto sem retriever.", 95)
             return full_text, None
         
     except Exception as e:
