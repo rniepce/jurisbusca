@@ -1,7 +1,6 @@
 import React from 'react';
 import { FaScaleBalanced, FaGavel, FaPaperclip, FaRobot } from 'react-icons/fa6';
 import { useAuth } from './AuthContext';
-import QuickActionChips from './QuickActionChips';
 import './WelcomeContent.css';
 
 interface Action {
@@ -18,7 +17,6 @@ interface Props {
     onOpenSustentacao?: () => void;
     onAttachFile?: () => void;
     onOpenAgents?: () => void;
-    onQuickAction?: (prompt: string) => void;
 }
 
 function getGreeting(): string {
@@ -40,7 +38,6 @@ const WelcomeContent: React.FC<Props> = ({
     onOpenSustentacao,
     onAttachFile,
     onOpenAgents,
-    onQuickAction,
 }) => {
     const { user } = useAuth();
     const firstName = getFirstName(
@@ -108,8 +105,6 @@ const WelcomeContent: React.FC<Props> = ({
                     </button>
                 ))}
             </div>
-
-            {onQuickAction && <QuickActionChips onAction={onQuickAction} />}
         </div>
     );
 };
