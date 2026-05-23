@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
     FaPaperclip, FaChevronDown, FaCheck,
     FaXmark, FaFile, FaDatabase, FaTableColumns,
-    FaRobot,
+    FaRobot, FaScaleBalanced, FaBrain,
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
 import { getSlmStatus } from '../services/api';
@@ -56,6 +56,26 @@ const ChatInput = ({
     const [files, setFiles] = useState<File[]>([]);
     const [skipOcr, setSkipOcr] = useState(false);
     const [slmStatus, setSlmStatus] = useState({ available: false, mode: 'none' });
+    const [jurisEnabled, setJurisEnabled] = useState(() => {
+        try { return localStorage.getItem('juris_enabled') !== 'false'; } catch { return true; }
+    });
+    const [reasoningEnabled, setReasoningEnabled] = useState(() => {
+        try { return localStorage.getItem('reasoning_enabled') === 'true'; } catch { return false; }
+    });
+
+    const toggleJuris = () => setJurisEnabled((v) => {
+        const next = !v;
+        try { localStorage.setItem('juris_enabled', String(next)); } catch { /* noop */ }
+        return next;
+    });
+
+    const toggleReasoning = () => setReasoningEnabled((v) => {
+        const next = !v;
+        try { localStorage.setItem('reasoning_enabled', String(next)); } catch { /* noop */ }
+        return next;
+    });
+
+    const reasoningSupported = ['deepseek', 'gpt53', 'claude'].includes(selectedModel.id);
     const dropdownRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -103,7 +123,7 @@ const ChatInput = ({
         if (isLoading) return;
         if (message.trim() || files.length > 0 || hasContext) {
             const combinedModel = { id: selectedModel.id, name: selectedModel.name, color: selectedModel.color, llm: selectedModel.deployment };
-            if (onSend) onSend(message, combinedModel, files, DEFAULT_OCR_ENGINE, [], false);
+            if (onSend) onSend(message, combinedModel, files, DEFAULT_OCR_ENGINE, [], false, {}, jurisEnabled, reasoningEnabled);
             setMessage('');
             setFiles([]);
         }
@@ -299,6 +319,35 @@ const ChatInput = ({
                     >
                         <span aria-hidden="true">{skipOcr ? '🚫' : '🔍'}</span>
                         <span className="slot-label">{skipOcr ? 'OCR off' : 'OCR'}</span>
+                    </button>
+
+                    {/* Jurisprudência toggle */}
+                    <button
+                        type="button"
+                        className={`slot-btn ${jurisEnabled ? 'active' : ''}`}
+                        onClick={toggleJuris}
+                        title={jurisEnabled ? 'Pesquisa de jurisprudência ativa' : 'Pesquisa de jurisprudência desativada'}
+                    >
+                        <FaScaleBalanced size={12} />
+                        <span className="slot-label">Juris</span>
+                    </button>
+
+                    {/* Raciocínio estendido */}
+                    <button
+                        type="button"
+                        className={`slot-btn ${reasoningEnabled ? 'active' : ''}`}
+                        onClick={toggleReasoning}
+                        disabled={!reasoningSupported}
+                        title={
+                            !reasoningSupported
+                                ? 'Raciocínio estendido não disponível para este modelo'
+                                : reasoningEnabled
+                                    ? 'Raciocínio estendido ativo'
+                                    : 'Ativar raciocínio estendido'
+                        }
+                    >
+                        <FaBrain size={12} />
+                        <span className="slot-label">Raciocínio</span>
                     </button>
 
                     {/* Canvas toggle */}

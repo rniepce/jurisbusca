@@ -63,6 +63,8 @@ export interface Agent {
 
 export interface CustomAgent extends Agent {
     prompt: string;
+    description?: string;
+    knowledge?: string;
     created_at?: string;
 }
 

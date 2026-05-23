@@ -25,6 +25,9 @@ export interface SendMessageParams {
     styleDossier?: string | null;
     useRag?: boolean;
     jurisprudenceContext?: string | null;
+    jurisEnabled?: boolean;
+    reasoningEnabled?: boolean;
+    agentKnowledge?: string | null;
 }
 
 export interface ReplicateBatchPilotParams {
@@ -186,7 +189,7 @@ export async function uploadFile(file: File, ocrEngine = 'mistral_doc_ai', compr
  * @param {string|null} params.uploadedText
  * @returns {Promise<{conversation_id: string, response: string, model: string}>}
  */
-export async function sendMessage({ message, model, llm, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false, jurisprudenceContext = null }: SendMessageParams) {
+export async function sendMessage({ message, model, llm, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false, jurisprudenceContext = null, jurisEnabled = true, reasoningEnabled = false, agentKnowledge = null }: SendMessageParams) {
     const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -201,6 +204,9 @@ export async function sendMessage({ message, model, llm, agentPrompt, conversati
             style_dossier: styleDossier || null,
             use_rag: useRag,
             jurisprudence_context: jurisprudenceContext || null,
+            juris_enabled: jurisEnabled,
+            reasoning_enabled: reasoningEnabled,
+            agent_knowledge: agentKnowledge || null,
         }),
         redirect: 'error',    // Do NOT follow redirects
     }).catch((err) => {
@@ -654,7 +660,7 @@ export async function pollJurisprudenciaResearch(taskId: string) {
  * @param {{ name: string, prompt: string, color: string }} agent
  * @returns {Promise<{ id: string, name: string, prompt: string, color: string }>}
  */
-export async function createCustomAgent(agent: { name: string; prompt: string; color: string }) {
+export async function createCustomAgent(agent: { name: string; prompt: string; color: string; description?: string; knowledge?: string }) {
     const res = await fetch(`${API_BASE}/custom-agents`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -666,6 +672,22 @@ export async function createCustomAgent(agent: { name: string; prompt: string; c
         throw new Error(err.detail || `Erro ao criar agente (${res.status})`);
     }
     return safeJson(res, 'Create Agent');
+}
+
+export async function uploadAgentFiles(agentId: string, files: File[]): Promise<{ status: string; knowledge_chars: number }> {
+    const form = new FormData();
+    files.forEach((f) => form.append('files', f));
+    const res = await fetch(`${API_BASE}/custom-agents/${encodeURIComponent(agentId)}/files`, {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: form,
+        redirect: 'error',
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Upload Agent Files').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao enviar arquivos (${res.status})`);
+    }
+    return safeJson(res, 'Upload Agent Files');
 }
 
 /**
@@ -757,17 +779,59 @@ export async function getMemory() {
  * @param {boolean} enabled - Whether memory injection is active
  * @returns {Promise<{content: string, enabled: boolean}>}
  */
-export async function saveMemory(content: string, enabled = true) {
+export async function saveMemory(
+    content: string,
+    enabled = true,
+    response_style = 'default',
+    response_style_text = ''
+) {
     const res = await fetch(`${API_BASE}/memory`, {
         method: 'PUT',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ content, enabled }),
+        body: JSON.stringify({ content, enabled, response_style, response_style_text }),
     });
     if (!res.ok) {
         const err = await safeJson(res, 'Save Memory').catch(() => ({}));
         throw new Error(err.detail || `Erro ao salvar memória (${res.status})`);
     }
     return safeJson(res, 'Save Memory');
+}
+
+// ── Auto-Memories ────────────────────────────────────────────────────────────
+
+export async function getAutoMemories(): Promise<{ memories: AutoMemory[] }> {
+    const res = await fetch(`${API_BASE}/auto-memories`, {
+        headers: await getAuthHeaders(),
+    }).catch(() => null);
+    if (!res || !res.ok) return { memories: [] };
+    return safeJson(res, 'Get Auto Memories').catch(() => ({ memories: [] }));
+}
+
+export async function updateAutoMemory(id: number, data: { content?: string; enabled?: boolean }) {
+    const res = await fetch(`${API_BASE}/auto-memories/${id}`, {
+        method: 'PUT',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`Erro ao atualizar memória (${res.status})`);
+    return safeJson(res, 'Update Auto Memory');
+}
+
+export async function deleteAutoMemory(id: number) {
+    const res = await fetch(`${API_BASE}/auto-memories/${id}`, {
+        method: 'DELETE',
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Erro ao deletar memória (${res.status})`);
+    return safeJson(res, 'Delete Auto Memory');
+}
+
+export interface AutoMemory {
+    id: number;
+    content: string;
+    source_conversation_id: string | null;
+    enabled: boolean;
+    created_at: string;
 }
 
 

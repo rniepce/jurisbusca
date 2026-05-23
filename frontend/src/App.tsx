@@ -7,7 +7,7 @@ import ChatArea from './components/ChatArea';
 import ChatInput from './components/ChatInput';
 import BatchPanel from './components/BatchPanel';
 import CreateAgentDialog from './components/CreateAgentDialog';
-import MemoryPanel from './components/MemoryPanel';
+import SettingsPanel from './components/SettingsPanel';
 import ShareAgentDialog from './components/ShareAgentDialog';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
@@ -16,7 +16,6 @@ import ResetPasswordPage from './components/ResetPasswordPage';
 import LazyPanel from './components/LazyPanel';
 import { AuthProvider, useAuth } from './components/AuthContext';
 import { getTemplateStatus } from './services/api';
-import agentDefinitions from './config/agents';
 import { useUIStore, useChatStore } from './store';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useOcrUpload } from './hooks/useOcrUpload';
@@ -48,7 +47,7 @@ const ROUTES = {
     jurisprudencia: '/jurisprudencia',
     sustentacao: '/sustentacao',
     modelos: '/modelos',
-    agenteBuilder: '/agente-builder',
+    engenheiroPrompts: '/engenheiro-prompts',
     lote: '/lote',
 } as const;
 
@@ -56,7 +55,7 @@ const PANEL_PATHS = new Set<string>([
     ROUTES.jurisprudencia,
     ROUTES.sustentacao,
     ROUTES.modelos,
-    ROUTES.agenteBuilder,
+    ROUTES.engenheiroPrompts,
     ROUTES.lote,
 ]);
 
@@ -98,12 +97,9 @@ function MainApp() {
         },
     });
 
-    // Bootstrap RAG status + default agent
+    // Bootstrap RAG status
     useEffect(() => {
         getTemplateStatus().then(setRagStatus).catch(() => {});
-        if (!useChatStore.getState().activeAgent) {
-            useChatStore.getState().setActiveAgent(agentDefinitions[0] as Agent);
-        }
     }, []);
 
     // Close juris overlay automatically when leaving /sustentacao
@@ -148,9 +144,9 @@ function MainApp() {
         return (
             <Routes>
                 <Route
-                    path={ROUTES.agenteBuilder}
+                    path={ROUTES.engenheiroPrompts}
                     element={
-                        <LazyPanel label="Construtor de Agente" onReset={goHome}>
+                        <LazyPanel label="Engenheiro de Prompts" onReset={goHome}>
                             <AgentBuilderChat
                                 onClose={goHome}
                                 onPromptReady={agents.handlePromptReady}
@@ -270,7 +266,7 @@ function MainApp() {
                     if (currentPath !== ROUTES.home) navigate(ROUTES.home);
                 }}
                 customAgents={agents.customAgents}
-                onCreateAgent={() => navigate(ROUTES.agenteBuilder)}
+                onCreateAgent={() => { agents.setPendingPrompt(''); agents.setShowCreateDialog(true); }}
                 onDeleteAgent={agents.handleDeleteAgent}
                 onShareAgent={agents.handleShareAgentOpen}
                 onOpenMemory={() => setShowMemoryPanel(true)}
@@ -348,7 +344,7 @@ function MainApp() {
                 }}
                 onConfirm={async (input: { name: string; prompt: string; color?: string }) => {
                     await agents.handleCreateAgent(input);
-                    if (currentPath === ROUTES.agenteBuilder) navigate(ROUTES.home);
+                    if (currentPath === ROUTES.engenheiroPrompts) navigate(ROUTES.home);
                 }}
                 initialPrompt={agents.pendingPrompt}
             />
@@ -360,7 +356,7 @@ function MainApp() {
                 agentName={agents.shareAgent?.name || ''}
             />
 
-            <MemoryPanel isOpen={showMemoryPanel} onClose={() => setShowMemoryPanel(false)} />
+            <SettingsPanel isOpen={showMemoryPanel} onClose={() => setShowMemoryPanel(false)} />
 
             {/* Jurisprudência overlay when sustentação is the active route */}
             {currentPath === ROUTES.sustentacao && showJurisOverlay && (

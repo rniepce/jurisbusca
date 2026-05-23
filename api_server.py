@@ -320,6 +320,9 @@ class ChatRequest(BaseModel):
     style_dossier: Optional[str] = None  # cloning prompt from style report
     use_rag: bool = False  # if True, use RAG retrieval instead of full text
     jurisprudence_context: Optional[str] = None  # V0.5: imported jurisprudence for minuta fundamentação
+    juris_enabled: bool = True  # whether to trigger background jurisprudence research
+    reasoning_enabled: bool = False  # whether to use extended reasoning mode
+    agent_knowledge: Optional[str] = None  # custom agent knowledge base text
 
 
 # ── Model mapping (Azure AI Foundry) ──────────────────────────────────────────
@@ -443,6 +446,8 @@ async def debug_routes(_auth: dict = Depends(require_auth)):
 class MemoryRequest(BaseModel):
     content: str = ""
     enabled: bool = True
+    response_style: str = "default"
+    response_style_text: str = ""
 
 
 @app.get("/api/memory")
@@ -456,7 +461,40 @@ async def get_memory_endpoint(_auth: dict = Depends(require_auth)):
 async def save_memory_endpoint(req: MemoryRequest, _auth: dict = Depends(require_auth)):
     """Save user memory/preferences (max 2000 chars)."""
     user_key = _auth.get("email") or _auth.get("sub", "default")
-    return history_db.save_memory(user_key, req.content, req.enabled)
+    return history_db.save_memory(user_key, req.content, req.enabled,
+                                   req.response_style, req.response_style_text)
+
+
+# ── Auto-Memories endpoints ────────────────────────────────────────────────────
+
+class AutoMemoryUpdateRequest(BaseModel):
+    content: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+@app.get("/api/auto-memories")
+async def list_auto_memories_endpoint(_auth: dict = Depends(require_auth)):
+    """List auto-extracted memories for the authenticated user."""
+    user_key = _auth.get("email") or _auth.get("sub", "default")
+    return {"memories": history_db.list_auto_memories(user_key)}
+
+
+@app.put("/api/auto-memories/{memory_id}")
+async def update_auto_memory_endpoint(
+    memory_id: int, req: AutoMemoryUpdateRequest, _auth: dict = Depends(require_auth)
+):
+    """Update content or enabled state of an auto-memory."""
+    user_key = _auth.get("email") or _auth.get("sub", "default")
+    history_db.update_auto_memory(memory_id, user_key, req.content, req.enabled)
+    return {"status": "ok"}
+
+
+@app.delete("/api/auto-memories/{memory_id}")
+async def delete_auto_memory_endpoint(memory_id: int, _auth: dict = Depends(require_auth)):
+    """Delete an auto-extracted memory."""
+    user_key = _auth.get("email") or _auth.get("sub", "default")
+    history_db.delete_auto_memory(memory_id, user_key)
+    return {"status": "ok"}
 
 
 @app.post("/api/chat")
@@ -509,8 +547,43 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
                     f"🧠 **MEMÓRIA/PREFERÊNCIAS DO USUÁRIO (considere sempre):**\n"
                     f"{user_mem['content'].strip()}\n---"
                 )
+            # Response style preference
+            response_style = user_mem.get("response_style", "default")
+            response_style_text = user_mem.get("response_style_text", "")
+            if response_style == "short":
+                system_parts.append("📏 **PREFERÊNCIA DE RESPOSTA:** Responda de forma concisa, em no máximo 3 parágrafos.")
+            elif response_style == "long":
+                system_parts.append("📝 **PREFERÊNCIA DE RESPOSTA:** Responda com profundidade e análise detalhada, incluindo fundamentação completa.")
+            elif response_style == "custom" and response_style_text.strip():
+                system_parts.append(f"📝 **PREFERÊNCIA DE RESPOSTA:** {response_style_text.strip()}")
+            # Auto-memories from previous conversations
+            try:
+                auto_mems = history_db.list_auto_memories(_user_key)
+                active_mems = [m["content"] for m in auto_mems if m["enabled"]]
+                if active_mems:
+                    system_parts.append(
+                        "🔮 **MEMÓRIAS EXTRAÍDAS DE CONVERSAS ANTERIORES (considere):**\n" +
+                        "\n".join(f"• {m}" for m in active_mems[:20]) + "\n---"
+                    )
+            except Exception:
+                pass
         except Exception as mem_err:
             logger.warning("Erro ao carregar memória do usuário: %s", mem_err)
+
+        # Agent knowledge base (custom agent with uploaded files)
+        if req.agent_knowledge and req.agent_knowledge.strip():
+            system_parts.append(
+                f"📚 **CONHECIMENTO DO AGENTE (base de referência):**\n{req.agent_knowledge.strip()}\n---"
+            )
+
+        # Extended reasoning mode
+        if req.reasoning_enabled:
+            system_parts.append(
+                "🤔 **MODO DE RACIOCÍNIO ESTENDIDO:** Antes de responder, estruture o raciocínio explicitamente: "
+                "(1) identifique os fatos e pontos centrais, (2) analise as normas e precedentes aplicáveis, "
+                "(3) raciocine sobre a solução passo a passo, (4) formule a resposta final. "
+                "Seja explícito no processo de raciocínio."
+            )
 
         if req.agent_prompt:
             system_parts.append(req.agent_prompt)
@@ -880,9 +953,21 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
         if req.model in ("v2", "v3-local") and 'v2_sections' in locals():
             result_payload["v2_sections"] = v2_sections
 
-        # ── V0.5: trigger background jurisprudence research ──────────────
-        # Only on the SECOND interaction (after triagem is done), when there's history
-        if req.model == "v0.5" and req.uploaded_text and HAS_JURISPRUDENCIA and len(past_messages) >= 2:
+        # ── Trigger background auto-memory extraction ──────────────────────
+        # Extracts facts/preferences from the conversation for future context.
+        # Runs only when there are ≥4 messages total to ensure substance.
+        if len(past_messages) >= 4:
+            _mem_user_key = _auth.get("email") or _auth.get("sub", "default")
+            mem_thread = threading.Thread(
+                target=_extract_auto_memories_background,
+                args=(_mem_user_key, conv_id, list(past_messages), azure_key),
+                daemon=True,
+            )
+            mem_thread.start()
+
+        # ── Trigger background jurisprudence research ──────────────────────
+        # Requires: juris_enabled flag, uploaded process text, jurisprudence DB, and at least 1 prior turn
+        if req.juris_enabled and req.uploaded_text and HAS_JURISPRUDENCIA and len(past_messages) >= 2:
             juris_task_id = str(uuid.uuid4())
             _bg_tasks[juris_task_id] = {
                 "status": "pending",
@@ -912,6 +997,89 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
 async def get_history(_auth: dict = Depends(require_auth)):
     """Fetch conversation history (currently returns empty — no auth)."""
     return {"conversations": []}
+
+
+_MEMORY_EXTRACTION_PROMPT = """Analise a conversa abaixo entre um juiz/usuário jurídico e um assistente de IA, e extraia FATOS DURÁVEIS sobre o usuário que devem ser lembrados em conversas futuras.
+
+Foque em:
+- Cargo, vara, comarca, área de atuação
+- Preferências de estilo (concisão, formalismo, latinismos, fundamentação)
+- Posições jurídicas recorrentes (ex: "sempre cita art. X do CPC")
+- Rotinas / fluxos de trabalho mencionados
+
+NÃO extraia:
+- Fatos específicos de um processo
+- Pedidos pontuais sem relevância para o futuro
+- Informações já óbvias ou genéricas
+
+Retorne APENAS um array JSON com no máximo 3 strings curtas (≤ 100 caracteres cada). Se nada relevante for encontrado, retorne [].
+
+CONVERSA:
+{conversation}
+
+JSON:"""
+
+
+def _extract_auto_memories_background(user_key: str, conv_id: str, messages: list, azure_key: str = None):
+    """Background worker: uses LLM to extract durable facts about the user from the conversation."""
+    try:
+        if not messages or len(messages) < 4:
+            return
+        # Avoid re-extracting if we already have many memories for this user
+        existing = history_db.list_auto_memories(user_key)
+        if len(existing) >= 30:
+            return
+        existing_contents = {m["content"].lower().strip() for m in existing}
+
+        # Build conversation string (limit length)
+        convo_lines = []
+        for m in messages[-12:]:  # last 12 turns
+            role = "USUÁRIO" if m.get("role") == "user" else "ASSISTENTE"
+            content = (m.get("content") or "")[:1500]
+            convo_lines.append(f"[{role}]: {content}")
+        convo_text = "\n\n".join(convo_lines)
+        if len(convo_text) > 12000:
+            convo_text = convo_text[:12000]
+
+        prompt = _MEMORY_EXTRACTION_PROMPT.format(conversation=convo_text)
+
+        # Use lightweight model for extraction
+        try:
+            extractor = be.get_llm(model_name="gpt-5.3-chat", temperature=0.0, api_key=azure_key)
+            response = extractor.invoke(prompt)
+            raw = be.safe_content(response).strip()
+        except Exception as inv_err:
+            logger.warning("Auto-memory extraction LLM failed: %s", inv_err)
+            return
+
+        # Parse JSON list
+        import re as _re, json as _json
+        # Strip code fences if present
+        m = _re.search(r"\[.*\]", raw, _re.DOTALL)
+        if not m:
+            return
+        try:
+            items = _json.loads(m.group(0))
+        except Exception:
+            return
+        if not isinstance(items, list):
+            return
+
+        for item in items[:3]:
+            if not isinstance(item, str):
+                continue
+            item = item.strip()
+            if len(item) < 8 or len(item) > 200:
+                continue
+            if item.lower() in existing_contents:
+                continue
+            try:
+                history_db.add_auto_memory(user_key, item, conv_id)
+                existing_contents.add(item.lower())
+            except Exception as save_err:
+                logger.warning("Failed to save auto-memory: %s", save_err)
+    except Exception as e:
+        logger.warning("Auto-memory background failed: %s", e)
 
 
 def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_engine: str, compress: bool, vectorize: bool = True):
@@ -2166,6 +2334,8 @@ class CreateAgentRequest(BaseModel):
     name: str
     prompt: str
     color: str = "#6366f1"
+    description: str = ""
+    knowledge: str = ""
 
 
 class ShareAgentRequest(BaseModel):
@@ -2207,6 +2377,8 @@ async def create_custom_agent(req: CreateAgentRequest, request: Request = None, 
         "name": req.name,
         "prompt": req.prompt,
         "color": req.color,
+        "description": req.description,
+        "knowledge": req.knowledge,
     }
 
     if _SUPA_URL and _SUPA_ANON_KEY:
@@ -2246,8 +2418,65 @@ async def delete_custom_agent(agent_id: str, request: Request = None, _auth: dic
 @app.post("/api/custom-agents/{agent_id}/share")
 async def share_custom_agent(agent_id: str, req: ShareAgentRequest, request: Request = None, _auth: dict = Depends(require_auth)):
     """Share a custom agent with another user by email."""
-    # Placeholder — copies agent data for target user
     return {"status": "ok", "message": f"Compartilhamento de {agent_id} para {req.email} registrado."}
+
+
+@app.post("/api/custom-agents/{agent_id}/files")
+async def upload_agent_files(
+    agent_id: str,
+    files: list[UploadFile] = File(...),
+    request: Request = None,
+    _auth: dict = Depends(require_auth),
+):
+    """Upload files to build a custom agent's knowledge base."""
+    import asyncio as _asyncio
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+
+    extracted_parts = []
+    for uf in files:
+        try:
+            file_data = await uf.read()
+            suffix = os.path.splitext(uf.filename or "")[-1].lower()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(file_data)
+                tmp_path = tmp.name
+            try:
+                with open(tmp_path, "rb") as f:
+                    full_text, _ = await _asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: be.process_uploaded_file(
+                            f, uf.filename or "file", ocr_engine_choice="none",
+                            compress=False, vectorize=False,
+                        ),
+                    )
+                if full_text and full_text.strip():
+                    extracted_parts.append(f"--- {uf.filename} ---\n{full_text.strip()}")
+            finally:
+                os.unlink(tmp_path)
+        except Exception as file_err:
+            logger.warning("Erro ao processar arquivo do agente %s: %s", uf.filename, file_err)
+
+    combined_knowledge = "\n\n".join(extracted_parts)
+
+    # Patch the agent record in Supabase
+    if _SUPA_URL and _SUPA_ANON_KEY and combined_knowledge:
+        try:
+            token = _extract_token(request)
+            url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_CUSTOM_AGENTS_TABLE}?id=eq.{agent_id}&user_id=eq.{user_id}"
+            resp = _requests_lib.patch(
+                url,
+                json={"knowledge": combined_knowledge[:100_000]},
+                headers=_supa_headers(token),
+                timeout=15,
+            )
+            if not resp.ok:
+                logger.warning("Supabase patch knowledge failed: %s", resp.text)
+        except Exception as patch_err:
+            logger.error("Failed to update agent knowledge: %s", patch_err)
+
+    return {"status": "ok", "knowledge_chars": len(combined_knowledge)}
 
 
 def _extract_user_id(request) -> str:

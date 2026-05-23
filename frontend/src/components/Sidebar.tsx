@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import {
     FaPlus,
     FaChevronDown, FaChevronRight,
-    FaScaleBalanced, FaFileLines, FaMagnifyingGlass,
-    FaBookOpen, FaPenNib, FaComments, FaClipboardCheck,
+    FaScaleBalanced,
+    FaComments,
     FaWandMagicSparkles, FaTrash, FaShareNodes, FaEllipsisVertical, FaRobot,
     FaGavel, FaLayerGroup, FaBook
 } from 'react-icons/fa6';
@@ -11,17 +11,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import UserMenu from './UserMenu';
 import logoSvg from '../assets/logo.svg';
 import './Sidebar.css';
-import agentDefinitions from '../config/agents';
 
-// Map string icon names to React components
-const iconMap = {
-    FaScaleBalanced: <FaScaleBalanced />,
-    FaFileLines: <FaFileLines />,
-    FaMagnifyingGlass: <FaMagnifyingGlass />,
-    FaBookOpen: <FaBookOpen />,
-    FaPenNib: <FaPenNib />,
-    FaClipboardCheck: <FaClipboardCheck />,
-};
 
 const Sidebar = ({
     isOpen,
@@ -41,7 +31,6 @@ const Sidebar = ({
 }: any) => {
     const navigate = useNavigate();
     const location = useLocation();
-    const [agentsOpen, setAgentsOpen] = useState(true);
     const [customAgentsOpen, setCustomAgentsOpen] = useState(true);
     const [menuOpenId, setMenuOpenId] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
@@ -55,6 +44,7 @@ const Sidebar = ({
         { path: '/lote', label: 'Análise em lote', icon: <FaLayerGroup size={13} /> },
         { path: '/jurisprudencia', label: 'Jurisprudência', icon: <FaScaleBalanced size={13} /> },
         { path: '/modelos', label: 'Gestor de Modelos', icon: <FaBook size={13} /> },
+        { path: '/engenheiro-prompts', label: 'Engenheiro de Prompts', icon: <FaWandMagicSparkles size={13} /> },
     ];
 
     const handleAgentClick = (agent) => {
@@ -149,39 +139,6 @@ const Sidebar = ({
             <div className="sidebar-section">
                 <button
                     className="section-toggle"
-                    onClick={() => setAgentsOpen(!agentsOpen)}
-                    aria-expanded={agentsOpen}
-                >
-                    <span className="section-toggle-icon">
-                        {agentsOpen ? <FaChevronDown size={10} /> : <FaChevronRight size={10} />}
-                    </span>
-                    <span className="section-label">Agentes Jurídicos</span>
-                </button>
-
-                <div className={`agents-list ${agentsOpen ? 'expanded' : 'collapsed'}`}>
-                    {agentDefinitions.map((agent) => (
-                        <button
-                            key={agent.id}
-                            className={`agent-card ${activeAgent?.id === agent.id ? 'active' : ''}`}
-                            onClick={() => handleAgentClick(agent)}
-                            id={`agent-${agent.id}`}
-                        >
-                            <span className="agent-icon" style={{ color: agent.color }}>
-                                {iconMap[agent.icon] || <FaScaleBalanced />}
-                            </span>
-                            <div className="agent-info">
-                                <span className="agent-name">{agent.name}</span>
-                                <span className="agent-desc">{agent.desc}</span>
-                            </div>
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Custom Agents Section */}
-            <div className="sidebar-section">
-                <button
-                    className="section-toggle"
                     onClick={() => setCustomAgentsOpen(!customAgentsOpen)}
                     aria-expanded={customAgentsOpen}
                 >
@@ -192,6 +149,11 @@ const Sidebar = ({
                 </button>
 
                 <div className={`agents-list ${customAgentsOpen ? 'expanded' : 'collapsed'}`}>
+                    {customAgents.length === 0 && (
+                        <p className="agents-empty-text">
+                            Nenhum agente criado ainda. Clique em + para criar seu primeiro agente.
+                        </p>
+                    )}
                     {customAgents.map((agent) => (
                         <div key={agent.id} className="custom-agent-wrapper">
                             <button
@@ -204,7 +166,7 @@ const Sidebar = ({
                                 </span>
                                 <div className="agent-info">
                                     <span className="agent-name">{agent.name}</span>
-                                    <span className="agent-desc">Agente personalizado</span>
+                                    <span className="agent-desc">{(agent as any).description || 'Agente personalizado'}</span>
                                 </div>
                             </button>
                             <button

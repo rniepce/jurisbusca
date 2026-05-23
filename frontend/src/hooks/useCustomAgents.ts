@@ -4,14 +4,17 @@ import {
     createCustomAgent,
     deleteCustomAgent,
     shareCustomAgent,
+    uploadAgentFiles,
 } from '../services/api';
 import { useAgentStore, useChatStore } from '../store';
 import type { CustomAgent } from '../types/chat';
 
 interface CreateAgentInput {
     name: string;
+    description?: string;
     prompt: string;
     color?: string;
+    files?: File[];
 }
 
 export function useCustomAgents() {
@@ -38,9 +41,16 @@ export function useCustomAgents() {
     }, []);
 
     const handleCreateAgent = useCallback(
-        async ({ name, prompt, color }: CreateAgentInput) => {
+        async ({ name, description, prompt, color, files }: CreateAgentInput) => {
             try {
-                const created = await createCustomAgent({ name, prompt, color: color || '#8B5CF6' });
+                const created = await createCustomAgent({ name, description: description || '', prompt, color: color || '#8B5CF6' });
+                if (files && files.length > 0 && created.id) {
+                    try {
+                        await uploadAgentFiles(created.id, files);
+                    } catch (uploadErr) {
+                        console.warn('File upload for agent failed (agent still created):', uploadErr);
+                    }
+                }
                 addCustomAgent(created);
                 setShowCreateDialog(false);
                 setShowAgentBuilder(false);
