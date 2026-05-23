@@ -44,6 +44,7 @@ const Sidebar = ({
         { path: '/lote', label: 'Análise em lote', icon: <FaLayerGroup size={13} /> },
         { path: '/jurisprudencia', label: 'Jurisprudência', icon: <FaScaleBalanced size={13} /> },
         { path: '/modelos', label: 'Gestor de Modelos', icon: <FaBook size={13} /> },
+        { path: '/engenheiro-prompts', label: 'Engenheiro de Prompts', icon: <FaWandMagicSparkles size={13} /> },
     ];
 
     const handleAgentClick = (agent) => {

@@ -47,7 +47,7 @@ const ROUTES = {
     jurisprudencia: '/jurisprudencia',
     sustentacao: '/sustentacao',
     modelos: '/modelos',
-    agenteBuilder: '/agente-builder',
+    engenheiroPrompts: '/engenheiro-prompts',
     lote: '/lote',
 } as const;
 
@@ -55,7 +55,7 @@ const PANEL_PATHS = new Set<string>([
     ROUTES.jurisprudencia,
     ROUTES.sustentacao,
     ROUTES.modelos,
-    ROUTES.agenteBuilder,
+    ROUTES.engenheiroPrompts,
     ROUTES.lote,
 ]);
 
@@ -144,9 +144,9 @@ function MainApp() {
         return (
             <Routes>
                 <Route
-                    path={ROUTES.agenteBuilder}
+                    path={ROUTES.engenheiroPrompts}
                     element={
-                        <LazyPanel label="Construtor de Agente" onReset={goHome}>
+                        <LazyPanel label="Engenheiro de Prompts" onReset={goHome}>
                             <AgentBuilderChat
                                 onClose={goHome}
                                 onPromptReady={agents.handlePromptReady}
@@ -266,7 +266,7 @@ function MainApp() {
                     if (currentPath !== ROUTES.home) navigate(ROUTES.home);
                 }}
                 customAgents={agents.customAgents}
-                onCreateAgent={() => navigate(ROUTES.agenteBuilder)}
+                onCreateAgent={() => { agents.setPendingPrompt(''); agents.setShowCreateDialog(true); }}
                 onDeleteAgent={agents.handleDeleteAgent}
                 onShareAgent={agents.handleShareAgentOpen}
                 onOpenMemory={() => setShowMemoryPanel(true)}
@@ -344,7 +344,7 @@ function MainApp() {
                 }}
                 onConfirm={async (input: { name: string; prompt: string; color?: string }) => {
                     await agents.handleCreateAgent(input);
-                    if (currentPath === ROUTES.agenteBuilder) navigate(ROUTES.home);
+                    if (currentPath === ROUTES.engenheiroPrompts) navigate(ROUTES.home);
                 }}
                 initialPrompt={agents.pendingPrompt}
             />
