@@ -35,7 +35,7 @@ const JurisprudenciaPanel = lazy(() => import('./components/JurisprudenciaPanel'
 const SustentacaoPanel = lazy(() => import('./components/sustentacao/SustentacaoPanel'));
 const ModelManagerPanel = lazy(() => import('./components/ModelManagerPanel'));
 const AgentBuilderChat = lazy(() => import('./components/AgentBuilderChat'));
-const LotePanel = lazy(() => import('./components/LotePanel'));
+const LotePage = lazy(() => import('./components/LotePage'));
 
 // ── Route constants ──
 const ROUTES = {
@@ -128,7 +128,7 @@ function MainApp() {
 
     // ── Content area: either xray report, lazy panel routes, or chat/welcome ──
     const renderMainContent = () => {
-        if (batch.xrayReport) {
+        if (batch.xrayReport && currentPath !== ROUTES.lote) {
             return (
                 <LazyPanel label="Raio-X" onReset={() => batch.setXrayReport(null)}>
                     <XRayDashboard
@@ -188,10 +188,9 @@ function MainApp() {
                     path={ROUTES.lote}
                     element={
                         <LazyPanel label="Análise em Lote" onReset={goHome}>
-                            <LotePanel
+                            <LotePage
                                 onClose={goHome}
-                                onUpload={(files) => batch.handleXray(files)}
-                                isLoading={batch.xrayLoading}
+                                onPilotMode={batch.handleClusterPilotAction}
                             />
                         </LazyPanel>
                     }
