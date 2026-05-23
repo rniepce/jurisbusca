@@ -928,7 +928,14 @@
 
 .slot-wrapper {
     position: relative;
-    /* Empurra o seletor de modelo para o canto direito do slot row */
+}
+
+.slot-right-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    /* Empurra todo o grupo (toggles + seletor de modelo) para o canto direito */
     margin-left: auto;
 }
 

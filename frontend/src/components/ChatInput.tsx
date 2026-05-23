@@ -231,47 +231,7 @@ const ChatInput = ({
 
                 {/* Slot row — visible context controls */}
                 <div className="input-card-slots">
-                    {/* LLM model picker */}
-                    <div className="slot-wrapper" ref={dropdownRef}>
-                        <button
-                            type="button"
-                            className={`slot-btn slot-model ${dropdownOpen ? 'open' : ''}`}
-                            onClick={() => setDropdownOpen((v) => !v)}
-                            aria-haspopup="listbox"
-                            aria-expanded={dropdownOpen}
-                            title="Trocar modelo"
-                        >
-                            <span className="slot-dot" style={{ background: selectedModel.color }} />
-                            <span className="slot-label">{selectedModel.name}</span>
-                            <FaChevronDown size={9} className={`slot-chevron ${dropdownOpen ? 'rotated' : ''}`} />
-                        </button>
-
-                        {dropdownOpen && (
-                            <div className="slot-dropdown" role="listbox">
-                                <div className="slot-dropdown-header">Modelo de IA</div>
-                                {LLM_OPTIONS.map((model) => (
-                                    <button
-                                        key={model.id}
-                                        type="button"
-                                        className={`slot-dropdown-item ${selectedModel.id === model.id ? 'selected' : ''}`}
-                                        onClick={() => handleSelectModel(model)}
-                                    >
-                                        <span className="slot-dot" style={{ background: model.color }} />
-                                        <span className="slot-dropdown-name">{model.name}</span>
-                                        {model.id === 'local' && (
-                                            <span
-                                                className={`slm-status-dot ${slmStatus.available ? 'online' : 'offline'}`}
-                                                title={slmStatus.available ? `SLM Conectado (${slmStatus.mode})` : 'SLM Desconectado'}
-                                            />
-                                        )}
-                                        {selectedModel.id === model.id && <FaCheck size={11} />}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Anexar processo */}
+                    {/* Anexar processo (sempre à esquerda) */}
                     <button
                         type="button"
                         className={`slot-btn ${files.length > 0 ? 'has-content' : ''}`}
@@ -297,6 +257,8 @@ const ChatInput = ({
                         style={{ display: 'none' }}
                     />
 
+                    {/* Grupo da direita — todos os outros controles */}
+                    <div className="slot-right-group">
                     {/* Agente ativo */}
                     {activeAgent && (
                         <div
@@ -373,6 +335,47 @@ const ChatInput = ({
                             ⚡ <span className="slot-label">Raio-X</span>
                         </button>
                     )}
+
+                    {/* LLM model picker (último item à direita) */}
+                    <div className="slot-wrapper" ref={dropdownRef}>
+                        <button
+                            type="button"
+                            className={`slot-btn slot-model ${dropdownOpen ? 'open' : ''}`}
+                            onClick={() => setDropdownOpen((v) => !v)}
+                            aria-haspopup="listbox"
+                            aria-expanded={dropdownOpen}
+                            title="Trocar modelo"
+                        >
+                            <span className="slot-dot" style={{ background: selectedModel.color }} />
+                            <span className="slot-label">{selectedModel.name}</span>
+                            <FaChevronDown size={9} className={`slot-chevron ${dropdownOpen ? 'rotated' : ''}`} />
+                        </button>
+
+                        {dropdownOpen && (
+                            <div className="slot-dropdown" role="listbox">
+                                <div className="slot-dropdown-header">Modelo de IA</div>
+                                {LLM_OPTIONS.map((model) => (
+                                    <button
+                                        key={model.id}
+                                        type="button"
+                                        className={`slot-dropdown-item ${selectedModel.id === model.id ? 'selected' : ''}`}
+                                        onClick={() => handleSelectModel(model)}
+                                    >
+                                        <span className="slot-dot" style={{ background: model.color }} />
+                                        <span className="slot-dropdown-name">{model.name}</span>
+                                        {model.id === 'local' && (
+                                            <span
+                                                className={`slm-status-dot ${slmStatus.available ? 'online' : 'offline'}`}
+                                                title={slmStatus.available ? `SLM Conectado (${slmStatus.mode})` : 'SLM Desconectado'}
+                                            />
+                                        )}
+                                        {selectedModel.id === model.id && <FaCheck size={11} />}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    </div>{/* /slot-right-group */}
                 </div>
 
                 {/* File chips — only when files attached */}
