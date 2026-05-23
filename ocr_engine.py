@@ -26,15 +26,26 @@ class MistralDocumentAIEngine:
     Sends pages as base64 images to the API for structured document extraction.
     """
     
+    # Endpoint dedicado em Sweden Central (deployment mistral-document-ai-2512).
+    # Override via MISTRAL_DOC_AI_ENDPOINT em produção.
     ENDPOINT = os.getenv(
         "MISTRAL_DOC_AI_ENDPOINT",
-        "https://assistente-web-resource.services.ai.azure.com/providers/mistral/azure/ocr"
+        "https://rafae-mm2l08qp-swedencentral.services.ai.azure.com/providers/mistral/azure/ocr"
     )
-    
+
     def __init__(self):
-        self.api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+        # Chave dedicada do deployment (preferida). Se ausente, cai para a
+        # chave antiga do Azure OpenAI clássico.
+        self.api_key = (
+            os.getenv("MISTRAL_DOC_AI_KEY", "").strip()
+            or os.getenv("AZURE_API_KEY", "").strip()
+            or os.getenv("AZURE_OPENAI_API_KEY", "").strip()
+        )
         if not self.api_key:
-            raise ValueError("AZURE_OPENAI_API_KEY is required for Mistral Document AI")
+            raise ValueError(
+                "Chave de API necessária para Mistral Document AI. "
+                "Defina MISTRAL_DOC_AI_KEY (preferido) ou AZURE_OPENAI_API_KEY."
+            )
     
     def process_pdf_bytes(self, pdf_bytes: bytes) -> str:
         """Process an entire PDF (as bytes) through Mistral Document AI."""
@@ -80,10 +91,11 @@ class MistralDocumentAIEngine:
     def process_image_bytes(self, image_bytes: bytes, page_num: int = 1) -> str:
         """Process a single page image (PNG/JPEG bytes) through Mistral Document AI."""
         import base64
-        
+        import time as _t
+
         b64_data = base64.b64encode(image_bytes).decode("utf-8")
         image_url = f"data:image/png;base64,{b64_data}"
-        
+
         payload = {
             "model": "mistral-document-ai-2512",
             "document": {
@@ -92,20 +104,35 @@ class MistralDocumentAIEngine:
             },
             "include_image_base64": False
         }
-        
-        response = requests.post(
-            self.ENDPOINT,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            },
-            json=payload,
-            timeout=60
-        )
-        
+
+        img_kb = len(image_bytes) // 1024
+        print(f"  📤 Mistral DocAI pág {page_num}: enviando {img_kb} KB para {self.ENDPOINT}")
+        t0 = _t.time()
+        try:
+            response = requests.post(
+                self.ENDPOINT,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}"
+                },
+                json=payload,
+                # Timeout reduzido: 8s para conectar + 25s para resposta.
+                # Mistral DocAI normal responde em 3-8s; se passar disso, é
+                # melhor cair para Tesseract do que pendurar o pipeline.
+                timeout=(8, 25),
+            )
+        except requests.exceptions.Timeout as e:
+            elapsed = _t.time() - t0
+            raise RuntimeError(f"Mistral DocAI timeout ({elapsed:.1f}s) pág {page_num}") from e
+        except requests.exceptions.ConnectionError as e:
+            raise RuntimeError(f"Mistral DocAI conexão falhou pág {page_num}: {e}") from e
+
+        elapsed = _t.time() - t0
+        print(f"  ✅ Mistral DocAI pág {page_num}: {response.status_code} em {elapsed:.1f}s")
+
         if response.status_code != 200:
             raise RuntimeError(f"Mistral Document AI error {response.status_code}: {response.text[:300]}")
-        
+
         result = response.json()
         pages = result.get("pages", [])
         if pages:
