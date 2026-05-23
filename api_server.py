@@ -919,6 +919,16 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
     try:
         _bg_tasks[task_id]["status"] = "running"
         _bg_tasks[task_id]["progress"] = f"Extraindo texto de {filename}..."
+        _bg_tasks[task_id]["percent"] = 10
+
+        # Callback que process_uploaded_file invoca a cada etapa interna.
+        # Atualiza o dicionário compartilhado lido pelo /api/upload/{task_id}.
+        def _on_progress(msg: str, pct: int):
+            task = _bg_tasks.get(task_id)
+            if not task:
+                return
+            task["progress"] = msg
+            task["percent"] = int(pct)
 
         suffix = os.path.splitext(filename)[1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -933,6 +943,7 @@ def _run_upload_background(task_id: str, file_data: bytes, filename: str, ocr_en
                     ocr_engine_choice=ocr_engine,
                     compress=compress,
                     vectorize=vectorize,
+                    progress_callback=_on_progress,
                 )
         finally:
             os.unlink(tmp_path)
@@ -1021,10 +1032,12 @@ async def upload_status(task_id: str, _auth: dict = Depends(require_auth)):
         "task_id": task_id,
         "status": task["status"],
         "progress": task.get("progress", ""),
+        "percent": task.get("percent", 0),
     }
 
     if task["status"] == "done":
         response["result"] = task["result"]
+        response["percent"] = 100
         del _bg_tasks[task_id]
     elif task["status"] == "error":
         response["error"] = task.get("error", "Erro desconhecido")
