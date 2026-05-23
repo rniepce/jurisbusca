@@ -10,11 +10,71 @@
     overflow: hidden;
 }
 
+/* Desktop closed = rail (mostra só o logo da marca). Mobile sobrescreve abaixo. */
 .sidebar.closed {
-    width: 0;
-    border-right: none;
+    width: 68px;
+}
+
+.sidebar.closed > *:not(.sidebar-brand) {
     opacity: 0;
     pointer-events: none;
+    visibility: hidden;
+    height: 0;
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+}
+
+/* ===== BRAND ===== */
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 14px 12px;
+    margin: 0;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--gray-100);
+    width: 100%;
+    cursor: pointer;
+    font-family: var(--font-family);
+    text-align: left;
+    transition: background 0.15s ease;
+}
+
+.sidebar-brand:hover {
+    background: var(--gray-50);
+}
+
+.sidebar-brand-logo {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    display: block;
+}
+
+.sidebar-brand-text {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.2s ease;
+}
+
+/* Quando colapsada, esconde o texto e centra o logo */
+.sidebar.closed .sidebar-brand {
+    justify-content: center;
+    padding: 14px 8px 12px;
+    border-bottom: 1px solid transparent;
+}
+
+.sidebar.closed .sidebar-brand-text {
+    display: none;
 }
 
 /* ===== TOP — NEW CHAT ===== */
@@ -588,6 +648,22 @@
         opacity: 1;
         pointer-events: none;
         border-right: 1px solid #ebebeb;
+    }
+
+    /* No mobile, sidebar fechada é um overlay deslizando pra fora —
+       o estado de "rail" do desktop não se aplica. Restaura o conteúdo
+       interno para a visão completa (que reaparece quando a sidebar abre). */
+    .sidebar.closed > *:not(.sidebar-brand) {
+        opacity: 1;
+        pointer-events: auto;
+        visibility: visible;
+        height: auto;
+        overflow: visible;
+        padding: revert;
+        margin: revert;
+    }
+    .sidebar.closed .sidebar-brand-text {
+        display: inline;
     }
 
     /* Larger touch targets */

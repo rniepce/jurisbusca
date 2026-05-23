@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fa6';
 import { useNavigate, useLocation } from 'react-router-dom';
 import UserMenu from './UserMenu';
+import logoSvg from '../assets/logo.svg';
 import './Sidebar.css';
 import agentDefinitions from '../config/agents';
 
@@ -94,6 +95,18 @@ const Sidebar = ({
 
     return (
         <nav className={`sidebar ${isOpen ? 'open' : 'closed'}`}>
+            {/* Brand — Assistente TJMG (sempre visível; texto some quando colapsada) */}
+            <button
+                type="button"
+                className="sidebar-brand"
+                onClick={handleNewChat}
+                title="Assistente TJMG — clique para novo chat"
+                aria-label="Assistente TJMG"
+            >
+                <img src={logoSvg} alt="" className="sidebar-brand-logo" />
+                <span className="sidebar-brand-text">Assistente TJMG</span>
+            </button>
+
             {/* New Chat Button */}
             <div className="sidebar-top">
                 <button className="new-chat-btn" id="new-chat-btn" onClick={handleNewChat}>

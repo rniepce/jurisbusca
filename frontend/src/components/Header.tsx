@@ -2,7 +2,6 @@ import { FaSun, FaMoon, FaDesktop } from 'react-icons/fa6';
 import { LuPanelLeftClose, LuPanelLeftOpen } from 'react-icons/lu';
 import { NavLink } from 'react-router-dom';
 import { useTheme } from '../hooks/useTheme';
-import logoSvg from '../assets/logo.svg';
 import './Header.css';
 
 const HEADER_TABS = [
@@ -33,10 +32,6 @@ const Header = ({ onMenuClick, isOpen }: Props) => {
                 <button className="menu-toggle" onClick={onMenuClick} aria-label="Toggle sidebar">
                     {isOpen ? <LuPanelLeftClose /> : <LuPanelLeftOpen />}
                 </button>
-                <div className="header-brand">
-                    <img src={logoSvg} alt="Logo TJMG" className="brand-icon" />
-                    <span className="brand-title">Assistente TJMG</span>
-                </div>
             </div>
 
             <nav className="header-tabs" aria-label="Navegação principal">
