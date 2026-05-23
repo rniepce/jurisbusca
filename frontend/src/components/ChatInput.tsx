@@ -88,13 +88,16 @@ const ChatInput = ({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Poll SLM status periodically (only relevant when picking "SLMs Locais")
+    // Poll SLM status only when the user is interacting with the LLM picker.
+    // Avoids unnecessary 502s in the console when the model picked isn't local.
     useEffect(() => {
+        const needsPolling = selectedModel.id === 'local' || dropdownOpen;
+        if (!needsPolling) return;
         const checkSlm = () => getSlmStatus().then(setSlmStatus).catch(() => { });
         checkSlm();
         const interval = setInterval(checkSlm, 30000);
         return () => clearInterval(interval);
-    }, []);
+    }, [selectedModel.id, dropdownOpen]);
 
     const handleSend = () => {
         if (isLoading) return;
