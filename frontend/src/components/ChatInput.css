@@ -928,6 +928,8 @@
 
 .slot-wrapper {
     position: relative;
+    /* Empurra o seletor de modelo para o canto direito do slot row */
+    margin-left: auto;
 }
 
 .slot-btn {
@@ -1007,7 +1009,10 @@
 .slot-dropdown {
     position: absolute;
     bottom: calc(100% + 6px);
-    left: 0;
+    /* Como o slot-wrapper agora fica no canto direito, ancora o dropdown
+       pela direita para não estourar o lado da tela. */
+    right: 0;
+    left: auto;
     min-width: 220px;
     background: #fff;
     border: 1px solid var(--gray-200);
