@@ -32,6 +32,7 @@ from slowapi.errors import RateLimitExceeded
 
 import backend as be
 import history_db
+import skills_loader
 
 # ── Structured Logging (COARF §XI — logs as event stream to stdout) ───────────
 logging.basicConfig(
@@ -531,6 +532,9 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
         if conv_id not in conversations_fallback:
             _conversations_set(conv_id, [])
         past_messages = conversations_fallback[conv_id]
+        logger.info("CHAT_DBG conv_id=%s past_msgs=%d agent_prompt=%s req_conv_id=%s",
+                    conv_id[:8], len(past_messages),
+                    bool(req.agent_prompt), bool(req.conversation_id))
 
         # ── Build LangChain message list with full history ──────────────
         messages = []
@@ -1363,10 +1367,26 @@ class ClusterAnalyzeRequest(BaseModel):
     agent_prompt: Optional[str] = None
     model: str = "gemini"
     llm: Optional[str] = None
+    # Cluster metadata (from X-Ray) used to auto-select a specialized skill
+    cluster_situacao: Optional[str] = None        # e.g. "Pronto para Sentença"
+    cluster_tags: Optional[list[str]] = None      # e.g. ["execução fiscal", "CDA"]
 
 
-def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_name: str, collection_name: str = "rag_templates_persistent"):
-    """Analyze one process. Runs in a thread pool. Retries on 429 rate limit."""
+def _analyze_single_process(
+    filename: str,
+    text: str,
+    agent_prompt: str,
+    model_name: str,
+    collection_name: str = "rag_templates_persistent",
+    skill_block: str = "",
+):
+    """Analyze one process. Runs in a thread pool. Retries on 429 rate limit.
+
+    `skill_block` is a pre-formatted markdown block (already wrapped by
+    `skills_loader.format_skill_for_prompt`) that, when non-empty, is
+    appended to the system message to give the model specialized
+    guidance for the cluster's process type.
+    """
     import time as _time
 
     MAX_RETRIES = 5
@@ -1381,6 +1401,11 @@ def _analyze_single_process(filename: str, text: str, agent_prompt: str, model_n
 
             if agent_prompt:
                 system_parts.append(agent_prompt)
+
+            # Skill goes right after the agent prompt so it frames how the
+            # document should be read, not just how the output should look.
+            if skill_block:
+                system_parts.append(skill_block)
 
             system_parts.append(
                 f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL):**\n\n{text}\n---"
@@ -1460,6 +1485,19 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, _auth: dict = Depends(requ
 
         collection_name = "rag_templates_persistent"
 
+        # Auto-select a specialized skill once for the whole cluster
+        # (every process in a cluster shares the same type of decision).
+        skill = skills_loader.select_skill(
+            situacao=req.cluster_situacao,
+            tags=req.cluster_tags,
+        )
+        skill_block = skills_loader.format_skill_for_prompt(skill) if skill else ""
+        if skill:
+            logger.info(
+                "cluster-analyze: skill '%s' selected (situacao=%r, tags=%r) for %d processes",
+                skill.name, req.cluster_situacao, req.cluster_tags, len(req.processes),
+            )
+
         results = []
         # Serial execution (max_workers=1) to respect Azure S0 token-per-minute limits
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
@@ -1477,7 +1515,8 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, _auth: dict = Depends(requ
                     p["text"],
                     req.agent_prompt or "",
                     model_name,
-                    collection_name
+                    collection_name,
+                    skill_block,
                 )
                 futures[future] = p["filename"]
             for future in concurrent.futures.as_completed(futures):
@@ -1490,6 +1529,7 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, _auth: dict = Depends(requ
             "results": results,
             "total": len(results),
             "ok_count": sum(1 for r in results if r["status"] == "ok"),
+            "skill_applied": skill.name if skill else None,
         }
 
     except HTTPException:

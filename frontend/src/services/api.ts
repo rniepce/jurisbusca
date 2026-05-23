@@ -289,17 +289,28 @@ export async function uploadBatchXray(files: File[], onProgress: ((progress: str
 
 /**
  * Analyze a cluster of processes individually, in parallel.
- * @param {Array<{filename: string, text: string}>} processes
- * @param {string} [agentPrompt] - Optional agent system prompt
- * @param {string} [model] - Engine model ID
- * @param {string} [llm] - LLM ID
- * @returns {Promise<{results: Array, total: number, ok_count: number}>}
+ * The cluster metadata (situacao + tags) lets the backend auto-select
+ * a specialized skill from ./skills/ to inject into the prompt.
  */
-export async function analyzeCluster(processes: Array<{ filename: string; text: string }>, agentPrompt = '', model = 'claude', llm: string | null = null) {
+export async function analyzeCluster(
+    processes: Array<{ filename: string; text: string }>,
+    agentPrompt = '',
+    model = 'claude',
+    llm: string | null = null,
+    clusterSituacao: string | null = null,
+    clusterTags: string[] | null = null,
+) {
     const res = await fetch(`${API_BASE}/cluster-analyze`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ processes, agent_prompt: agentPrompt, model, llm }),
+        body: JSON.stringify({
+            processes,
+            agent_prompt: agentPrompt,
+            model,
+            llm,
+            cluster_situacao: clusterSituacao,
+            cluster_tags: clusterTags,
+        }),
         redirect: 'error',
     });
 

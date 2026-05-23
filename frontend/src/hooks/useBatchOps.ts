@@ -75,11 +75,26 @@ export function useBatchOps() {
             });
 
             try {
+                // Extract cluster metadata for skill auto-selection by the backend.
+                // - situacao: dominant value in distribuicao_situacao (mode)
+                // - tags: cluster.nome + cluster.tags_juridicas (if present)
+                const distribuicao = (cluster.distribuicao_situacao || {}) as Record<string, number>;
+                const situacaoEntries = Object.entries(distribuicao);
+                const clusterSituacao = situacaoEntries.length
+                    ? situacaoEntries.sort((a, b) => b[1] - a[1])[0][0]
+                    : null;
+                const tagsFromCluster = Array.isArray(cluster.tags_juridicas)
+                    ? (cluster.tags_juridicas as string[])
+                    : [];
+                const clusterTags = [cluster.nome, ...tagsFromCluster].filter(Boolean);
+
                 const result = await analyzeCluster(
                     processes,
                     activeAgent?.prompt || '',
                     globalSelectedModel.id,
-                    globalSelectedModel.llm
+                    globalSelectedModel.llm,
+                    clusterSituacao,
+                    clusterTags,
                 );
 
                 const resultMessages: Message[] = result.results.map((r: BatchResult) => {
@@ -94,9 +109,12 @@ export function useBatchOps() {
                     };
                 });
 
+                const skillNote = result.skill_applied
+                    ? ` · 🧠 skill aplicada: \`${result.skill_applied}\``
+                    : '';
                 const summary: Message = {
                     role: 'assistant',
-                    content: `✅ **Lote concluído:** ${result.ok_count}/${result.total} minutas geradas com sucesso.`,
+                    content: `✅ **Lote concluído:** ${result.ok_count}/${result.total} minutas geradas com sucesso.${skillNote}`,
                     model: 'sistema',
                 };
 
