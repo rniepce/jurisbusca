@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
     FaPaperclip, FaChevronDown, FaCheck,
     FaXmark, FaFile, FaDatabase, FaTableColumns,
-    FaRobot, FaScaleBalanced, FaBrain,
+    FaRobot, FaScaleBalanced, FaBrain, FaFlask,
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
 import { getSlmStatus } from '../services/api';
@@ -46,6 +46,7 @@ const ChatInput = ({
     canvasOpen = false,
     canvasSelection = null,
     onCanvasToggle,
+    onDeepResearch,
     chatTextareaRef,
     prefill,
 }: any) => {
@@ -321,6 +322,22 @@ const ChatInput = ({
                     >
                         <FaTableColumns size={12} />
                         <span className="slot-label">Canvas</span>
+                    </button>
+
+                    {/* Deep Research — only enabled when a process is uploaded */}
+                    <button
+                        type="button"
+                        className="slot-btn slot-deep-research"
+                        onClick={() => onDeepResearch && onDeepResearch()}
+                        disabled={!hasContext || isLoading}
+                        title={
+                            !hasContext
+                                ? 'Anexe um processo para usar Deep Research'
+                                : 'Deep Research — investigação aprofundada do processo anexado'
+                        }
+                    >
+                        <FaFlask size={12} />
+                        <span className="slot-label">Deep Research</span>
                     </button>
 
                     {/* X-Ray (only when 2+ files attached) */}

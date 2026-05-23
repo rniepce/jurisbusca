@@ -359,6 +359,64 @@ export async function replicateBatchPilot({ pilotInstructions, pilotMinuta, pilo
 }
 
 
+// ── Deep Research ────────────────────────────────────────────────────────────
+
+export type DeepResearchEvent =
+    | { event: 'phase'; phase: string; message: string }
+    | { event: 'plan'; questions: string[] }
+    | { event: 'question_start'; index: number; total: number; question: string }
+    | { event: 'question_done'; index: number; answer: string }
+    | { event: 'question_error'; index: number; message: string }
+    | { event: 'done'; dossier: string; qa_pairs: { question: string; answer: string }[]; chunks_indexed: number }
+    | { event: 'error'; message: string };
+
+/**
+ * Run deep research on an uploaded process text. Streams progress events from
+ * the backend via SSE; the consumer receives a callback per event.
+ */
+export async function runDeepResearch(
+    text: string,
+    onEvent: (event: DeepResearchEvent) => void,
+    model: string | null = null,
+): Promise<void> {
+    const res = await fetch(`${API_BASE}/deep-research`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ text, model }),
+        redirect: 'error',
+    });
+
+    if (!res.ok || !res.body) {
+        const err = await safeJson(res, 'Deep Research').catch(() => ({}));
+        throw new Error(err.detail || `Deep research falhou (${res.status})`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    // Parse SSE stream: events are separated by "\n\n", each line begins with "data: "
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let sepIndex;
+        while ((sepIndex = buffer.indexOf('\n\n')) >= 0) {
+            const rawEvent = buffer.slice(0, sepIndex);
+            buffer = buffer.slice(sepIndex + 2);
+            const dataLine = rawEvent.split('\n').find((l) => l.startsWith('data: '));
+            if (!dataLine) continue;
+            try {
+                const parsed = JSON.parse(dataLine.slice(6)) as DeepResearchEvent;
+                onEvent(parsed);
+            } catch {
+                // ignore malformed events
+            }
+        }
+    }
+}
+
+
 /**
  * Generate a Style Dossier from template decision files.
  * @param {File[]} files - Template files (PDF/DOCX/TXT)

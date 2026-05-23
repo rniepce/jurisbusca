@@ -20,6 +20,7 @@ import { useUIStore, useChatStore } from './store';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useOcrUpload } from './hooks/useOcrUpload';
 import { useBatchOps } from './hooks/useBatchOps';
+import { useDeepResearch } from './hooks/useDeepResearch';
 import { useJurisprudencia } from './hooks/useJurisprudencia';
 import { useCustomAgents } from './hooks/useCustomAgents';
 import { useStyleReport } from './hooks/useStyleReport';
@@ -36,6 +37,7 @@ const SustentacaoPanel = lazy(() => import('./components/sustentacao/Sustentacao
 const ModelManagerPanel = lazy(() => import('./components/ModelManagerPanel'));
 const AgentBuilderChat = lazy(() => import('./components/AgentBuilderChat'));
 const LotePage = lazy(() => import('./components/LotePage'));
+const DeepResearchPanel = lazy(() => import('./components/DeepResearchPanel'));
 
 // ── Route constants ──
 const ROUTES = {
@@ -81,6 +83,7 @@ function MainApp() {
     const ocr = useOcrUpload();
     const sender = useMessageSender({ canvas, ragStatus, setRagStatus });
     const batch = useBatchOps();
+    const deepResearch = useDeepResearch();
     const juris = useJurisprudencia();
     const style = useStyleReport();
     const agents = useCustomAgents();
@@ -124,10 +127,25 @@ function MainApp() {
     const hasMessages = messages.length > 0;
     const showBatchPanel = batch.batchResults.length > 0;
     const isPanelRoute = PANEL_PATHS.has(currentPath);
-    const showFullPanel = isPanelRoute || !!batch.xrayReport;
+    const deepResearchOpen = deepResearch.state.active || !!deepResearch.state.dossier || !!deepResearch.state.error;
+    const showFullPanel = isPanelRoute || !!batch.xrayReport || deepResearchOpen;
 
-    // ── Content area: either xray report, lazy panel routes, or chat/welcome ──
+    // ── Content area: either deep research, xray report, lazy panel routes, or chat/welcome ──
     const renderMainContent = () => {
+        if (deepResearchOpen) {
+            return (
+                <LazyPanel label="Deep Research" onReset={deepResearch.reset}>
+                    <DeepResearchPanel
+                        state={deepResearch.state}
+                        onClose={deepResearch.reset}
+                        onSendToCanvas={(dossier: string) => {
+                            canvas.setCanvasContent(dossier);
+                            canvas.setCanvasOpen(true);
+                        }}
+                    />
+                </LazyPanel>
+            );
+        }
         if (batch.xrayReport && currentPath !== ROUTES.lote) {
             return (
                 <LazyPanel label="Raio-X" onReset={() => batch.setXrayReport(null)}>
@@ -311,7 +329,7 @@ function MainApp() {
                     )}
                 </div>
 
-                {!isPanelRoute && !batch.xrayReport && (
+                {!isPanelRoute && !batch.xrayReport && !deepResearchOpen && (
                     <ChatInput
                         onSend={sender.handleSend}
                         onXray={batch.handleXray}
@@ -328,6 +346,7 @@ function MainApp() {
                         canvasOpen={canvas.canvasOpen}
                         canvasSelection={canvas.canvasSelection}
                         onCanvasToggle={canvas.handleCanvasToggle}
+                        onDeepResearch={() => deepResearch.start()}
                         chatTextareaRef={canvas.chatTextareaRef}
                     />
                 )}

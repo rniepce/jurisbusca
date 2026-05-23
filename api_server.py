@@ -33,6 +33,7 @@ from slowapi.errors import RateLimitExceeded
 import backend as be
 import history_db
 import skills_loader
+import deep_research_engine
 
 # ── Structured Logging (COARF §XI — logs as event stream to stdout) ───────────
 logging.basicConfig(
@@ -1537,6 +1538,53 @@ async def cluster_analyze(req: ClusterAnalyzeRequest, _auth: dict = Depends(requ
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro na análise em lote: {str(e)}")
+
+
+# ── Deep Research on uploaded process ─────────────────────────────────────────
+
+class DeepResearchRequest(BaseModel):
+    text: str
+    model: Optional[str] = None      # e.g. "gpt-5.3-chat", "gemini-3.1-pro"
+    top_k: Optional[int] = None      # chunks per question (default 5)
+
+
+@app.post("/api/deep-research")
+async def deep_research_endpoint(req: DeepResearchRequest, _auth: dict = Depends(require_auth)):
+    """Stream deep research progress + final dossier for an uploaded process.
+
+    The pipeline chunks the process, embeds into an ephemeral vector store,
+    plans investigation questions, runs a research loop per question, and
+    consolidates everything into a structured markdown dossier. All steps
+    are streamed as Server-Sent Events so the frontend can render progress.
+    """
+    if not req.text or len(req.text.strip()) < 500:
+        raise HTTPException(status_code=400, detail="Texto muito curto para deep research (mínimo ~500 caracteres).")
+
+    api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="AZURE_OPENAI_API_KEY não configurada no servidor.")
+
+    model_name = req.model or "gpt-5.3-chat"
+    top_k = req.top_k or 5
+
+    def _stream():
+        try:
+            for event in deep_research_engine.run_deep_research(
+                text=req.text,
+                api_key=api_key,
+                model_name=model_name,
+                top_k=top_k,
+            ):
+                yield event
+        except Exception as exc:
+            traceback.print_exc()
+            yield f"data: {json.dumps({'event': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
 
 
 # ── Batch Pilot Replication (pilot-guided batch analysis) ─────────────────────
