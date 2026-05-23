@@ -7,6 +7,7 @@ import {
 import OcrPreview from './OcrPreview';
 import JurisprudenciaInsightsCard from './JurisprudenciaInsightsCard';
 import logoSvg from '../assets/logo.svg';
+import { formatMarkdown } from '../utils/markdown';
 import './ChatArea.css';
 
 // Allow CSS custom properties in style objects
@@ -634,81 +635,5 @@ const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessi
         </div>
     );
 };
-
-function formatMarkdown(text: any): string {
-    // Robust type coercion: handle non-string inputs (objects, arrays, null, etc.)
-    if (text === null || text === undefined) return '';
-
-    // Deep Extraction algorithm for bizarre LLM/Langchain JSON formats arriving at the UI
-    if (typeof text !== 'string') {
-        if (Array.isArray(text)) {
-            // Aggregate all array items into a single string recursively
-            text = text.map(item => {
-                if (typeof item === 'string') return item;
-                if (item?.type === 'thinking') return ''; // ignore logic blocks from deepseek/claude if they leak
-                return item?.text || item?.content || item?.message || JSON.stringify(item);
-            }).filter(Boolean).join('\n');
-        } else if (typeof text === 'object') {
-            // It's a dict. Try known LLM response keys
-            text = text.text || text.content || text.message || text.output || JSON.stringify(text);
-        } else {
-            // Fallback for numbers, booleans, etc
-            text = String(text);
-        }
-    }
-
-    if (!text || typeof text !== 'string') return '';
-
-    let processed = text.replace(/\\n/g, '\n');
-    let html = processed
-        // Escape HTML
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        // Code blocks (triple backtick)
-        .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>')
-        // Inline code
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        // Headers
-        .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-        .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-        // Bold + italic
-        .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        // Horizontal rule
-        .replace(/^---$/gm, '<hr/>')
-        // Tables (markdown pipe tables)
-        .replace(/^(\|.+\|)\n\|[-| :]+\|\n((?:\|.+\|\n?)+)/gm, (match, header, body) => {
-            const headers = header.split('|').filter(c => c.trim()).map(c => `<th>${c.trim()}</th>`).join('');
-            const rows = body.trim().split('\n').map(row => {
-                const cols = row.split('|').filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join('');
-                return `<tr>${cols}</tr>`;
-            }).join('');
-            return `<table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
-        })
-        // Unordered list items
-        .replace(/^\s*[-*] (.+)$/gm, '<li>$1</li>')
-        // Ordered list items
-        .replace(/^\s*\d+\.\s(.+)$/gm, '<li>$1</li>')
-        // Line breaks (double newline → paragraph, single → <br>)
-        .replace(/\n\n/g, '</p><p>')
-        .replace(/\n/g, '<br/>');
-
-    // Post-processing: wrap consecutive <li> items in <ul>
-    html = html.replace(/((?:<li>.*?<\/li>(?:<br\/>)?)+)/g, '<ul>$1</ul>');
-    // Clean up any <br/> inside <ul> between list items
-    html = html.replace(/<ul>([\s\S]*?)<\/ul>/g, (match, inner) => {
-        return '<ul>' + inner.replace(/<br\/>/g, '') + '</ul>';
-    });
-
-    // Wrap in paragraph if not already structured
-    if (!html.startsWith('<h') && !html.startsWith('<pre') && !html.startsWith('<ul') && !html.startsWith('<table')) {
-        html = '<p>' + html + '</p>';
-    }
-
-    return html;
-}
 
 export default ChatArea;

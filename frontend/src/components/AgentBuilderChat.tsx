@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { FaXmark, FaPaperPlane, FaWandMagicSparkles } from 'react-icons/fa6';
 import { sendMessage } from '../services/api';
+import { formatMarkdown } from '../utils/markdown';
 import './AgentBuilderChat.css';
 
 const ENGINEER_SYSTEM_PROMPT = `# PROMPT (VERSÃO 3.2): ENGENHEIRO DE PROMPT PARA CRIAÇÃO DE ASSISTENTES VIRTUAIS
@@ -235,9 +236,11 @@ const AgentBuilderChat = ({ onClose, onPromptReady }) => {
             {/* Messages */}
             <div className="agent-builder-messages">
                 {messages.map((msg, i) => (
-                    <div key={i} className={`builder-msg ${msg.role}`}>
-                        {msg.content}
-                    </div>
+                    <div
+                        key={i}
+                        className={`builder-msg ${msg.role}`}
+                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
+                    />
                 ))}
 
                 {isLoading && (
