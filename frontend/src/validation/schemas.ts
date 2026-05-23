@@ -43,7 +43,8 @@ export const resetPasswordSchema = z
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 export const createAgentSchema = z.object({
     name: z.string().trim().min(2, 'O nome precisa ter ao menos 2 caracteres.').max(60, 'O nome é muito longo.'),
-    prompt: z.string().trim().min(20, 'O prompt deve ter ao menos 20 caracteres.'),
+    description: z.string().trim().max(200, 'Descrição muito longa.').optional().default(''),
+    prompt: z.string().trim().min(20, 'As instruções devem ter ao menos 20 caracteres.'),
     color: z.string().regex(HEX_COLOR, 'Cor inválida.'),
 });
 
@@ -55,6 +56,6 @@ export function firstError(err: z.ZodError): string {
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type SignupInput = z.infer<typeof signupSchema>;
-export type CreateAgentInput = z.infer<typeof createAgentSchema>;
+export type CreateAgentInput = z.infer<typeof createAgentSchema> & { files?: File[] };
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

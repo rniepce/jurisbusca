@@ -76,7 +76,7 @@ export default function UserMenu({ onOpenMemory }: Props) {
                         role="menuitem"
                     >
                         <FaGear size={13} />
-                        <span>Configurações &amp; Memória</span>
+                        <span>Configurações</span>
                     </button>
 
                     <button

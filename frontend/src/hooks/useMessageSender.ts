@@ -42,7 +42,9 @@ export function useMessageSender({ canvas, ragStatus, setRagStatus }: UseMessage
             _ocrEngine: string | undefined,
             templateFiles: File[] | undefined,
             useRag = false,
-            { hideUserBubble = false, overridePrompt = null }: SendOptions = {}
+            { hideUserBubble = false, overridePrompt = null }: SendOptions = {},
+            jurisEnabled = true,
+            reasoningEnabled = false
         ) => {
             const state = useChatStore.getState();
             const {
@@ -135,6 +137,8 @@ export function useMessageSender({ canvas, ragStatus, setRagStatus }: UseMessage
                     }
                 }
 
+                const agentKnowledge = (activeAgent as any)?.knowledge || null;
+
                 const result = await sendMessage({
                     message: finalMessage,
                     model: selectedModel.id,
@@ -145,6 +149,9 @@ export function useMessageSender({ canvas, ragStatus, setRagStatus }: UseMessage
                     styleDossier: currentStyleDossier,
                     useRag,
                     jurisprudenceContext: jurisContext || null,
+                    jurisEnabled,
+                    reasoningEnabled,
+                    agentKnowledge,
                 });
 
                 setConversationId(result.conversation_id);
