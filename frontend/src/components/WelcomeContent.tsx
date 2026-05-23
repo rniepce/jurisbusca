@@ -1,5 +1,12 @@
 import React from 'react';
-import { FaScaleBalanced, FaGavel, FaPaperclip, FaRobot } from 'react-icons/fa6';
+import {
+    FaScaleBalanced,
+    FaGavel,
+    FaLayerGroup,
+    FaCubes,
+    FaUserPlus,
+    FaWandMagicSparkles,
+} from 'react-icons/fa6';
 import { useAuth } from './AuthContext';
 import './WelcomeContent.css';
 
@@ -9,14 +16,16 @@ interface Action {
     title: string;
     desc: string;
     onClick?: () => void;
-    accent?: 'blue' | 'amber' | 'purple' | 'green';
+    accent?: 'blue' | 'amber' | 'purple' | 'green' | 'teal' | 'rose';
 }
 
 interface Props {
     onOpenJurisprudencia?: () => void;
     onOpenSustentacao?: () => void;
-    onAttachFile?: () => void;
-    onOpenAgents?: () => void;
+    onOpenLote?: () => void;
+    onOpenModelos?: () => void;
+    onCreateAgent?: () => void;
+    onOpenPromptEngineer?: () => void;
 }
 
 function getGreeting(): string {
@@ -36,8 +45,10 @@ function getFirstName(fullName?: string | null, email?: string | null): string {
 const WelcomeContent: React.FC<Props> = ({
     onOpenJurisprudencia,
     onOpenSustentacao,
-    onAttachFile,
-    onOpenAgents,
+    onOpenLote,
+    onOpenModelos,
+    onCreateAgent,
+    onOpenPromptEngineer,
 }) => {
     const { user } = useAuth();
     const firstName = getFirstName(
@@ -64,20 +75,36 @@ const WelcomeContent: React.FC<Props> = ({
             accent: 'blue',
         },
         {
-            id: 'analisar',
-            icon: <FaPaperclip size={22} />,
-            title: 'Analisar processo',
-            desc: 'Anexe um PDF para começar a conversa',
-            onClick: onAttachFile,
+            id: 'lote',
+            icon: <FaLayerGroup size={22} />,
+            title: 'Análise em Lote',
+            desc: 'Processe vários processos de uma vez',
+            onClick: onOpenLote,
             accent: 'purple',
         },
         {
-            id: 'agentes',
-            icon: <FaRobot size={22} />,
-            title: 'Agentes Jurídicos',
-            desc: 'Gabinete 2.0, Revisor QA e mais',
-            onClick: onOpenAgents,
+            id: 'modelos',
+            icon: <FaCubes size={22} />,
+            title: 'Gestor de Modelos',
+            desc: 'Suba e gerencie seus modelos de minutas',
+            onClick: onOpenModelos,
             accent: 'green',
+        },
+        {
+            id: 'criar-agente',
+            icon: <FaUserPlus size={22} />,
+            title: 'Criar Agente',
+            desc: 'Monte um assistente especializado para você',
+            onClick: onCreateAgent,
+            accent: 'teal',
+        },
+        {
+            id: 'prompt-engineer',
+            icon: <FaWandMagicSparkles size={22} />,
+            title: 'Engenheiro de Prompts',
+            desc: 'Crie e refine prompts com ajuda da IA',
+            onClick: onOpenPromptEngineer,
+            accent: 'rose',
         },
     ];
 

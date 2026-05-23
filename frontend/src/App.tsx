@@ -226,15 +226,13 @@ function MainApp() {
                             <WelcomeContent
                                 onOpenJurisprudencia={() => navigate(ROUTES.jurisprudencia)}
                                 onOpenSustentacao={() => navigate(ROUTES.sustentacao)}
-                                onAttachFile={() => {
-                                    canvas.chatTextareaRef.current?.focus();
-                                    const attachBtn = document.querySelector('[aria-label^="Anexar processo"]') as HTMLButtonElement | null;
-                                    attachBtn?.click();
+                                onOpenLote={() => navigate(ROUTES.lote)}
+                                onOpenModelos={() => navigate(ROUTES.modelos)}
+                                onCreateAgent={() => {
+                                    agents.setPendingPrompt('');
+                                    agents.setShowCreateDialog(true);
                                 }}
-                                onOpenAgents={() => {
-                                    if (!sidebarOpen) setSidebarOpen(true);
-                                    setTimeout(() => document.getElementById('agent-gabinete-2.0')?.focus(), 100);
-                                }}
+                                onOpenPromptEngineer={() => navigate(ROUTES.engenheiroPrompts)}
                             />
                         )
                     }
