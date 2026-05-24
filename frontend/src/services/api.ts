@@ -403,13 +403,29 @@ export async function replicateBatchPilot({ pilotInstructions, pilotMinuta, pilo
 
 // ── Deep Research ────────────────────────────────────────────────────────────
 
+export interface DeepResearchSection {
+    id: string;
+    title: string;
+    content: string;
+}
+
 export type DeepResearchEvent =
     | { event: 'phase'; phase: string; message: string }
     | { event: 'plan'; questions: string[] }
     | { event: 'question_start'; index: number; total: number; question: string }
     | { event: 'question_done'; index: number; answer: string }
     | { event: 'question_error'; index: number; message: string }
-    | { event: 'done'; dossier: string; qa_pairs: { question: string; answer: string }[]; chunks_indexed: number }
+    | { event: 'section_start'; index: number; total: number; title: string; section_id: string }
+    | { event: 'section_done'; index: number; title: string; section_id: string; content: string }
+    | { event: 'section_error'; index: number; title: string; section_id: string; message: string }
+    | {
+        event: 'done';
+        dossier: string;
+        executive_summary: string;
+        sections: DeepResearchSection[];
+        qa_pairs: { question: string; answer: string }[];
+        chunks_indexed: number;
+    }
     | { event: 'error'; message: string };
 
 /**
@@ -1136,6 +1152,18 @@ export async function deleteFlow(flowId: string): Promise<void> {
         headers: await getAuthHeaders(),
     });
     if (!res.ok) throw new Error(`Erro ao apagar fluxo (${res.status})`);
+}
+
+export async function extractFlowFiles(files: File[]): Promise<{ text: string; files: string[] }> {
+    const form = new FormData();
+    files.forEach(f => form.append('files', f));
+    const res = await fetch(`${API_BASE}/flows/extract-files`, {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: form,
+    });
+    if (!res.ok) throw new Error(`Erro ao extrair arquivos (${res.status})`);
+    return safeJson(res, 'Extract flow files');
 }
 
 export async function runFlow(

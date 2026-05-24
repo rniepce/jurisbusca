@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { runDeepResearch, type DeepResearchEvent } from '../services/api';
+import { runDeepResearch, type DeepResearchEvent, type DeepResearchSection } from '../services/api';
 import { useChatStore } from '../store';
 import { errorText } from './utils';
 
@@ -10,11 +10,21 @@ export interface DeepResearchQA {
     error?: string;
 }
 
+export interface DeepResearchSectionState {
+    id: string;
+    title: string;
+    content?: string;
+    status: 'pending' | 'running' | 'done' | 'error';
+    error?: string;
+}
+
 export interface DeepResearchState {
     active: boolean;
     phase: string;            // current phase message
-    phaseId: string;          // 'chunking' | 'embedding' | 'planning' | 'researching' | 'synthesizing' | 'done'
+    phaseId: string;          // 'chunking' | 'embedding' | 'planning' | 'researching' | 'synthesizing' | 'summarizing' | 'done'
     questions: DeepResearchQA[];
+    sections: DeepResearchSectionState[];
+    executiveSummary: string | null;
     dossier: string | null;
     error: string | null;
     chunksIndexed: number;
@@ -25,6 +35,8 @@ const INITIAL: DeepResearchState = {
     phase: '',
     phaseId: '',
     questions: [],
+    sections: [],
+    executiveSummary: null,
     dossier: null,
     error: null,
     chunksIndexed: 0,
@@ -33,7 +45,7 @@ const INITIAL: DeepResearchState = {
 /**
  * Runs a deep-research pipeline on the currently uploaded process text,
  * consuming SSE events from the backend and exposing progress so the UI
- * can render a live dossier-building experience.
+ * can render a live, section-by-section report-building experience.
  */
 export function useDeepResearch() {
     const uploadedText = useChatStore((s) => s.uploadedText);
@@ -88,11 +100,50 @@ export function useDeepResearch() {
                                         i === event.index ? { ...q, status: 'error', error: event.message } : q
                                     );
                                     break;
+                                case 'section_start':
+                                    {
+                                        // Ensure slot exists (first time we see this index)
+                                        const existing = prev.sections.find((s) => s.id === event.section_id);
+                                        if (!existing) {
+                                            next.sections = [
+                                                ...prev.sections,
+                                                { id: event.section_id, title: event.title, status: 'running' },
+                                            ];
+                                        } else {
+                                            next.sections = prev.sections.map((s) =>
+                                                s.id === event.section_id ? { ...s, status: 'running' } : s
+                                            );
+                                        }
+                                        next.phase = `Redigindo seção ${event.index + 1}/${event.total}: ${event.title}`;
+                                    }
+                                    break;
+                                case 'section_done':
+                                    next.sections = prev.sections.map((s) =>
+                                        s.id === event.section_id
+                                            ? { ...s, content: event.content, status: 'done' }
+                                            : s
+                                    );
+                                    break;
+                                case 'section_error':
+                                    next.sections = prev.sections.map((s) =>
+                                        s.id === event.section_id
+                                            ? { ...s, status: 'error', error: event.message }
+                                            : s
+                                    );
+                                    break;
                                 case 'done':
                                     next.dossier = event.dossier;
+                                    next.executiveSummary = event.executive_summary;
                                     next.chunksIndexed = event.chunks_indexed;
+                                    // Replace section state with final, complete sections
+                                    next.sections = event.sections.map((s: DeepResearchSection) => ({
+                                        id: s.id,
+                                        title: s.title,
+                                        content: s.content,
+                                        status: 'done' as const,
+                                    }));
                                     next.phaseId = 'done';
-                                    next.phase = 'Dossiê pronto.';
+                                    next.phase = 'Relatório completo pronto.';
                                     next.active = false;
                                     break;
                                 case 'error':
