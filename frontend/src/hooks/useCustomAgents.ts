@@ -5,9 +5,11 @@ import {
     deleteCustomAgent,
     shareCustomAgent,
     uploadAgentFiles,
+    createFlow,
 } from '../services/api';
 import { useAgentStore, useChatStore } from '../store';
 import type { CustomAgent } from '../types/chat';
+import type { AgentTemplate, FlowTemplate } from '../components/agentLibraryData';
 
 interface CreateAgentInput {
     name: string;
@@ -88,6 +90,31 @@ export function useCustomAgents() {
         [shareAgent]
     );
 
+    const refreshAgentList = useCallback(async () => {
+        try {
+            const data = await getCustomAgents();
+            setCustomAgents(data.agents || []);
+        } catch (e) {
+            console.warn('Failed to refresh agents:', e);
+        }
+    }, [setCustomAgents]);
+
+    const handleUseLibraryAgent = useCallback(async (tpl: AgentTemplate) => {
+        const created = await createCustomAgent({
+            name: tpl.name,
+            description: tpl.description,
+            prompt: tpl.prompt,
+            color: tpl.color,
+        });
+        addCustomAgent(created);
+    }, [addCustomAgent]);
+
+    const handleUseLibraryFlow = useCallback(async (tpl: FlowTemplate) => {
+        await createFlow(tpl.name, tpl.config, tpl.description, tpl.color);
+        // Fluxos aparecem como agentes orquestradores via list_custom_agents — re-fetch
+        await refreshAgentList();
+    }, [refreshAgentList]);
+
     return {
         customAgents,
         showAgentBuilder,
@@ -104,5 +131,8 @@ export function useCustomAgents() {
         handleDeleteAgent,
         handleShareAgentOpen,
         handleShareAgentConfirm,
+        handleUseLibraryAgent,
+        handleUseLibraryFlow,
+        refreshAgentList,
     };
 }

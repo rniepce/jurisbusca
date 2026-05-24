@@ -296,6 +296,8 @@ function MainApp() {
                 onCreateAgent={() => { agents.setPendingPrompt(''); agents.setShowCreateDialog(true); }}
                 onDeleteAgent={agents.handleDeleteAgent}
                 onShareAgent={agents.handleShareAgentOpen}
+                onUseLibraryAgent={agents.handleUseLibraryAgent}
+                onUseLibraryFlow={agents.handleUseLibraryFlow}
                 onOpenMemory={() => setShowMemoryPanel(true)}
                 onOpenSustentacao={() => navigate(ROUTES.sustentacao)}
             />

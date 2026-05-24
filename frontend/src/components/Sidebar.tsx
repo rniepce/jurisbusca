@@ -27,6 +27,8 @@ const Sidebar = ({
     onCreateAgent,
     onDeleteAgent,
     onShareAgent,
+    onUseLibraryAgent,
+    onUseLibraryFlow,
     onOpenMemory,
     onOpenSustentacao,
 }: any) => {
@@ -227,7 +229,11 @@ const Sidebar = ({
             </div>
 
             {libraryOpen && (
-                <AgentLibraryDialog onClose={() => setLibraryOpen(false)} />
+                <AgentLibraryDialog
+                    onClose={() => setLibraryOpen(false)}
+                    onUseAgent={onUseLibraryAgent}
+                    onUseFlow={onUseLibraryFlow}
+                />
             )}
 
             {/* Divider */}
