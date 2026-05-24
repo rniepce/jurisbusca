@@ -15,9 +15,12 @@ Designed for large/complex processes (hundreds of pages). Total runtime can reac
 """
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
+import queue as _queue
 import re
+import time as _time
 import uuid
 from typing import Iterator, Optional
 
@@ -41,6 +44,16 @@ MAX_OUTPUT_TOKENS_SUMMARY = 4000          # executive summary budget
 # (~750 tokens) when used as section context. The full text is still preserved in
 # the qa_pairs payload returned to the UI.
 QA_TRIM_FOR_SYNTHESIS = 3000
+
+# ── Parallelism ─────────────────────────────────────────────────────────────
+# Concurrency caps. Tuned for Azure OpenAI S0/S1 TPM limits: 5 reasoning calls
+# in flight at ~12k tokens each ≈ 60k TPM peak. If you provision higher TPM
+# (PTU or paid tier), you can raise these.
+MAX_PARALLEL_QUESTIONS = 5
+MAX_PARALLEL_SECTIONS = 4
+# Retry on 429 (Azure rate limit) — exponential backoff: 30, 60, 120, 240s
+RATE_LIMIT_MAX_RETRIES = 5
+RATE_LIMIT_BASE_DELAY = 30
 
 
 # ── Report skeleton (12 sections, generated independently) ────────────────
@@ -347,6 +360,28 @@ def _parse_questions(plan_text: str) -> list[str]:
     return questions[:MAX_QUESTIONS]
 
 
+def _invoke_with_retry(llm, messages, label: str = "llm call"):
+    """llm.invoke with exponential backoff on 429 rate-limit errors.
+
+    Other exceptions propagate immediately so the caller can record them
+    as a fatal failure for that question/section without consuming budget.
+    """
+    for attempt in range(RATE_LIMIT_MAX_RETRIES + 1):
+        try:
+            return llm.invoke(messages)
+        except Exception as exc:
+            err = str(exc)
+            if "429" in err and attempt < RATE_LIMIT_MAX_RETRIES:
+                delay = RATE_LIMIT_BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    "deep-research: rate limit on %s, retry %d/%d after %ds",
+                    label, attempt + 1, RATE_LIMIT_MAX_RETRIES, delay,
+                )
+                _time.sleep(delay)
+                continue
+            raise
+
+
 def _format_qa_for_synthesis(qa_pairs: list[dict]) -> str:
     """Trim each Q&A pair so the full block fits in a section synthesis call.
 
@@ -449,70 +484,159 @@ def run_deep_research(
         logger.info("deep-research: %d questions planned", len(questions))
         yield _event("plan", questions=questions)
 
-        # ── 5. Research loop ──
-        yield _event("phase", phase="researching", message=f"Investigando {len(questions)} pontos do processo...")
-        qa_pairs: list[dict] = []
-        for idx, question in enumerate(questions):
-            yield _event("question_start", index=idx, total=len(questions), question=question)
+        # ── 5. Research loop (PARALLEL) ──
+        yield _event(
+            "phase",
+            phase="researching",
+            message=(
+                f"Investigando {len(questions)} pontos em paralelo "
+                f"(até {MAX_PARALLEL_QUESTIONS} simultâneos)..."
+            ),
+        )
+
+        # Worker drains LLM results into a thread-safe queue; main coroutine
+        # yields events as they arrive so the UI updates in near real-time.
+        _SENTINEL_Q = object()
+        event_queue: _queue.Queue = _queue.Queue()
+
+        def _worker_question(idx: int, question: str):
+            event_queue.put(_event(
+                "question_start", index=idx, total=len(questions), question=question,
+            ))
             try:
                 relevant = vector_store.similarity_search(question, k=top_k)
                 chunks_text = "\n\n".join(
                     f"[Trecho {d.metadata.get('chunk_id', '?')}]\n{d.page_content.strip()}"
                     for d in relevant
                 )
-                research_resp = research_llm.invoke([
-                    SystemMessage(content=PROMPT_RESEARCH.format(question=question, chunks=chunks_text)),
-                    HumanMessage(content="Realize a análise minuciosa solicitada."),
-                ])
-                answer = be.safe_content(research_resp)
-                qa_pairs.append({"question": question, "answer": answer})
-                yield _event("question_done", index=idx, answer=answer)
+                resp = _invoke_with_retry(
+                    research_llm,
+                    [
+                        SystemMessage(content=PROMPT_RESEARCH.format(
+                            question=question, chunks=chunks_text,
+                        )),
+                        HumanMessage(content="Realize a análise minuciosa solicitada."),
+                    ],
+                    label=f"question[{idx}]",
+                )
+                answer = be.safe_content(resp)
+                event_queue.put(_event("question_done", index=idx, answer=answer))
+                return idx, question, answer
             except Exception as exc:
-                logger.exception("deep-research: failed on question %d", idx)
-                qa_pairs.append({"question": question, "answer": f"Erro ao processar: {exc}"})
-                yield _event("question_error", index=idx, message=str(exc))
+                logger.exception("deep-research: question %d failed", idx)
+                msg = str(exc)
+                event_queue.put(_event("question_error", index=idx, message=msg))
+                return idx, question, f"Erro ao processar: {msg}"
+            finally:
+                event_queue.put(_SENTINEL_Q)
 
-        # ── 6. Section-by-section synthesis ──
+        qa_dict: dict[int, dict] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL_QUESTIONS) as ex:
+            futures = [ex.submit(_worker_question, i, q) for i, q in enumerate(questions)]
+            finished = 0
+            while finished < len(futures):
+                try:
+                    # 20s timeout doubles as a keepalive heartbeat for proxies.
+                    item = event_queue.get(timeout=20)
+                except _queue.Empty:
+                    yield ": keepalive\n\n"
+                    continue
+                if item is _SENTINEL_Q:
+                    finished += 1
+                else:
+                    yield item
+            # Drain any straggler events
+            while not event_queue.empty():
+                item = event_queue.get_nowait()
+                if item is not _SENTINEL_Q:
+                    yield item
+            # Collect ordered results
+            for f in futures:
+                idx, question, answer = f.result()
+                qa_dict[idx] = {"question": question, "answer": answer}
+        qa_pairs = [qa_dict[i] for i in sorted(qa_dict.keys())]
+
+        # ── 6. Section-by-section synthesis (PARALLEL) ──
         yield _event(
             "phase",
             phase="synthesizing",
-            message=f"Redigindo o relatório seção por seção ({len(REPORT_SECTIONS)} seções)...",
+            message=(
+                f"Redigindo o relatório seção por seção em paralelo "
+                f"(até {MAX_PARALLEL_SECTIONS} seções simultâneas)..."
+            ),
         )
         qa_block = _format_qa_for_synthesis(qa_pairs)
-        sections: list[dict] = []
-        for s_idx, section_def in enumerate(REPORT_SECTIONS):
-            yield _event(
+
+        _SENTINEL_S = object()
+        section_queue: _queue.Queue = _queue.Queue()
+
+        def _worker_section(s_idx: int, section_def: dict):
+            section_queue.put(_event(
                 "section_start",
                 index=s_idx,
                 total=len(REPORT_SECTIONS),
                 title=section_def["title"],
                 section_id=section_def["id"],
-            )
+            ))
             try:
-                section_resp = section_llm.invoke([
-                    SystemMessage(content=PROMPT_SECTION.format(
-                        section_title=section_def["title"],
-                        section_guidance=section_def["guidance"],
-                        qa_pairs=qa_block,
-                    )),
-                    HumanMessage(content=f"Redija a seção '{section_def['title']}' agora."),
-                ])
-                content = be.safe_content(section_resp).strip()
-                sections.append({
-                    "id": section_def["id"],
-                    "title": section_def["title"],
-                    "content": content,
-                })
-                yield _event("section_done", index=s_idx, title=section_def["title"], section_id=section_def["id"], content=content)
+                resp = _invoke_with_retry(
+                    section_llm,
+                    [
+                        SystemMessage(content=PROMPT_SECTION.format(
+                            section_title=section_def["title"],
+                            section_guidance=section_def["guidance"],
+                            qa_pairs=qa_block,
+                        )),
+                        HumanMessage(content=f"Redija a seção '{section_def['title']}' agora."),
+                    ],
+                    label=f"section[{section_def['id']}]",
+                )
+                content = be.safe_content(resp).strip()
+                section_queue.put(_event(
+                    "section_done",
+                    index=s_idx,
+                    title=section_def["title"],
+                    section_id=section_def["id"],
+                    content=content,
+                ))
+                return s_idx, {"id": section_def["id"], "title": section_def["title"], "content": content}
             except Exception as exc:
-                logger.exception("deep-research: failed on section %s", section_def["id"])
-                err_content = f"## {section_def['title']}\n\n_Erro ao gerar esta seção: {exc}_"
-                sections.append({
-                    "id": section_def["id"],
-                    "title": section_def["title"],
-                    "content": err_content,
-                })
-                yield _event("section_error", index=s_idx, title=section_def["title"], section_id=section_def["id"], message=str(exc))
+                logger.exception("deep-research: section %s failed", section_def["id"])
+                msg = str(exc)
+                err_content = f"## {section_def['title']}\n\n_Erro ao gerar esta seção: {msg}_"
+                section_queue.put(_event(
+                    "section_error",
+                    index=s_idx,
+                    title=section_def["title"],
+                    section_id=section_def["id"],
+                    message=msg,
+                ))
+                return s_idx, {"id": section_def["id"], "title": section_def["title"], "content": err_content}
+            finally:
+                section_queue.put(_SENTINEL_S)
+
+        section_dict: dict[int, dict] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL_SECTIONS) as ex:
+            futures = [ex.submit(_worker_section, i, s) for i, s in enumerate(REPORT_SECTIONS)]
+            finished = 0
+            while finished < len(futures):
+                try:
+                    item = section_queue.get(timeout=20)
+                except _queue.Empty:
+                    yield ": keepalive\n\n"
+                    continue
+                if item is _SENTINEL_S:
+                    finished += 1
+                else:
+                    yield item
+            while not section_queue.empty():
+                item = section_queue.get_nowait()
+                if item is not _SENTINEL_S:
+                    yield item
+            for f in futures:
+                idx, section = f.result()
+                section_dict[idx] = section
+        sections = [section_dict[i] for i in sorted(section_dict.keys())]
 
         # Concatenate sections into a working report (without exec summary yet)
         sections_concat = "\n\n".join(s["content"] for s in sections)
@@ -520,10 +644,14 @@ def run_deep_research(
         # ── 7. Executive summary (depends on the assembled report) ──
         yield _event("phase", phase="summarizing", message="Compondo o resumo executivo a partir do relatório...")
         try:
-            summary_resp = summary_llm.invoke([
-                SystemMessage(content=PROMPT_EXECUTIVE_SUMMARY.format(full_report=sections_concat)),
-                HumanMessage(content="Redija o Resumo Executivo agora."),
-            ])
+            summary_resp = _invoke_with_retry(
+                summary_llm,
+                [
+                    SystemMessage(content=PROMPT_EXECUTIVE_SUMMARY.format(full_report=sections_concat)),
+                    HumanMessage(content="Redija o Resumo Executivo agora."),
+                ],
+                label="executive_summary",
+            )
             executive_summary = be.safe_content(summary_resp).strip()
         except Exception as exc:
             logger.exception("deep-research: executive summary failed")
