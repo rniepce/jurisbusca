@@ -1158,6 +1158,34 @@ export async function deleteFlow(flowId: string): Promise<void> {
     if (!res.ok) throw new Error(`Erro ao apagar fluxo (${res.status})`);
 }
 
+export interface FlowVersion {
+    version_num: number;
+    name: string;
+    description: string;
+    color: string;
+    label: string;
+    created_at: string;
+}
+
+export async function listFlowVersions(flowId: string): Promise<FlowVersion[]> {
+    const res = await fetch(`${API_BASE}/flows/${flowId}/versions`, {
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Erro ao listar versões (${res.status})`);
+    const data = await safeJson(res, 'List flow versions');
+    return data.versions || [];
+}
+
+export async function restoreFlowVersion(flowId: string, versionNum: number): Promise<Flow> {
+    const res = await fetch(`${API_BASE}/flows/${flowId}/restore/${versionNum}`, {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Erro ao restaurar versão (${res.status})`);
+    const data = await safeJson(res, 'Restore version');
+    return data.flow;
+}
+
 export async function shareFlow(flowId: string, email: string): Promise<{ status: string; message: string }> {
     const res = await fetch(`${API_BASE}/flows/${flowId}/share`, {
         method: 'POST',

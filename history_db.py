@@ -67,6 +67,21 @@ def init_db():
                 UNIQUE(flow_id, shared_with_email)
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS flow_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                flow_id TEXT NOT NULL,
+                version_num INTEGER NOT NULL,
+                config_json TEXT NOT NULL,
+                name TEXT,
+                description TEXT,
+                color TEXT,
+                label TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(flow_id, version_num)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_flow_versions_flow ON flow_versions(flow_id)")
         try:
             conn.execute("ALTER TABLE agent_flows ADD COLUMN description TEXT DEFAULT ''")
         except Exception:
@@ -298,12 +313,78 @@ def list_flows(user_id: str) -> list:
 
 
 def update_flow(flow_id: str, user_id: str, name: str, config: dict, description: str = "", color: str = "#3b82f6") -> bool:
+    """Salva a versão ATUAL em flow_versions antes de sobrescrever com a nova."""
     with get_db() as conn:
+        # snapshot da versão atual
+        cur = conn.execute(
+            "SELECT name, description, color, config_json FROM agent_flows WHERE id = ? AND user_id = ?",
+            (flow_id, user_id),
+        )
+        row = cur.fetchone()
+        if row:
+            # próximo version_num
+            cur2 = conn.execute(
+                "SELECT COALESCE(MAX(version_num), 0) + 1 AS next FROM flow_versions WHERE flow_id = ?",
+                (flow_id,),
+            )
+            next_num = cur2.fetchone()["next"]
+            conn.execute(
+                """INSERT INTO flow_versions (flow_id, version_num, config_json, name, description, color)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (flow_id, next_num, row["config_json"], row["name"], row["description"], row["color"]),
+            )
+
+        # atualiza a versão "live"
         conn.execute(
             "UPDATE agent_flows SET name = ?, config_json = ?, description = ?, color = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
             (name, json.dumps(config, ensure_ascii=False), description, color, flow_id, user_id)
         )
         conn.commit()
+    return True
+
+
+def list_flow_versions(flow_id: str, user_id: str) -> list:
+    """Lista todas as versões salvas de um fluxo (somente se for o owner)."""
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT user_id FROM agent_flows WHERE id = ?",
+            (flow_id,),
+        )
+        row = cur.fetchone()
+        if not row or row["user_id"] != user_id:
+            return []
+        cur = conn.execute(
+            """SELECT version_num, name, description, color, label, created_at
+               FROM flow_versions WHERE flow_id = ?
+               ORDER BY version_num DESC""",
+            (flow_id,),
+        )
+        return [{
+            "version_num": r["version_num"],
+            "name": r["name"],
+            "description": r["description"] or "",
+            "color": r["color"] or "#3b82f6",
+            "label": r["label"] or "",
+            "created_at": r["created_at"],
+        } for r in cur.fetchall()]
+
+
+def restore_flow_version(flow_id: str, user_id: str, version_num: int) -> bool:
+    """Restaura uma versão antiga como atual (salva a atual como nova versão antes)."""
+    with get_db() as conn:
+        cur = conn.execute(
+            """SELECT v.config_json, v.name, v.description, v.color
+               FROM flow_versions v
+               JOIN agent_flows f ON f.id = v.flow_id
+               WHERE v.flow_id = ? AND v.version_num = ? AND f.user_id = ?""",
+            (flow_id, version_num, user_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        config = json.loads(row["config_json"])
+        # update_flow já cuida do snapshot da atual
+    update_flow(flow_id, user_id, row["name"], config, row["description"] or "", row["color"] or "#3b82f6")
     return True
 
 
@@ -316,6 +397,10 @@ def delete_flow(flow_id: str, user_id: str) -> bool:
         conn.execute(
             "DELETE FROM flow_shares WHERE flow_id = ? AND shared_by_user_id = ?",
             (flow_id, user_id)
+        )
+        conn.execute(
+            "DELETE FROM flow_versions WHERE flow_id = ?",
+            (flow_id,)
         )
         conn.commit()
     return True

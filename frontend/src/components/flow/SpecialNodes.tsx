@@ -2,6 +2,7 @@ import { Handle, Position } from '@xyflow/react';
 import {
     FaShuffle, FaUserClock, FaFileWord,
     FaScaleBalanced, FaCubes, FaWandMagicSparkles,
+    FaCode, FaPuzzlePiece,
 } from 'react-icons/fa6';
 
 type NodeStatus = 'idle' | 'running' | 'done' | 'error';
@@ -167,6 +168,58 @@ export function EstiloNode({ data, selected }: { data: EstiloNodeData; selected?
                 </div>
             </div>
             <Handle type="source" position={Position.Right} style={{ background: '#e11d48' }} />
+        </div>
+    );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// EXTRACTOR: extrai JSON estruturado — cada campo vira variável
+// ────────────────────────────────────────────────────────────────────
+interface ExtractorNodeData extends BaseData {
+    fields?: string; // "name:type:desc|name:type:desc"
+}
+
+export function ExtractorNode({ data, selected }: { data: ExtractorNodeData; selected?: boolean }) {
+    const fieldCount = (data.fields || '').split('|').filter(Boolean).length;
+    return (
+        <div className={nodeClass('extractor', data.status, selected)}>
+            <Handle type="target" position={Position.Left} style={{ background: '#0d9488' }} />
+            <div className="flow-node-header">
+                <span className="flow-node-icon"><FaCode size={18} /></span>
+                <div className="flow-node-title">
+                    <span className="flow-node-name">{data.label || 'Extrator JSON'}</span>
+                    <span className="flow-node-meta">
+                        {fieldCount > 0 ? `${fieldCount} campo${fieldCount > 1 ? 's' : ''}` : 'sem campos'}
+                    </span>
+                </div>
+            </div>
+            <Handle type="source" position={Position.Right} style={{ background: '#0d9488' }} />
+        </div>
+    );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// SUBFLOW: chama outro fluxo salvo como módulo
+// ────────────────────────────────────────────────────────────────────
+interface SubflowNodeData extends BaseData {
+    flow_id?: string;
+    flow_name?: string;
+}
+
+export function SubflowNode({ data, selected }: { data: SubflowNodeData; selected?: boolean }) {
+    return (
+        <div className={nodeClass('subflow', data.status, selected)}>
+            <Handle type="target" position={Position.Left} style={{ background: '#7c3aed' }} />
+            <div className="flow-node-header">
+                <span className="flow-node-icon"><FaPuzzlePiece size={18} /></span>
+                <div className="flow-node-title">
+                    <span className="flow-node-name">{data.label || 'Sub-fluxo'}</span>
+                    <span className="flow-node-meta">
+                        {data.flow_name || (data.flow_id ? 'fluxo configurado' : 'sem fluxo')}
+                    </span>
+                </div>
+            </div>
+            <Handle type="source" position={Position.Right} style={{ background: '#7c3aed' }} />
         </div>
     );
 }

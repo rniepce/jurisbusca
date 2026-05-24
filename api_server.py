@@ -3269,6 +3269,27 @@ async def delete_flow_endpoint(flow_id: str, request: Request, _auth: dict = Dep
     return {"status": "ok"}
 
 
+@app.get("/api/flows/{flow_id}/versions")
+async def list_flow_versions_endpoint(flow_id: str, request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import list_flow_versions
+    return {"versions": list_flow_versions(flow_id, user_id)}
+
+
+@app.post("/api/flows/{flow_id}/restore/{version_num}")
+async def restore_flow_version_endpoint(flow_id: str, version_num: int, request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import restore_flow_version, get_flow
+    ok = restore_flow_version(flow_id, user_id, version_num)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Versão não encontrada.")
+    return {"status": "ok", "flow": get_flow(flow_id, user_id)}
+
+
 @app.post("/api/flows/extract-files")
 async def extract_flow_files(
     files: list[UploadFile] = File(...),

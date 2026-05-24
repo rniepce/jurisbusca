@@ -260,6 +260,185 @@ def _run_modelo(node, cfg, state, input_text, label_map):
     return text, cfg.get("output_var") or node["id"]
 
 
+def _run_extractor(node, cfg, state, input_text, label_map):
+    """Extrai dados estruturados em JSON. Cada chave vira variável no state.
+
+    Config esperado:
+      - fields: string "nome:tipo:descricao|nome:tipo:descricao"
+        tipos suportados: string, number, integer, boolean, array, object
+      - model: opcional, default gpt-5.4-mini
+    """
+    import backend as be
+    from langchain_core.messages import SystemMessage, HumanMessage
+
+    fields_raw = (cfg.get("fields") or "").strip()
+    if not fields_raw:
+        raise ValueError("Extrator sem campos definidos.")
+
+    # Parse fields
+    fields: list[dict] = []
+    for line in fields_raw.split("|"):
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split(":", 2)]
+        name = parts[0]
+        ftype = parts[1] if len(parts) > 1 else "string"
+        desc = parts[2] if len(parts) > 2 else ""
+        fields.append({"name": name, "type": ftype.lower(), "desc": desc})
+
+    if not fields:
+        raise ValueError("Nenhum campo válido configurado.")
+
+    # Constrói descrição do schema para o prompt
+    schema_lines = []
+    for f in fields:
+        line = f'- "{f["name"]}" ({f["type"]})'
+        if f["desc"]:
+            line += f": {f['desc']}"
+        schema_lines.append(line)
+    schema_desc = "\n".join(schema_lines)
+
+    # Build user_msg
+    user_input = _build_user_message(state, input_text)
+
+    model = cfg.get("model") or "gpt-5.4-mini"
+    llm = be.get_llm(model, temperature=0.0)
+
+    sys_prompt = (
+        "Você é um extrator de dados estruturados. Analise a entrada abaixo e devolva "
+        "EXCLUSIVAMENTE um objeto JSON válido (sem comentários, sem texto antes/depois, "
+        "sem markdown fence) com os seguintes campos:\n\n"
+        f"{schema_desc}\n\n"
+        "Regras:\n"
+        "- Use null quando o campo não puder ser determinado a partir da entrada.\n"
+        "- Para arrays/objects, devolva sintaxe JSON correta.\n"
+        "- Respeite estritamente os nomes dos campos (case-sensitive)."
+    )
+
+    # tentativa + 2 retries com feedback
+    last_err = ""
+    parsed: dict | None = None
+    for attempt in range(3):
+        msgs = [SystemMessage(content=sys_prompt), HumanMessage(content=user_input)]
+        if attempt > 0 and last_err:
+            msgs.append(HumanMessage(content=(
+                f"A tentativa anterior falhou na validação: {last_err}\n"
+                "Devolva agora apenas o JSON corrigido, sem texto extra."
+            )))
+        response = llm.invoke(msgs)
+        raw = (response.content if hasattr(response, "content") else str(response)).strip()
+
+        # remove possível ```json ... ``` wrap
+        raw_clean = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
+
+        try:
+            parsed = json.loads(raw_clean)
+            # validação leve por tipo
+            for f in fields:
+                if f["name"] not in parsed:
+                    raise ValueError(f"campo obrigatório '{f['name']}' ausente")
+                val = parsed[f["name"]]
+                if val is None:
+                    continue
+                t = f["type"]
+                if t == "string" and not isinstance(val, str):
+                    raise ValueError(f"'{f['name']}' deveria ser string, recebido {type(val).__name__}")
+                if t in ("number", "integer") and not isinstance(val, (int, float)):
+                    raise ValueError(f"'{f['name']}' deveria ser número")
+                if t == "boolean" and not isinstance(val, bool):
+                    raise ValueError(f"'{f['name']}' deveria ser boolean")
+                if t == "array" and not isinstance(val, list):
+                    raise ValueError(f"'{f['name']}' deveria ser array")
+                if t == "object" and not isinstance(val, dict):
+                    raise ValueError(f"'{f['name']}' deveria ser object")
+            break  # sucesso
+        except Exception as exc:
+            last_err = str(exc)
+            parsed = None
+            continue
+
+    if parsed is None:
+        raise ValueError(f"Falha em extrair JSON válido após 3 tentativas. Último erro: {last_err}")
+
+    # Mergeo cada chave como variável separada no state
+    # (acessível por @nome_campo nos próximos nós)
+    extracted_state_updates: dict = {}
+    for f in fields:
+        v = parsed.get(f["name"])
+        if v is None:
+            extracted_state_updates[f["name"]] = ""
+        elif isinstance(v, (list, dict)):
+            extracted_state_updates[f["name"]] = json.dumps(v, ensure_ascii=False)
+        else:
+            extracted_state_updates[f["name"]] = v
+
+    # devolve via output_var um JSON formatado para exibição;
+    # também marca a variável bruta com sufixo _json
+    output_var = cfg.get("output_var") or node["id"]
+    formatted_json = json.dumps(parsed, ensure_ascii=False, indent=2)
+
+    # injeta as variáveis no state DIRETAMENTE — o caller precisa atualizar isso
+    # mas como _execute_simple_node retorna um dict de updates, vou retornar
+    # tudo agregado: as keys individuais + a versão JSON formatada
+    extracted_state_updates[output_var] = formatted_json
+    extracted_state_updates[f"{output_var}_json"] = formatted_json
+
+    return formatted_json, output_var, extracted_state_updates
+
+
+def _run_subflow(node, cfg, state, input_text, label_map):
+    """Carrega outro fluxo salvo e executa recursivamente.
+
+    Limita profundidade via state["__subflow_depth"] (max 4 níveis).
+    """
+    sub_flow_id = (cfg.get("flow_id") or "").strip()
+    if not sub_flow_id:
+        raise ValueError("Sub-fluxo sem flow_id configurado.")
+
+    depth = int(state.get("__subflow_depth", 0))
+    if depth >= 4:
+        raise ValueError("Profundidade máxima de sub-fluxos excedida (possível loop).")
+
+    from history_db import get_flow, get_flow_shared
+    user_id = state.get("__user_id", "")
+    email = state.get("__email", "")
+    sub_flow = get_flow(sub_flow_id, user_id) or get_flow_shared(sub_flow_id, email)
+    if not sub_flow:
+        raise ValueError(f"Sub-fluxo {sub_flow_id} não encontrado ou sem acesso.")
+
+    # Input do sub-fluxo: última saída do estado atual, senão input_text
+    sub_input = ""
+    for k, v in list(state.items())[::-1]:
+        if k != "input_text" and not k.startswith("__"):
+            sub_input = str(v)
+            break
+    if not sub_input:
+        sub_input = state.get("input_text", input_text)
+
+    # Estado inicial do sub-fluxo: meta keys + nada mais (isolamento)
+    sub_state = {k: v for k, v in state.items() if k.startswith("__")}
+    sub_state["__subflow_depth"] = depth + 1
+
+    # Executa silenciosamente, captura saída final
+    final_output = ""
+    nodes_done = 0
+    for ev_str in build_and_run_flow(sub_flow["config"], sub_input, initial_state=sub_state):
+        if ev_str.startswith("data: "):
+            try:
+                ev = json.loads(ev_str[6:].strip())
+                if ev.get("event") == "node_done":
+                    nodes_done += 1
+                if ev.get("event") == "flow_done":
+                    final_output = ev.get("output", "")
+            except Exception:
+                pass
+
+    label = cfg.get("label") or sub_flow.get("name") or "Sub-fluxo"
+    output = f"_{nodes_done} etapas executadas em **{sub_flow.get('name', label)}**_\n\n{final_output}"
+    return output, cfg.get("output_var") or node["id"]
+
+
 def _run_estilo(node, cfg, state, input_text, label_map):
     """Reescreve o último texto aplicando o style dossier do usuário."""
     import backend as be
@@ -293,12 +472,13 @@ def _run_estilo(node, cfg, state, input_text, label_map):
 # Worker thread-safe para nós "simples" (executáveis em paralelo)
 # ─────────────────────────────────────────────────────────────────────
 
-SIMPLE_NODE_TYPES = {"agent", "juris", "modelo", "estilo", "docx"}
+SIMPLE_NODE_TYPES = {"agent", "juris", "modelo", "estilo", "docx", "extractor", "subflow"}
 
 _SPECIAL_HANDLERS = {
     "juris": _run_juris,
     "modelo": _run_modelo,
     "estilo": _run_estilo,
+    "subflow": _run_subflow,
 }
 
 
@@ -329,6 +509,13 @@ def _execute_simple_node(node, state_snapshot, input_text, label_map):
             updates["__docx_url"] = url
             events.append({"event": "node_done", "node_id": node_id, "label": label,
                            "output": output, "output_var": ovar, "download_url": url})
+
+        elif ntype == "extractor":
+            output, ovar, extra_updates = _run_extractor(node, cfg, state_snapshot, input_text, label_map)
+            updates.update(extra_updates)  # cada chave do JSON vira variável
+            events.append({"event": "node_done", "node_id": node_id, "label": label,
+                           "output": output, "output_var": ovar,
+                           "extracted_fields": list(extra_updates.keys())})
 
         elif ntype in _SPECIAL_HANDLERS:
             output, ovar = _SPECIAL_HANDLERS[ntype](node, cfg, state_snapshot, input_text, label_map)

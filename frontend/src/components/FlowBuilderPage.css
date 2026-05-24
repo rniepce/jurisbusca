@@ -529,6 +529,14 @@
 :root:not([data-theme="dark"]) .flow-node.estilo .flow-node-icon { background: #ffe4e6; color: #be123c; }
 .flow-node.estilo:hover { border-color: #e11d48; }
 
+.flow-node.extractor .flow-node-icon { background: rgba(13, 148, 136, 0.2); color: #2dd4bf; }
+:root:not([data-theme="dark"]) .flow-node.extractor .flow-node-icon { background: #ccfbf1; color: #0d9488; }
+.flow-node.extractor:hover { border-color: #0d9488; }
+
+.flow-node.subflow .flow-node-icon { background: rgba(124, 58, 237, 0.2); color: #c4b5fd; }
+:root:not([data-theme="dark"]) .flow-node.subflow .flow-node-icon { background: #ede9fe; color: #7c3aed; }
+.flow-node.subflow:hover { border-color: #7c3aed; }
+
 /* ===== CATÁLOGO DE NÓS (slide-in da direita) ===== */
 .flow-catalog-overlay {
     position: fixed;
@@ -629,6 +637,10 @@
 .flow-catalog-card.accent-modelo:hover { border-color: #16a34a; }
 .flow-catalog-card.accent-estilo .flow-catalog-icon { background: rgba(225, 29, 72, 0.18); color: #fb7185; }
 .flow-catalog-card.accent-estilo:hover { border-color: #e11d48; }
+.flow-catalog-card.accent-extractor .flow-catalog-icon { background: rgba(13, 148, 136, 0.2); color: #2dd4bf; }
+.flow-catalog-card.accent-extractor:hover { border-color: #0d9488; }
+.flow-catalog-card.accent-subflow .flow-catalog-icon { background: rgba(124, 58, 237, 0.2); color: #c4b5fd; }
+.flow-catalog-card.accent-subflow:hover { border-color: #7c3aed; }
 
 .flow-catalog-text {
     display: flex;
@@ -1162,4 +1174,121 @@
 
 .react-flow__edge-path {
     stroke: var(--secondary-text-color) !important;
+}
+
+/* ===== EXTRACTOR FIELDS BUILDER ===== */
+.extractor-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.extractor-field-row {
+    display: grid;
+    grid-template-columns: 1fr 90px 1.4fr 28px;
+    gap: 6px;
+    align-items: center;
+}
+
+.extractor-field-row .flow-input,
+.extractor-field-row .flow-select {
+    padding: 6px 8px;
+    font-size: 12px;
+}
+
+.extractor-field-remove {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--secondary-text-color);
+    cursor: pointer;
+    padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.extractor-field-remove:hover {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+/* ===== VERSIONS MODAL ===== */
+.flow-versions-modal { width: 560px; }
+
+.flow-versions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+    margin: -4px;
+    padding: 4px;
+}
+
+.flow-version-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--input-bg, var(--bg-color));
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px 14px;
+    transition: border-color 0.15s ease;
+}
+
+.flow-version-item:hover {
+    border-color: var(--primary-color);
+}
+
+.flow-version-num {
+    flex-shrink: 0;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-family: var(--font-mono, ui-monospace, "SF Mono", monospace);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+:root:not([data-theme="dark"]) .flow-version-num {
+    background: #dbeafe;
+    color: #1d4ed8;
+    border-color: #93c5fd;
+}
+
+.flow-version-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.flow-version-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.flow-version-date {
+    font-size: 11px;
+    color: var(--secondary-text-color);
+}
+
+.flow-version-desc {
+    font-size: 11px;
+    color: var(--secondary-text-color);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }

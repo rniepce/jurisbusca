@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
-import { FaXmark, FaFileLines, FaPaperclip, FaSpinner, FaCircleCheck } from 'react-icons/fa6';
-import { extractFlowFiles } from '../../services/api';
+import { useEffect, useRef, useState } from 'react';
+import { FaXmark, FaFileLines, FaPaperclip, FaSpinner, FaCircleCheck, FaPlus, FaTrash } from 'react-icons/fa6';
+import { extractFlowFiles, listFlows, type FlowSummary } from '../../services/api';
 import PromptEditor from './PromptEditor';
 
 const MODELS = [
@@ -21,7 +21,36 @@ const NODE_TITLES: Record<string, string> = {
     juris: 'Configurar Pesquisa de Jurisprudência',
     modelo: 'Configurar Busca de Modelo',
     estilo: 'Configurar Aplicação de Estilo',
+    extractor: 'Configurar Extrator JSON',
+    subflow: 'Configurar Sub-fluxo',
 };
+
+const EXTRACTOR_TYPES = ['string', 'number', 'integer', 'boolean', 'array', 'object'];
+
+interface ExtractorField {
+    name: string;
+    type: string;
+    desc: string;
+}
+
+function parseFields(raw: string): ExtractorField[] {
+    if (!raw) return [];
+    return raw.split('|').filter(Boolean).map(line => {
+        const parts = line.split(':');
+        return {
+            name: (parts[0] || '').trim(),
+            type: ((parts[1] || 'string').trim()),
+            desc: (parts.slice(2).join(':') || '').trim(),
+        };
+    });
+}
+
+function serializeFields(fields: ExtractorField[]): string {
+    return fields
+        .filter(f => f.name.trim())
+        .map(f => `${f.name.trim()}:${f.type.trim()}:${f.desc.trim()}`)
+        .join('|');
+}
 
 interface Props {
     node: { id: string; type: string; data: Record<string, string> };
@@ -250,6 +279,149 @@ export default function NodeConfigPanel({ node, onChange, onClose, availableLabe
                     Configure seu estilo em <strong>Gestor de Modelos</strong> antes de usar.
                 </div>
             )}
+
+            {/* ─── EXTRACTOR (JSON) ────────────────────────────────── */}
+            {type === 'extractor' && (
+                <ExtractorConfig
+                    data={data}
+                    set={set}
+                />
+            )}
+
+            {/* ─── SUBFLOW ─────────────────────────────────────────── */}
+            {type === 'subflow' && (
+                <SubflowConfig
+                    data={data}
+                    set={set}
+                />
+            )}
+        </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// ExtractorConfig: builder de schema (lista de campos editáveis)
+// ─────────────────────────────────────────────────────────────────────
+
+function ExtractorConfig({ data, set }: { data: Record<string, string>; set: (k: string, v: string) => void }) {
+    const fields = parseFields(data.fields || '');
+
+    const updateField = (idx: number, key: keyof ExtractorField, value: string) => {
+        const next = fields.map((f, i) => i === idx ? { ...f, [key]: value } : f);
+        set('fields', serializeFields(next));
+    };
+    const addField = () => {
+        const next = [...fields, { name: '', type: 'string', desc: '' }];
+        set('fields', serializeFields(next));
+    };
+    const removeField = (idx: number) => {
+        const next = fields.filter((_, i) => i !== idx);
+        set('fields', serializeFields(next));
+    };
+
+    return (
+        <>
+            <div className="flow-config-field">
+                <label className="flow-config-label">Modelo</label>
+                <select className="flow-select" value={data.model || 'gpt-5.4-mini'} onChange={e => set('model', e.target.value)}>
+                    {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+            </div>
+
+            <div className="flow-config-field">
+                <label className="flow-config-label">Campos a extrair</label>
+                <div className="extractor-fields">
+                    {fields.map((f, i) => (
+                        <div key={i} className="extractor-field-row">
+                            <input
+                                className="flow-input mono extractor-field-name"
+                                placeholder="nome_campo"
+                                value={f.name}
+                                onChange={e => updateField(i, 'name', e.target.value)}
+                            />
+                            <select
+                                className="flow-select extractor-field-type"
+                                value={f.type}
+                                onChange={e => updateField(i, 'type', e.target.value)}
+                            >
+                                {EXTRACTOR_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            <input
+                                className="flow-input extractor-field-desc"
+                                placeholder="descrição (ajuda o LLM)"
+                                value={f.desc}
+                                onChange={e => updateField(i, 'desc', e.target.value)}
+                            />
+                            <button
+                                type="button"
+                                className="extractor-field-remove"
+                                onClick={() => removeField(i)}
+                                title="Remover campo"
+                            >
+                                <FaTrash size={11} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+                <button type="button" className="flow-btn flow-btn-add" onClick={addField} style={{ alignSelf: 'flex-start' }}>
+                    <FaPlus size={11} /> Adicionar campo
+                </button>
+                <span className="flow-config-help">
+                    Cada campo vira variável acessível por <code>@nome_campo</code> nos nós seguintes.
+                    O LLM é forçado a devolver JSON válido (com retry automático).
+                </span>
+            </div>
+        </>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// SubflowConfig: dropdown de fluxos salvos
+// ─────────────────────────────────────────────────────────────────────
+
+function SubflowConfig({ data, set }: { data: Record<string, string>; set: (k: string, v: string) => void }) {
+    const [flows, setFlows] = useState<FlowSummary[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        setLoading(true);
+        listFlows()
+            .then(setFlows)
+            .catch(() => setFlows([]))
+            .finally(() => setLoading(false));
+    }, []);
+
+    const handlePick = (flowId: string) => {
+        const flow = flows.find(f => f.id === flowId);
+        set('flow_id', flowId);
+        if (flow) set('flow_name', flow.name);
+    };
+
+    return (
+        <div className="flow-config-field">
+            <label className="flow-config-label">Fluxo a executar</label>
+            {loading ? (
+                <div className="flow-config-help">Carregando fluxos...</div>
+            ) : flows.length === 0 ? (
+                <div className="flow-config-help">
+                    Nenhum fluxo salvo. Salve este fluxo primeiro, ou crie outros, depois aponte aqui.
+                </div>
+            ) : (
+                <select
+                    className="flow-select"
+                    value={data.flow_id || ''}
+                    onChange={e => handlePick(e.target.value)}
+                >
+                    <option value="">— escolha um fluxo —</option>
+                    {flows.map(f => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                </select>
+            )}
+            <span className="flow-config-help">
+                Recebe como entrada a última saída deste fluxo. Devolve o resultado final
+                como saída do nó. Cuidado com loops (máx. 4 níveis aninhados).
+            </span>
         </div>
     );
 }

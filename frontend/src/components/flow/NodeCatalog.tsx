@@ -1,4 +1,4 @@
-import { FaRobot, FaCodeBranch, FaShuffle, FaUserClock, FaFileWord, FaScaleBalanced, FaCubes, FaWandMagicSparkles, FaXmark } from 'react-icons/fa6';
+import { FaRobot, FaCodeBranch, FaShuffle, FaUserClock, FaFileWord, FaScaleBalanced, FaCubes, FaWandMagicSparkles, FaXmark, FaCode, FaPuzzlePiece } from 'react-icons/fa6';
 
 interface CatalogItem {
     type: string;
@@ -73,6 +73,26 @@ export const NODE_CATALOG: CatalogItem[] = [
         title: 'Estilo do Juiz',
         desc: 'Reescreve o texto aplicando o style dossier salvo nas suas configurações.',
         defaults: { label: 'Aplicar estilo' },
+    },
+    {
+        type: 'extractor',
+        accent: 'extractor',
+        icon: <FaCode size={20} />,
+        title: 'Extrator JSON',
+        desc: 'Força o LLM a devolver JSON validado. Cada campo vira variável acessível por @nome.',
+        defaults: {
+            label: 'Extrator JSON',
+            fields: 'numero_processo:string:Número CNJ do processo|valor_causa:number:Valor em reais|partes:array:Lista das partes envolvidas',
+            model: 'gpt-5.4-mini',
+        },
+    },
+    {
+        type: 'subflow',
+        accent: 'subflow',
+        icon: <FaPuzzlePiece size={20} />,
+        title: 'Chamar Fluxo (sub-fluxo)',
+        desc: 'Executa outro fluxo salvo como módulo. Útil para reaproveitar pipelines.',
+        defaults: { label: 'Sub-fluxo', flow_id: '', flow_name: '' },
     },
 ];
 

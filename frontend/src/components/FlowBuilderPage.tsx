@@ -14,6 +14,7 @@ import '@xyflow/react/dist/style.css';
 import {
     FaPlus, FaFloppyDisk, FaPlay, FaTrash, FaChevronLeft,
     FaListUl, FaEye, FaXmark, FaShapes, FaWandMagicSparkles, FaShareNodes,
+    FaClockRotateLeft,
 } from 'react-icons/fa6';
 import AgentNode from './flow/AgentNode';
 import RouterNode from './flow/RouterNode';
@@ -21,8 +22,10 @@ import { StartNode, EndNode } from './flow/StartEndNodes';
 import NodeConfigPanel from './flow/NodeConfigPanel';
 import NodeCatalog from './flow/NodeCatalog';
 import FlowTemplates from './flow/FlowTemplates';
+import FlowVersionsModal from './flow/FlowVersionsModal';
 import {
     SwitchNode, HILNode, DocxNode, JurisNode, ModeloNode, EstiloNode,
+    ExtractorNode, SubflowNode,
 } from './flow/SpecialNodes';
 import {
     listFlows, createFlow, getFlow, updateFlow, deleteFlow, previewFlow,
@@ -42,6 +45,8 @@ const NODE_TYPES = {
     juris: JurisNode,
     modelo: ModeloNode,
     estilo: EstiloNode,
+    extractor: ExtractorNode,
+    subflow: SubflowNode,
 };
 
 const AGENT_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
@@ -59,6 +64,12 @@ function makeNode(type: string, position = { x: 200, y: 200 }, dataOverrides: Re
         juris: { label: 'Pesquisar Jurisprudência', query: '', top_k: '5' },
         modelo: { label: 'Buscar Modelo', query: '', top_k: '3' },
         estilo: { label: 'Aplicar Estilo' },
+        extractor: {
+            label: 'Extrator JSON',
+            fields: 'numero_processo:string:Número CNJ do processo|valor_causa:number:Valor em reais|partes:array:Lista das partes envolvidas',
+            model: 'gpt-5.4-mini',
+        },
+        subflow: { label: 'Sub-fluxo', flow_id: '', flow_name: '' },
         start: {},
         end: {},
     };
@@ -96,6 +107,7 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
     const [showSaveDialog, setShowSaveDialog] = useState(false);
     const [showCatalog, setShowCatalog] = useState(false);
     const [showTemplates, setShowTemplates] = useState(false);
+    const [showVersions, setShowVersions] = useState(false);
     const [flows, setFlows] = useState<FlowSummary[]>([]);
     const [loadingFlows, setLoadingFlows] = useState(false);
     const [finalOutput, setFinalOutput] = useState('');
@@ -446,6 +458,11 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
                 <button onClick={handlePreview} disabled={running} className="flow-btn flow-btn-ghost">
                     <FaEye size={11} /> Preview
                 </button>
+                {flowId && (
+                    <button onClick={() => setShowVersions(true)} className="flow-btn flow-btn-ghost" title="Histórico de versões">
+                        <FaClockRotateLeft size={11} /> Histórico
+                    </button>
+                )}
                 <button onClick={handleSaveClick} disabled={saving} className="flow-btn flow-btn-primary">
                     <FaFloppyDisk size={11} /> {saving ? 'Salvando...' : flowId ? 'Salvar' : 'Salvar como Agente'}
                 </button>
@@ -526,6 +543,14 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
                 open={showTemplates}
                 onClose={() => setShowTemplates(false)}
                 onPick={loadTemplateFlow}
+            />
+
+            {/* Histórico de versões */}
+            <FlowVersionsModal
+                open={showVersions}
+                flowId={flowId}
+                onClose={() => setShowVersions(false)}
+                onRestored={() => { if (flowId) void handleOpenFlow(flowId); }}
             />
 
             {/* Save dialog */}
