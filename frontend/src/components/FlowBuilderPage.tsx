@@ -4,7 +4,6 @@ import {
     addEdge,
     Background,
     Controls,
-    MiniMap,
     useNodesState,
     useEdgesState,
     type Connection,
@@ -384,16 +383,6 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
                 >
                     <Background color="#475569" gap={28} size={1.5} />
                     <Controls />
-                    <MiniMap
-                        nodeColor={(n) => {
-                            const t = n.type;
-                            if (t === 'agent') return '#3b82f6';
-                            if (t === 'router') return '#f59e0b';
-                            if (t === 'start') return '#22c55e';
-                            return '#64748b';
-                        }}
-                        maskColor="rgba(15, 23, 42, 0.6)"
-                    />
                 </ReactFlow>
 
                 {selectedNode && (
