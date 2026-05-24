@@ -3264,6 +3264,22 @@ async def extract_flow_files(
     return {"text": "\n\n".join(extracted_parts), "files": accepted}
 
 
+def _flow_run_initial_state(user_id: str, token: str) -> dict:
+    """Estado inicial padrão de qualquer execução: user_id, token, style_dossier."""
+    state: dict = {"__user_id": user_id, "__token": token}
+    try:
+        dossier = be.load_style_dossier(user_id)
+        if isinstance(dossier, dict):
+            txt = dossier.get("cloning_prompt") or dossier.get("dossier") or ""
+        else:
+            txt = str(dossier or "")
+        if txt:
+            state["__style_dossier"] = txt
+    except Exception:
+        pass
+    return state
+
+
 @app.post("/api/flows/{flow_id}/run")
 async def run_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depends(require_auth)):
     user_id = _extract_user_id(request)
@@ -3272,6 +3288,7 @@ async def run_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depend
 
     body = await request.json()
     input_text = body.get("input_text", "")
+    token = _extract_token(request)
 
     from history_db import get_flow
     flow = get_flow(flow_id, user_id)
@@ -3279,10 +3296,13 @@ async def run_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depend
         raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
 
     import flow_engine
+    initial_state = _flow_run_initial_state(user_id, token)
 
     def _stream():
         try:
-            yield from flow_engine.build_and_run_flow(flow["config"], input_text)
+            yield from flow_engine.build_and_run_flow(
+                flow["config"], input_text, initial_state=initial_state
+            )
         except Exception as exc:
             import traceback as _tb
             _tb.print_exc()
@@ -3292,6 +3312,77 @@ async def run_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depend
         _stream(),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+class FlowResumeRequest(BaseModel):
+    state: dict
+    start_from: str
+    user_input: str | None = None
+
+
+@app.post("/api/flows/{flow_id}/resume")
+async def resume_flow_endpoint(flow_id: str, req: FlowResumeRequest, request: Request, _auth: dict = Depends(require_auth)):
+    """Continua um fluxo a partir do nó indicado (depois de um HIL)."""
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+
+    from history_db import get_flow
+    flow = get_flow(flow_id, user_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
+
+    import flow_engine
+    state = dict(req.state or {})
+    state["__user_id"] = user_id
+    state["__token"] = _extract_token(request)
+
+    # se o usuário editou o conteúdo, substitui no state como sendo a saída do último nó relevante
+    if req.user_input:
+        # sobrescreve a última variável não-meta
+        last_key = None
+        for k in state.keys():
+            if k != "input_text" and not k.startswith("__"):
+                last_key = k
+        if last_key:
+            state[last_key] = req.user_input
+        else:
+            state["input_text"] = req.user_input
+
+    input_text = state.get("input_text", "")
+
+    def _stream():
+        try:
+            yield from flow_engine.build_and_run_flow(
+                flow["config"], input_text,
+                start_from=req.start_from, initial_state=state,
+            )
+        except Exception as exc:
+            import traceback as _tb
+            _tb.print_exc()
+            yield f"data: {json.dumps({'event': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/api/flows/docx-download/{filename}")
+async def download_flow_docx(filename: str, _auth: dict = Depends(require_auth)):
+    """Devolve um .docx gerado por um nó docx do fluxo."""
+    out_dir = os.path.join(tempfile.gettempdir(), "jurisbusca_docx")
+    safe = os.path.basename(filename)
+    path = os.path.join(out_dir, safe)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado ou expirado.")
+    download_name = safe.split("__", 1)[-1] if "__" in safe else safe
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=download_name,
     )
 
 

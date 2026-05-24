@@ -416,6 +416,280 @@
     color: var(--secondary-text-color);
 }
 
+/* novos accents */
+.flow-node.switch .flow-node-icon { background: rgba(168, 85, 247, 0.18); color: #c084fc; }
+:root:not([data-theme="dark"]) .flow-node.switch .flow-node-icon { background: #f3e8ff; color: #7c3aed; }
+.flow-node.switch:hover { border-color: #a855f7; }
+
+.flow-node.hil .flow-node-icon { background: rgba(234, 179, 8, 0.22); color: #facc15; }
+:root:not([data-theme="dark"]) .flow-node.hil .flow-node-icon { background: #fef3c7; color: #ca8a04; }
+.flow-node.hil:hover { border-color: #eab308; }
+
+.flow-node.docx .flow-node-icon { background: rgba(29, 78, 216, 0.2); color: #60a5fa; }
+:root:not([data-theme="dark"]) .flow-node.docx .flow-node-icon { background: #dbeafe; color: #1d4ed8; }
+.flow-node.docx:hover { border-color: #2563eb; }
+
+.flow-node.juris .flow-node-icon { background: rgba(8, 145, 178, 0.2); color: #67e8f9; }
+:root:not([data-theme="dark"]) .flow-node.juris .flow-node-icon { background: #cffafe; color: #0e7490; }
+.flow-node.juris:hover { border-color: #0891b2; }
+
+.flow-node.modelo .flow-node-icon { background: rgba(22, 163, 74, 0.2); color: #4ade80; }
+:root:not([data-theme="dark"]) .flow-node.modelo .flow-node-icon { background: #dcfce7; color: #15803d; }
+.flow-node.modelo:hover { border-color: #16a34a; }
+
+.flow-node.estilo .flow-node-icon { background: rgba(225, 29, 72, 0.18); color: #fb7185; }
+:root:not([data-theme="dark"]) .flow-node.estilo .flow-node-icon { background: #ffe4e6; color: #be123c; }
+.flow-node.estilo:hover { border-color: #e11d48; }
+
+/* ===== CATÁLOGO DE NÓS (slide-in da direita) ===== */
+.flow-catalog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px);
+    z-index: 40;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.flow-catalog-panel {
+    width: 480px;
+    max-width: 92vw;
+    height: 100%;
+    background: var(--sidebar-bg);
+    border-left: 1px solid var(--border-color);
+    padding: 24px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: -6px 0 24px rgba(0, 0, 0, 0.25);
+    color: var(--text-color);
+}
+
+.flow-catalog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.flow-catalog-title {
+    font-weight: 700;
+    font-size: 17px;
+    color: var(--text-color);
+}
+
+.flow-catalog-help {
+    color: var(--secondary-text-color);
+    font-size: 12px;
+    margin: 0;
+}
+
+.flow-catalog-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.flow-catalog-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--input-bg, var(--bg-color));
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: left;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    color: var(--text-color);
+    font-family: var(--font-family);
+}
+
+.flow-catalog-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+}
+
+.flow-catalog-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    background: var(--bg-color);
+}
+
+.flow-catalog-card.accent-agent .flow-catalog-icon  { background: rgba(59, 130, 246, 0.18); color: #60a5fa; }
+.flow-catalog-card.accent-agent:hover { border-color: var(--primary-color); }
+.flow-catalog-card.accent-router .flow-catalog-icon { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.flow-catalog-card.accent-router:hover { border-color: #f59e0b; }
+.flow-catalog-card.accent-switch .flow-catalog-icon { background: rgba(168, 85, 247, 0.18); color: #c084fc; }
+.flow-catalog-card.accent-switch:hover { border-color: #a855f7; }
+.flow-catalog-card.accent-hil .flow-catalog-icon    { background: rgba(234, 179, 8, 0.22); color: #facc15; }
+.flow-catalog-card.accent-hil:hover    { border-color: #eab308; }
+.flow-catalog-card.accent-docx .flow-catalog-icon   { background: rgba(29, 78, 216, 0.2); color: #60a5fa; }
+.flow-catalog-card.accent-docx:hover   { border-color: #2563eb; }
+.flow-catalog-card.accent-juris .flow-catalog-icon  { background: rgba(8, 145, 178, 0.2); color: #67e8f9; }
+.flow-catalog-card.accent-juris:hover  { border-color: #0891b2; }
+.flow-catalog-card.accent-modelo .flow-catalog-icon { background: rgba(22, 163, 74, 0.2); color: #4ade80; }
+.flow-catalog-card.accent-modelo:hover { border-color: #16a34a; }
+.flow-catalog-card.accent-estilo .flow-catalog-icon { background: rgba(225, 29, 72, 0.18); color: #fb7185; }
+.flow-catalog-card.accent-estilo:hover { border-color: #e11d48; }
+
+.flow-catalog-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.flow-catalog-card-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-color);
+}
+
+.flow-catalog-card-desc {
+    font-size: 11px;
+    color: var(--secondary-text-color);
+    line-height: 1.4;
+}
+
+/* ===== TEMPLATES MODAL ===== */
+.flow-templates-modal { width: 640px; }
+
+.flow-templates-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.flow-template-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--input-bg, var(--bg-color));
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--primary-color);
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: left;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    color: var(--text-color);
+    font-family: var(--font-family);
+}
+
+.flow-template-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+}
+
+.flow-template-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+}
+
+.flow-template-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.flow-template-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-color);
+}
+
+.flow-template-desc {
+    font-size: 12px;
+    color: var(--secondary-text-color);
+    line-height: 1.4;
+}
+
+/* ===== PROMPT EDITOR / AUTOCOMPLETE ===== */
+.flow-prompt-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.flow-prompt-hint {
+    font-size: 10px;
+    color: var(--secondary-text-color);
+    margin-top: 4px;
+}
+
+.flow-prompt-hint code {
+    background: var(--bg-color);
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--border-color);
+    font-family: var(--font-mono, ui-monospace, "SF Mono", monospace);
+    font-size: 10px;
+}
+
+.flow-autocomplete {
+    position: absolute;
+    z-index: 20;
+    min-width: 200px;
+    max-width: 260px;
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow-hover);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.flow-autocomplete-hint {
+    padding: 6px 10px;
+    background: var(--bg-color);
+    font-size: 10px;
+    color: var(--secondary-text-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.flow-autocomplete-item {
+    background: transparent;
+    border: none;
+    padding: 8px 12px;
+    text-align: left;
+    cursor: pointer;
+    color: var(--text-color);
+    font-size: 12px;
+    font-family: var(--font-family);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.flow-autocomplete-item:hover,
+.flow-autocomplete-item.hover {
+    background: rgba(59, 130, 246, 0.18);
+    color: var(--primary-color);
+}
+
+.flow-autocomplete-at {
+    color: var(--primary-color);
+    font-weight: 700;
+}
+
 .flow-node.status-running {
     border-color: #f59e0b !important;
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25), var(--shadow-soft);

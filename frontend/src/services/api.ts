@@ -1223,3 +1223,19 @@ export async function previewFlow(
     if (!res.ok) throw new Error(`Erro no preview (${res.status})`);
     await streamSseEvents(res, onEvent);
 }
+
+export async function resumeFlow(
+    flowId: string,
+    state: Record<string, unknown>,
+    startFrom: string,
+    onEvent: (event: Record<string, unknown>) => void,
+    userInput?: string,
+): Promise<void> {
+    const res = await fetch(`${API_BASE}/flows/${flowId}/resume`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ state, start_from: startFrom, user_input: userInput || null }),
+    });
+    if (!res.ok) throw new Error(`Erro ao retomar fluxo (${res.status})`);
+    await streamSseEvents(res, onEvent);
+}

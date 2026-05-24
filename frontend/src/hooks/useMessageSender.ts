@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { sendMessage, uploadTemplates, generateStyleReport, runFlow } from '../services/api';
+import { sendMessage, uploadTemplates, generateStyleReport, runFlow, resumeFlow } from '../services/api';
 import { useChatStore, useUIStore } from '../store';
 import { safeResponseText, errorText } from './utils';
 import type { Message, SelectedModel, RagStatus } from '../types/chat';
@@ -33,6 +33,94 @@ export function useMessageSender({ canvas, ragStatus, setRagStatus }: UseMessage
         setStyleDossier,
     } = useChatStore();
     const { selectedModel: globalSelectedModel } = useUIStore();
+
+    /**
+     * Executa um fluxo (run ou resume) capturando eventos SSE e renderizando
+     * no chat — incluindo pausa em HIL (emite bubble especial com botões).
+     */
+    const executeFlowAndRender = useCallback(async (
+        flowId: string,
+        inputOrResume: string | { state: Record<string, unknown>; startFrom: string; userInput?: string },
+    ) => {
+        const nodeOutputs: Array<{ label: string; output: string; downloadUrl?: string }> = [];
+        let finalOutput = '';
+        let hilEvent: {
+            label?: string;
+            question?: string;
+            content?: string;
+            next_node_id?: string;
+            state?: Record<string, unknown>;
+        } | null = null;
+
+        const onEvent = (event: Record<string, unknown>) => {
+            const ev = event as { event: string; label?: string; output?: string; error?: string;
+                download_url?: string; question?: string; content?: string;
+                next_node_id?: string; state?: Record<string, unknown> };
+            if (ev.event === 'node_done' && ev.label && ev.output) {
+                nodeOutputs.push({ label: ev.label, output: ev.output, downloadUrl: ev.download_url });
+            }
+            if (ev.event === 'flow_done' && ev.output) {
+                finalOutput = ev.output;
+            }
+            if (ev.event === 'human_required') {
+                hilEvent = {
+                    label: ev.label,
+                    question: ev.question,
+                    content: ev.content,
+                    next_node_id: ev.next_node_id,
+                    state: ev.state,
+                };
+            }
+            if (ev.event === 'node_error' || ev.event === 'error') {
+                throw new Error(ev.error || 'Erro na execução do fluxo');
+            }
+        };
+
+        try {
+            if (typeof inputOrResume === 'string') {
+                await runFlow(flowId, inputOrResume, onEvent);
+            } else {
+                await resumeFlow(flowId, inputOrResume.state, inputOrResume.startFrom, onEvent, inputOrResume.userInput);
+            }
+
+            // primeiro: render as saídas dos nós já executados
+            if (nodeOutputs.length > 0 || finalOutput) {
+                const steps = nodeOutputs
+                    .map(s => {
+                        const link = s.downloadUrl ? `\n\n[⬇ Baixar arquivo](${s.downloadUrl})` : '';
+                        return `### ⚙️ ${s.label}\n\n${s.output}${link}`;
+                    })
+                    .join('\n\n---\n\n');
+                const body = finalOutput
+                    ? `${steps}\n\n---\n\n### ✅ Resultado Final\n\n${finalOutput}`
+                    : steps;
+                addMessage({
+                    role: 'assistant',
+                    content: body || '(fluxo concluído sem saída)',
+                    model: 'orquestrador',
+                });
+            }
+
+            // se houve pausa HIL, render bubble especial com botões
+            if (hilEvent) {
+                addMessage({
+                    role: 'flow-hil-pending',
+                    content: hilEvent.content || '',
+                    flowId,
+                    hilLabel: hilEvent.label,
+                    hilQuestion: hilEvent.question,
+                    hilNextNodeId: hilEvent.next_node_id,
+                    hilState: hilEvent.state,
+                });
+            }
+        } catch (err) {
+            addMessage({
+                role: 'assistant',
+                content: `⚠️ **Erro no fluxo:** ${errorText(err)}`,
+                model: 'erro',
+            });
+        }
+    }, [addMessage]);
 
     const handleSend = useCallback(
         async (
@@ -102,49 +190,13 @@ export function useMessageSender({ canvas, ragStatus, setRagStatus }: UseMessage
             // ─── Orquestrador: roda fluxo em vez de chat normal ──────────
             const orchAgent = activeAgent as { type?: string; flow_id?: string } | null;
             if (orchAgent?.type === 'orquestrador' && orchAgent.flow_id) {
-                try {
-                    const flowInput = [
-                        userTyped && `[INSTRUÇÃO DO USUÁRIO]:\n${userTyped}`,
-                        uploadedText && `[DOCUMENTO ANEXADO]:\n${uploadedText}`,
-                    ].filter(Boolean).join('\n\n') || 'Execute o fluxo.';
+                const flowInput = [
+                    userTyped && `[INSTRUÇÃO DO USUÁRIO]:\n${userTyped}`,
+                    uploadedText && `[DOCUMENTO ANEXADO]:\n${uploadedText}`,
+                ].filter(Boolean).join('\n\n') || 'Execute o fluxo.';
 
-                    const nodeOutputs: Array<{ label: string; output: string }> = [];
-                    let finalOutput = '';
-
-                    await runFlow(orchAgent.flow_id, flowInput, (event) => {
-                        const ev = event as { event: string; label?: string; output?: string; error?: string };
-                        if (ev.event === 'node_done' && ev.label && ev.output) {
-                            nodeOutputs.push({ label: ev.label, output: ev.output });
-                        }
-                        if (ev.event === 'flow_done' && ev.output) {
-                            finalOutput = ev.output;
-                        }
-                        if (ev.event === 'node_error' || ev.event === 'error') {
-                            throw new Error(ev.error || 'Erro na execução do fluxo');
-                        }
-                    });
-
-                    const steps = nodeOutputs
-                        .map(s => `### ⚙️ ${s.label}\n\n${s.output}`)
-                        .join('\n\n---\n\n');
-                    const body = finalOutput
-                        ? `${steps}\n\n---\n\n### ✅ Resultado Final\n\n${finalOutput}`
-                        : steps;
-
-                    addMessage({
-                        role: 'assistant',
-                        content: body || '(fluxo concluído sem saída)',
-                        model: 'orquestrador',
-                    });
-                } catch (err) {
-                    addMessage({
-                        role: 'assistant',
-                        content: `⚠️ **Erro no fluxo:** ${errorText(err)}`,
-                        model: 'erro',
-                    });
-                } finally {
-                    setIsLoading(false);
-                }
+                await executeFlowAndRender(orchAgent.flow_id, flowInput);
+                setIsLoading(false);
                 return;
             }
 
@@ -344,5 +396,28 @@ export function useMessageSender({ canvas, ragStatus, setRagStatus }: UseMessage
         void addMessages;
     }, [globalSelectedModel, addMessage, addMessages, setIsLoading]);
 
-    return { handleSend, handleRetry, handleAutoReview };
+    const handleFlowResume = useCallback(async (
+        flowId: string,
+        startFrom: string,
+        state: Record<string, unknown>,
+        decision: 'approve' | 'reject',
+        userInput?: string,
+    ) => {
+        if (decision === 'reject') {
+            addMessage({
+                role: 'assistant',
+                content: '🛑 **Fluxo cancelado** — execução interrompida pelo usuário.',
+                model: 'orquestrador',
+            });
+            return;
+        }
+        setIsLoading(true);
+        try {
+            await executeFlowAndRender(flowId, { state, startFrom, userInput });
+        } finally {
+            setIsLoading(false);
+        }
+    }, [addMessage, setIsLoading, executeFlowAndRender]);
+
+    return { handleSend, handleRetry, handleAutoReview, handleFlowResume };
 }

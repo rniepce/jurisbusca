@@ -9,7 +9,8 @@ export type MessageRole =
     | 'xray-processing'
     | 'slm-pipeline'
     | 'agent-activation'
-    | 'batch-pilot-confirm';
+    | 'batch-pilot-confirm'
+    | 'flow-hil-pending';
 
 export interface V2Section {
     title: string;
@@ -42,6 +43,12 @@ export interface Message {
     // Batch pilot confirm fields
     remainingCount?: number;
     clusterName?: string;
+    // HIL flow-pause fields
+    flowId?: string;
+    hilNextNodeId?: string;
+    hilState?: Record<string, unknown>;
+    hilQuestion?: string;
+    hilLabel?: string;
 }
 
 export interface AgentAutoAction {

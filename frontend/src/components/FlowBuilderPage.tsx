@@ -13,12 +13,17 @@ import {
 import '@xyflow/react/dist/style.css';
 import {
     FaPlus, FaFloppyDisk, FaPlay, FaTrash, FaChevronLeft,
-    FaCodeBranch, FaRobot, FaListUl, FaEye, FaXmark,
+    FaListUl, FaEye, FaXmark, FaShapes, FaWandMagicSparkles,
 } from 'react-icons/fa6';
 import AgentNode from './flow/AgentNode';
 import RouterNode from './flow/RouterNode';
 import { StartNode, EndNode } from './flow/StartEndNodes';
 import NodeConfigPanel from './flow/NodeConfigPanel';
+import NodeCatalog from './flow/NodeCatalog';
+import FlowTemplates from './flow/FlowTemplates';
+import {
+    SwitchNode, HILNode, DocxNode, JurisNode, ModeloNode, EstiloNode,
+} from './flow/SpecialNodes';
 import {
     listFlows, createFlow, getFlow, updateFlow, deleteFlow, previewFlow,
     type FlowSummary, type FlowConfig,
@@ -30,21 +35,36 @@ const NODE_TYPES = {
     end: EndNode,
     agent: AgentNode,
     router: RouterNode,
+    switch: SwitchNode,
+    hil: HILNode,
+    docx: DocxNode,
+    juris: JurisNode,
+    modelo: ModeloNode,
+    estilo: EstiloNode,
 };
 
 const AGENT_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
 
 let nodeCounter = 1;
 
-function makeNode(type: string, position = { x: 200, y: 200 }): Node {
+function makeNode(type: string, position = { x: 200, y: 200 }, dataOverrides: Record<string, string> = {}): Node {
     const id = `${type}_${Date.now()}_${nodeCounter++}`;
     const defaults: Record<string, Record<string, string>> = {
         agent: { label: 'Agente', model: 'gpt-5.3-chat', prompt: '', output_var: `saida_${nodeCounter}`, knowledge: '', knowledge_files: '' },
         router: { label: 'Roteador', condition: '' },
+        switch: { label: 'Classificador', categories: 'Civil|Penal|Tributário', model: 'gpt-5.4-mini' },
+        hil: { label: 'Aprovação Humana', question: 'Por favor, revise antes de continuar.' },
+        docx: { label: 'Gerar DOCX', filename: 'documento.docx' },
+        juris: { label: 'Pesquisar Jurisprudência', query: '', top_k: '5' },
+        modelo: { label: 'Buscar Modelo', query: '', top_k: '3' },
+        estilo: { label: 'Aplicar Estilo' },
         start: {},
         end: {},
     };
-    return { id, type, position, data: defaults[type] ?? {} };
+    return {
+        id, type, position,
+        data: { ...(defaults[type] ?? {}), output_var: `saida_${nodeCounter}`, ...dataOverrides },
+    };
 }
 
 interface RunEvent {
@@ -73,6 +93,8 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
     const [inputText, setInputText] = useState('');
     const [showFlowList, setShowFlowList] = useState(false);
     const [showSaveDialog, setShowSaveDialog] = useState(false);
+    const [showCatalog, setShowCatalog] = useState(false);
+    const [showTemplates, setShowTemplates] = useState(false);
     const [flows, setFlows] = useState<FlowSummary[]>([]);
     const [loadingFlows, setLoadingFlows] = useState(false);
     const [finalOutput, setFinalOutput] = useState('');
@@ -108,10 +130,39 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
         setSelectedNode(prev => prev?.id === nodeId ? { ...prev, data } : prev);
     }, [setNodes]);
 
-    const addNode = (type: string) => {
+    const addNode = (type: string, dataOverrides: Record<string, string> = {}) => {
         const offset = nodes.length * 25;
-        const n = makeNode(type, { x: 300 + offset, y: 180 + offset });
+        const n = makeNode(type, { x: 300 + offset, y: 180 + offset }, dataOverrides);
         setNodes(ns => [...ns, n]);
+    };
+
+    // Construo a lista de labels disponíveis (saídas dos nós) para autocompletar prompts
+    const availableLabels = nodes
+        .filter(n => n.type !== 'start' && n.type !== 'end')
+        .map(n => (n.data as Record<string, string>).label || n.id)
+        .filter(Boolean);
+
+    const loadTemplateFlow = (template: { name: string; color: string; desc: string; config: FlowConfig }) => {
+        setFlowId(null);
+        setFlowName(template.name);
+        setFlowDescription(template.desc);
+        setFlowColor(template.color);
+        const loadedNodes = template.config.nodes.map(n => ({
+            id: n.id,
+            type: n.type,
+            position: n.position,
+            data: { ...n.data, status: 'idle' },
+        }));
+        setNodes(loadedNodes);
+        setEdges(template.config.edges.map(e => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            label: e.label || '',
+            sourceHandle: e.sourceHandle || null,
+            style: { stroke: '#94a3b8', strokeWidth: 2 },
+        })));
+        setSelectedNode(null);
     };
 
     const deleteSelectedNode = () => {
@@ -320,11 +371,11 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
 
                 <div className="flow-toolbar-divider" />
 
-                <button onClick={() => addNode('agent')} className="flow-btn flow-btn-add agent">
-                    <FaRobot size={12} /> Agente
+                <button onClick={() => setShowCatalog(true)} className="flow-btn flow-btn-add agent">
+                    <FaShapes size={12} /> Adicionar Nó
                 </button>
-                <button onClick={() => addNode('router')} className="flow-btn flow-btn-add router">
-                    <FaCodeBranch size={12} /> Roteador
+                <button onClick={() => setShowTemplates(true)} className="flow-btn flow-btn-add modelo">
+                    <FaWandMagicSparkles size={12} /> Templates
                 </button>
 
                 {selectedNode && (
@@ -377,14 +428,29 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
                     <Controls />
                 </ReactFlow>
 
-                {selectedNode && (selectedNode.type === 'agent' || selectedNode.type === 'router') && (
+                {selectedNode && selectedNode.type !== 'start' && selectedNode.type !== 'end' && (
                     <NodeConfigPanel
                         node={selectedNode as { id: string; type: string; data: Record<string, string> }}
                         onChange={handleNodeDataChange}
                         onClose={() => setSelectedNode(null)}
+                        availableLabels={availableLabels.filter(l => l !== (selectedNode.data as Record<string, string>).label)}
                     />
                 )}
             </div>
+
+            {/* Catálogo de nós */}
+            <NodeCatalog
+                open={showCatalog}
+                onClose={() => setShowCatalog(false)}
+                onAdd={(item) => addNode(item.type, item.defaults)}
+            />
+
+            {/* Templates de fluxo */}
+            <FlowTemplates
+                open={showTemplates}
+                onClose={() => setShowTemplates(false)}
+                onPick={loadTemplateFlow}
+            />
 
             {/* Save dialog */}
             {showSaveDialog && (

@@ -23,6 +23,7 @@ interface MessageRowProps {
     onAutoAction?: (msg: any) => void;
     onPilotReplicate?: () => void;
     onPilotDismiss?: () => void;
+    onFlowResume?: (flowId: string, startFrom: string, state: Record<string, unknown>, decision: 'approve' | 'reject', userInput?: string) => void;
 }
 
 interface ChatAreaProps {
@@ -46,6 +47,7 @@ interface ChatAreaProps {
     onJurisSearch?: () => void;
     onPilotReplicate?: () => void;
     onPilotDismiss?: () => void;
+    onFlowResume?: (flowId: string, startFrom: string, state: Record<string, unknown>, decision: 'approve' | 'reject', userInput?: string) => void;
     onRetry?: () => void;
 }
 
@@ -244,7 +246,7 @@ function V2CollapsibleCard({ icon, title, content }: { icon: string; title: stri
 }
 
 // ── Memoized individual message rows ──
-const MessageRow = memo(function MessageRow({ msg, i, isLoading, onRetry, onAutoAction, onPilotReplicate, onPilotDismiss }: MessageRowProps) {
+const MessageRow = memo(function MessageRow({ msg, i, isLoading, onRetry, onAutoAction, onPilotReplicate, onPilotDismiss, onFlowResume }: MessageRowProps) {
     // ── Agent Activation Card ──
     if (msg.role === 'agent-activation') {
         const IconComp = iconMap[msg.agentIcon as keyof typeof iconMap] || FaScaleBalanced;
@@ -310,6 +312,43 @@ const MessageRow = memo(function MessageRow({ msg, i, isLoading, onRetry, onAuto
     }
 
     // ── Batch Pilot Confirmation Card ──
+    if (msg.role === 'flow-hil-pending') {
+        const handleApprove = () => onFlowResume && onFlowResume(msg.flowId, msg.hilNextNodeId, msg.hilState || {}, 'approve');
+        const handleReject = () => onFlowResume && onFlowResume(msg.flowId, msg.hilNextNodeId, msg.hilState || {}, 'reject');
+        const handleEdit = () => {
+            const edited = window.prompt('Edite o conteúdo antes de continuar:', msg.content);
+            if (edited != null && edited !== msg.content) {
+                onFlowResume && onFlowResume(msg.flowId, msg.hilNextNodeId, msg.hilState || {}, 'approve', edited);
+            }
+        };
+        return (
+            <div key={i} className="flow-hil-card">
+                <div className="flow-hil-header">
+                    <span className="flow-hil-icon">⏸</span>
+                    <div className="flow-hil-title">
+                        <span className="flow-hil-name">{msg.hilLabel || 'Aprovação necessária'}</span>
+                        {msg.hilQuestion && <span className="flow-hil-question">{msg.hilQuestion}</span>}
+                    </div>
+                </div>
+                {msg.content && (
+                    <div className="flow-hil-content markdown"
+                         dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />
+                )}
+                <div className="flow-hil-actions">
+                    <button className="flow-hil-btn approve" onClick={handleApprove} disabled={isLoading}>
+                        ✓ Aprovar e continuar
+                    </button>
+                    <button className="flow-hil-btn edit" onClick={handleEdit} disabled={isLoading}>
+                        ✏️ Editar
+                    </button>
+                    <button className="flow-hil-btn reject" onClick={handleReject} disabled={isLoading}>
+                        ✗ Rejeitar
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     if (msg.role === 'batch-pilot-confirm') {
         return (
             <div key={i} className="batch-pilot-confirm-card">
@@ -427,7 +466,7 @@ const MessageRow = memo(function MessageRow({ msg, i, isLoading, onRetry, onAuto
 
 const VISIBLE_INCREMENT = 50;
 
-const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessing = false, ocrEngineName = 'none', ocrProgress = { progress: '', percent: 0 }, styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, onQAReview, hasUploadedText = false, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, onPilotReplicate, onPilotDismiss, onRetry }: ChatAreaProps) => {
+const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessing = false, ocrEngineName = 'none', ocrProgress = { progress: '', percent: 0 }, styleAnalyzing = false, xrayLoading = false, xrayProgress = '', onAutoAction, onQAReview, hasUploadedText = false, jurisResearch = null, jurisResearchLoading = false, jurisResearchProgress = '', onJurisImport, onJurisSearch, onPilotReplicate, onPilotDismiss, onFlowResume, onRetry }: ChatAreaProps) => {
     const endRef = useRef<HTMLDivElement | null>(null);
     const [visibleCount, setVisibleCount] = useState(VISIBLE_INCREMENT);
     // Elapsed timer for loading state
@@ -511,6 +550,7 @@ const ChatArea = ({ messages, isLoading, selectedModel, activeAgent, ocrProcessi
                         onAutoAction={onAutoAction}
                         onPilotReplicate={onPilotReplicate}
                         onPilotDismiss={onPilotDismiss}
+                        onFlowResume={onFlowResume}
                     />
                 ))}
 

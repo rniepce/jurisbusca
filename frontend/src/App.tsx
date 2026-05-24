@@ -249,6 +249,7 @@ function MainApp() {
                                 onJurisSearch={juris.handleJurisSearch}
                                 onPilotReplicate={batch.handlePilotReplicate}
                                 onPilotDismiss={batch.handlePilotDismiss}
+                                onFlowResume={sender.handleFlowResume}
                                 onRetry={sender.handleRetry}
                             />
                         ) : (

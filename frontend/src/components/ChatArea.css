@@ -1495,3 +1495,112 @@
     border-color: #bbb;
     color: #333;
 }
+/* ===== HIL (Human-in-the-loop) card no chat ===== */
+.flow-hil-card {
+    background: var(--surface, var(--sidebar-bg));
+    border: 1px solid var(--border-color);
+    border-left: 4px solid #f59e0b;
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin: 12px 0;
+    box-shadow: var(--shadow-soft);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 800px;
+}
+
+.flow-hil-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.flow-hil-icon {
+    font-size: 22px;
+    line-height: 1;
+}
+
+.flow-hil-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.flow-hil-name {
+    font-weight: 700;
+    color: var(--text-color);
+    font-size: 14px;
+}
+
+.flow-hil-question {
+    font-size: 12px;
+    color: var(--secondary-text-color);
+    line-height: 1.4;
+}
+
+.flow-hil-content {
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--text-color);
+    max-height: 280px;
+    overflow-y: auto;
+    line-height: 1.55;
+}
+
+.flow-hil-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.flow-hil-btn {
+    flex: 1;
+    min-width: 130px;
+    padding: 9px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-family);
+    transition: all 0.15s ease;
+}
+
+.flow-hil-btn.approve {
+    background: linear-gradient(135deg, #15803d 0%, #16a34a 50%, #22c55e 100%);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 2px 6px rgba(22, 163, 74, 0.3);
+}
+
+.flow-hil-btn.approve:hover:not(:disabled) {
+    box-shadow: 0 4px 10px rgba(22, 163, 74, 0.4);
+}
+
+.flow-hil-btn.edit {
+    background: var(--input-bg, var(--bg-color));
+    color: var(--text-color);
+}
+
+.flow-hil-btn.edit:hover:not(:disabled) {
+    border-color: var(--primary-color);
+}
+
+.flow-hil-btn.reject {
+    background: transparent;
+    color: #f87171;
+    border-color: rgba(220, 38, 38, 0.4);
+}
+
+.flow-hil-btn.reject:hover:not(:disabled) {
+    background: rgba(220, 38, 38, 0.1);
+}
+
+.flow-hil-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
