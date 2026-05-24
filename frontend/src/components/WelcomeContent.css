@@ -65,8 +65,8 @@
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-4) var(--space-5);
-    background: #fff;
-    border: 1px solid var(--gray-200);
+    background: var(--surface, #fff);
+    border: 1px solid var(--border-color, var(--gray-200));
     border-radius: var(--radius-md);
     cursor: pointer;
     transition: all 0.2s ease;
@@ -147,6 +147,14 @@
     font-size: var(--text-sm);
     color: var(--gray-500); /* AA-compliant em fundo branco */
     line-height: 1.4;
+}
+
+:root[data-theme="dark"] .welcome-action-title {
+    color: var(--gray-50);
+}
+
+:root[data-theme="dark"] .welcome-action-desc {
+    color: var(--gray-400);
 }
 
 /* ===== MOBILE ===== */
