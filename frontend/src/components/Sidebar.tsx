@@ -5,10 +5,11 @@ import {
     FaScaleBalanced,
     FaComments,
     FaWandMagicSparkles, FaTrash, FaShareNodes, FaEllipsisVertical, FaRobot,
-    FaGavel, FaLayerGroup, FaBook, FaDiagramProject, FaSitemap,
+    FaGavel, FaLayerGroup, FaBook, FaDiagramProject, FaSitemap, FaBookOpen,
 } from 'react-icons/fa6';
 import { useNavigate, useLocation } from 'react-router-dom';
 import UserMenu from './UserMenu';
+import AgentLibraryDialog from './AgentLibraryDialog';
 import logoSvg from '../assets/logo.svg';
 import './Sidebar.css';
 
@@ -34,6 +35,7 @@ const Sidebar = ({
     const [customAgentsOpen, setCustomAgentsOpen] = useState(true);
     const [menuOpenId, setMenuOpenId] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [libraryOpen, setLibraryOpen] = useState(false);
 
     const goTo = (path: string) => {
         navigate(path);
@@ -211,8 +213,22 @@ const Sidebar = ({
                         <FaWandMagicSparkles size={13} />
                         <span>Criar Agente</span>
                     </button>
+
+                    {/* Library Button */}
+                    <button
+                        className="create-agent-sidebar-btn library-sidebar-btn"
+                        onClick={() => setLibraryOpen(true)}
+                        id="btn-agent-library"
+                    >
+                        <FaBookOpen size={13} />
+                        <span>Biblioteca</span>
+                    </button>
                 </div>
             </div>
+
+            {libraryOpen && (
+                <AgentLibraryDialog onClose={() => setLibraryOpen(false)} />
+            )}
 
             {/* Divider */}
             <div className="sidebar-divider" />
