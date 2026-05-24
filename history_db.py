@@ -45,6 +45,26 @@ def init_db():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS agent_flows (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                color TEXT DEFAULT '#3b82f6',
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        try:
+            conn.execute("ALTER TABLE agent_flows ADD COLUMN description TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE agent_flows ADD COLUMN color TEXT DEFAULT '#3b82f6'")
+        except Exception:
+            pass
         # Migrate: add response_style columns if they don't exist yet
         try:
             conn.execute("ALTER TABLE user_memories ADD COLUMN response_style TEXT DEFAULT 'default'")
@@ -215,6 +235,73 @@ def delete_auto_memory(memory_id: int, user_key: str) -> bool:
         conn.execute(
             "DELETE FROM auto_memories WHERE id = ? AND user_key = ?",
             (memory_id, user_key)
+        )
+        conn.commit()
+    return True
+
+
+# ── Agent Flows ───────────────────────────────────────────────────────────────
+
+def create_flow(user_id: str, flow_id: str, name: str, config: dict, description: str = "", color: str = "#3b82f6") -> dict:
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO agent_flows (id, user_id, name, config_json, description, color) VALUES (?, ?, ?, ?, ?, ?)",
+            (flow_id, user_id, name, json.dumps(config, ensure_ascii=False), description, color)
+        )
+        conn.commit()
+    return {"id": flow_id, "user_id": user_id, "name": name, "config": config, "description": description, "color": color}
+
+
+def get_flow(flow_id: str, user_id: str) -> dict | None:
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT id, user_id, name, config_json, description, color, created_at, updated_at FROM agent_flows WHERE id = ? AND user_id = ?",
+            (flow_id, user_id)
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "name": row["name"],
+            "config": json.loads(row["config_json"]),
+            "description": row["description"] or "",
+            "color": row["color"] or "#3b82f6",
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+
+def list_flows(user_id: str) -> list:
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT id, name, description, color, created_at, updated_at FROM agent_flows WHERE user_id = ? ORDER BY updated_at DESC",
+            (user_id,)
+        )
+        return [{
+            "id": r["id"], "name": r["name"],
+            "description": r["description"] or "",
+            "color": r["color"] or "#3b82f6",
+            "created_at": r["created_at"], "updated_at": r["updated_at"]
+        } for r in cur.fetchall()]
+
+
+def update_flow(flow_id: str, user_id: str, name: str, config: dict, description: str = "", color: str = "#3b82f6") -> bool:
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE agent_flows SET name = ?, config_json = ?, description = ?, color = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+            (name, json.dumps(config, ensure_ascii=False), description, color, flow_id, user_id)
+        )
+        conn.commit()
+    return True
+
+
+def delete_flow(flow_id: str, user_id: str) -> bool:
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM agent_flows WHERE id = ? AND user_id = ?",
+            (flow_id, user_id)
         )
         conn.commit()
     return True

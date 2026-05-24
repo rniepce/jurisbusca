@@ -38,6 +38,7 @@ const ModelManagerPanel = lazy(() => import('./components/ModelManagerPanel'));
 const AgentBuilderChat = lazy(() => import('./components/AgentBuilderChat'));
 const LotePage = lazy(() => import('./components/LotePage'));
 const DeepResearchPanel = lazy(() => import('./components/DeepResearchPanel'));
+const FlowBuilderPage = lazy(() => import('./components/FlowBuilderPage'));
 
 // ── Route constants ──
 const ROUTES = {
@@ -51,6 +52,7 @@ const ROUTES = {
     modelos: '/modelos',
     engenheiroPrompts: '/engenheiro-prompts',
     lote: '/lote',
+    flows: '/flows',
 } as const;
 
 const PANEL_PATHS = new Set<string>([
@@ -59,6 +61,7 @@ const PANEL_PATHS = new Set<string>([
     ROUTES.modelos,
     ROUTES.engenheiroPrompts,
     ROUTES.lote,
+    ROUTES.flows,
 ]);
 
 function MainApp() {
@@ -210,6 +213,14 @@ function MainApp() {
                                 onClose={goHome}
                                 onPilotMode={batch.handleClusterPilotAction}
                             />
+                        </LazyPanel>
+                    }
+                />
+                <Route
+                    path={ROUTES.flows}
+                    element={
+                        <LazyPanel label="Construtor de Fluxos" onReset={goHome}>
+                            <FlowBuilderPage onClose={goHome} />
                         </LazyPanel>
                     }
                 />

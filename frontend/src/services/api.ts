@@ -1093,6 +1093,8 @@ export async function chatSustentacao(processId: string, messages: Array<{ role:
 export interface FlowSummary {
     id: string;
     name: string;
+    description?: string;
+    color?: string;
     created_at: string;
     updated_at: string;
 }
@@ -1105,6 +1107,8 @@ export interface FlowConfig {
 export interface Flow {
     id: string;
     name: string;
+    description?: string;
+    color?: string;
     config: FlowConfig;
     created_at: string;
     updated_at: string;
@@ -1119,11 +1123,11 @@ export async function listFlows(): Promise<FlowSummary[]> {
     return data.flows ?? [];
 }
 
-export async function createFlow(name: string, config: FlowConfig): Promise<Flow> {
+export async function createFlow(name: string, config: FlowConfig, description = '', color = '#3b82f6'): Promise<Flow> {
     const res = await fetch(`${API_BASE}/flows`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ name, config }),
+        body: JSON.stringify({ name, config, description, color }),
     });
     if (!res.ok) throw new Error(`Erro ao criar fluxo (${res.status})`);
     return safeJson(res, 'Create flow');
@@ -1137,11 +1141,11 @@ export async function getFlow(flowId: string): Promise<Flow> {
     return safeJson(res, 'Get flow');
 }
 
-export async function updateFlow(flowId: string, name: string, config: FlowConfig): Promise<void> {
+export async function updateFlow(flowId: string, name: string, config: FlowConfig, description = '', color = '#3b82f6'): Promise<void> {
     const res = await fetch(`${API_BASE}/flows/${flowId}`, {
         method: 'PUT',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ name, config }),
+        body: JSON.stringify({ name, config, description, color }),
     });
     if (!res.ok) throw new Error(`Erro ao salvar fluxo (${res.status})`);
 }
@@ -1166,17 +1170,10 @@ export async function extractFlowFiles(files: File[]): Promise<{ text: string; f
     return safeJson(res, 'Extract flow files');
 }
 
-export async function runFlow(
-    flowId: string,
-    inputText: string,
+async function streamSseEvents(
+    res: Response,
     onEvent: (event: Record<string, unknown>) => void,
 ): Promise<void> {
-    const res = await fetch(`${API_BASE}/flows/${flowId}/run`, {
-        method: 'POST',
-        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ input_text: inputText }),
-    });
-    if (!res.ok) throw new Error(`Erro ao executar fluxo (${res.status})`);
     const reader = res.body?.getReader();
     if (!reader) return;
     const decoder = new TextDecoder();
@@ -1197,4 +1194,32 @@ export async function runFlow(
             }
         }
     }
+}
+
+export async function runFlow(
+    flowId: string,
+    inputText: string,
+    onEvent: (event: Record<string, unknown>) => void,
+): Promise<void> {
+    const res = await fetch(`${API_BASE}/flows/${flowId}/run`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ input_text: inputText }),
+    });
+    if (!res.ok) throw new Error(`Erro ao executar fluxo (${res.status})`);
+    await streamSseEvents(res, onEvent);
+}
+
+export async function previewFlow(
+    config: FlowConfig,
+    inputText: string,
+    onEvent: (event: Record<string, unknown>) => void,
+): Promise<void> {
+    const res = await fetch(`${API_BASE}/flows/preview`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ config, input_text: inputText }),
+    });
+    if (!res.ok) throw new Error(`Erro no preview (${res.status})`);
+    await streamSseEvents(res, onEvent);
 }

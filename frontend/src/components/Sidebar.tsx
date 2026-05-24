@@ -5,7 +5,7 @@ import {
     FaScaleBalanced,
     FaComments,
     FaWandMagicSparkles, FaTrash, FaShareNodes, FaEllipsisVertical, FaRobot,
-    FaGavel, FaLayerGroup, FaBook
+    FaGavel, FaLayerGroup, FaBook, FaDiagramProject, FaSitemap,
 } from 'react-icons/fa6';
 import { useNavigate, useLocation } from 'react-router-dom';
 import UserMenu from './UserMenu';
@@ -45,6 +45,7 @@ const Sidebar = ({
         { path: '/jurisprudencia', label: 'Jurisprudência', icon: <FaScaleBalanced size={13} /> },
         { path: '/modelos', label: 'Gestor de Modelos', icon: <FaBook size={13} /> },
         { path: '/engenheiro-prompts', label: 'Engenheiro de Prompts', icon: <FaWandMagicSparkles size={13} /> },
+        { path: '/flows', label: 'Construtor de Fluxos', icon: <FaDiagramProject size={13} /> },
     ];
 
     const handleAgentClick = (agent) => {
@@ -154,19 +155,24 @@ const Sidebar = ({
                             Nenhum agente criado ainda. Clique em + para criar seu primeiro agente.
                         </p>
                     )}
-                    {customAgents.map((agent) => (
+                    {customAgents.map((agent) => {
+                        const isOrch = (agent as any).type === 'orquestrador';
+                        return (
                         <div key={agent.id} className="custom-agent-wrapper">
                             <button
-                                className={`agent-card ${activeAgent?.id === agent.id ? 'active' : ''}`}
+                                className={`agent-card ${activeAgent?.id === agent.id ? 'active' : ''} ${isOrch ? 'orquestrador' : ''}`}
                                 onClick={() => handleAgentClick(agent)}
                                 id={`agent-custom-${agent.id}`}
                             >
                                 <span className="agent-icon" style={{ color: agent.color || '#8B5CF6' }}>
-                                    <FaRobot />
+                                    {isOrch ? <FaSitemap /> : <FaRobot />}
                                 </span>
                                 <div className="agent-info">
-                                    <span className="agent-name">{agent.name}</span>
-                                    <span className="agent-desc">{(agent as any).description || 'Agente personalizado'}</span>
+                                    <div className="agent-name-row">
+                                        <span className="agent-name">{agent.name}</span>
+                                        {isOrch && <span className="agent-badge agent-badge-orquestrador">Orquestrador</span>}
+                                    </div>
+                                    <span className="agent-desc">{(agent as any).description || (isOrch ? 'Fluxo orquestrador' : 'Agente personalizado')}</span>
                                 </div>
                             </button>
                             <button
@@ -193,7 +199,8 @@ const Sidebar = ({
                                 </div>
                             )}
                         </div>
-                    ))}
+                        );
+                    })}
 
                     {/* Create Agent Button */}
                     <button

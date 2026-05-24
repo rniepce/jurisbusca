@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { sendMessage, uploadTemplates, generateStyleReport } from '../services/api';
+import { sendMessage, uploadTemplates, generateStyleReport, runFlow } from '../services/api';
 import { useChatStore, useUIStore } from '../store';
 import { safeResponseText, errorText } from './utils';
 import type { Message, SelectedModel, RagStatus } from '../types/chat';
@@ -98,6 +98,55 @@ export function useMessageSender({ canvas, ragStatus, setRagStatus }: UseMessage
                 addMessage({ role: 'user', content: userTyped });
             }
             setIsLoading(true);
+
+            // ─── Orquestrador: roda fluxo em vez de chat normal ──────────
+            const orchAgent = activeAgent as { type?: string; flow_id?: string } | null;
+            if (orchAgent?.type === 'orquestrador' && orchAgent.flow_id) {
+                try {
+                    const flowInput = [
+                        userTyped && `[INSTRUÇÃO DO USUÁRIO]:\n${userTyped}`,
+                        uploadedText && `[DOCUMENTO ANEXADO]:\n${uploadedText}`,
+                    ].filter(Boolean).join('\n\n') || 'Execute o fluxo.';
+
+                    const nodeOutputs: Array<{ label: string; output: string }> = [];
+                    let finalOutput = '';
+
+                    await runFlow(orchAgent.flow_id, flowInput, (event) => {
+                        const ev = event as { event: string; label?: string; output?: string; error?: string };
+                        if (ev.event === 'node_done' && ev.label && ev.output) {
+                            nodeOutputs.push({ label: ev.label, output: ev.output });
+                        }
+                        if (ev.event === 'flow_done' && ev.output) {
+                            finalOutput = ev.output;
+                        }
+                        if (ev.event === 'node_error' || ev.event === 'error') {
+                            throw new Error(ev.error || 'Erro na execução do fluxo');
+                        }
+                    });
+
+                    const steps = nodeOutputs
+                        .map(s => `### ⚙️ ${s.label}\n\n${s.output}`)
+                        .join('\n\n---\n\n');
+                    const body = finalOutput
+                        ? `${steps}\n\n---\n\n### ✅ Resultado Final\n\n${finalOutput}`
+                        : steps;
+
+                    addMessage({
+                        role: 'assistant',
+                        content: body || '(fluxo concluído sem saída)',
+                        model: 'orquestrador',
+                    });
+                } catch (err) {
+                    addMessage({
+                        role: 'assistant',
+                        content: `⚠️ **Erro no fluxo:** ${errorText(err)}`,
+                        model: 'erro',
+                    });
+                } finally {
+                    setIsLoading(false);
+                }
+                return;
+            }
 
             try {
                 if (templateFiles && templateFiles.length > 0 && (!ragStatus || ragStatus.indexed_chunks === 0)) {

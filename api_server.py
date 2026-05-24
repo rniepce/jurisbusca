@@ -2435,11 +2435,12 @@ class ShareAgentRequest(BaseModel):
 
 @app.get("/api/custom-agents")
 async def list_custom_agents(request: Request = None, _auth: dict = Depends(require_auth)):
-    """List custom agents for the authenticated user."""
-    # Extract user_id from JWT
+    """List custom agents (Supabase) + flow orchestrators (SQLite) for the user."""
     user_id = _extract_user_id(request)
     if not user_id:
         return {"agents": []}
+
+    agents: list = []
 
     if _SUPA_URL and _SUPA_ANON_KEY:
         try:
@@ -2447,11 +2448,28 @@ async def list_custom_agents(request: Request = None, _auth: dict = Depends(requ
             url = f"{_SUPA_URL.rstrip('/')}/rest/v1/{_CUSTOM_AGENTS_TABLE}?user_id=eq.{user_id}&select=*"
             resp = _requests_lib.get(url, headers=_supa_headers(token), timeout=10)
             if resp.ok:
-                return {"agents": resp.json()}
+                agents = [{**a, "type": "regular"} for a in resp.json()]
         except Exception as e:
             logger.error("Failed to list custom agents: %s", e)
 
-    return {"agents": []}
+    # Inclui fluxos como agentes orquestradores
+    try:
+        from history_db import list_flows
+        for flow in list_flows(user_id):
+            agents.append({
+                "id": flow["id"],
+                "name": flow["name"],
+                "description": flow.get("description") or "Fluxo orquestrador de múltiplos agentes",
+                "color": flow.get("color") or "#3b82f6",
+                "type": "orquestrador",
+                "flow_id": flow["id"],
+                "prompt": "",
+                "knowledge": "",
+            })
+    except Exception as e:
+        logger.warning("Failed to list flows as agents: %s", e)
+
+    return {"agents": agents}
 
 
 @app.post("/api/custom-agents")
@@ -3148,6 +3166,8 @@ async def analisar_sentenca(req: AnaliseDocumentoRequest, _auth: dict = Depends(
 class FlowSaveRequest(BaseModel):
     name: str
     config: dict
+    description: str = ""
+    color: str = "#3b82f6"
 
 
 @app.get("/api/flows")
@@ -3166,7 +3186,7 @@ async def create_flow_endpoint(req: FlowSaveRequest, request: Request, _auth: di
         raise HTTPException(status_code=401, detail="Autenticação necessária.")
     flow_id = f"flow_{uuid.uuid4().hex[:12]}"
     from history_db import create_flow
-    return create_flow(user_id, flow_id, req.name, req.config)
+    return create_flow(user_id, flow_id, req.name, req.config, req.description, req.color)
 
 
 @app.get("/api/flows/{flow_id}")
@@ -3189,7 +3209,7 @@ async def update_flow_endpoint(flow_id: str, req: FlowSaveRequest, request: Requ
     from history_db import get_flow, update_flow
     if not get_flow(flow_id, user_id):
         raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
-    update_flow(flow_id, user_id, req.name, req.config)
+    update_flow(flow_id, user_id, req.name, req.config, req.description, req.color)
     return {"status": "ok"}
 
 
@@ -3201,6 +3221,47 @@ async def delete_flow_endpoint(flow_id: str, request: Request, _auth: dict = Dep
     from history_db import delete_flow
     delete_flow(flow_id, user_id)
     return {"status": "ok"}
+
+
+@app.post("/api/flows/extract-files")
+async def extract_flow_files(
+    files: list[UploadFile] = File(...),
+    request: Request = None,
+    _auth: dict = Depends(require_auth),
+):
+    """Extract text from uploaded files for use as knowledge base in a flow node."""
+    import asyncio as _asyncio
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+
+    extracted_parts = []
+    accepted = []
+    for uf in files:
+        try:
+            file_data = await uf.read()
+            suffix = os.path.splitext(uf.filename or "")[-1].lower()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(file_data)
+                tmp_path = tmp.name
+            try:
+                with open(tmp_path, "rb") as f:
+                    full_text, _ = await _asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: be.process_uploaded_file(
+                            f, uf.filename or "file", ocr_engine_choice="none",
+                            compress=False, vectorize=False,
+                        ),
+                    )
+                if full_text and full_text.strip():
+                    extracted_parts.append(f"--- {uf.filename} ---\n{full_text.strip()}")
+                    accepted.append(uf.filename)
+            finally:
+                os.unlink(tmp_path)
+        except Exception as file_err:
+            logger.warning("Erro ao processar arquivo do fluxo %s: %s", uf.filename, file_err)
+
+    return {"text": "\n\n".join(extracted_parts), "files": accepted}
 
 
 @app.post("/api/flows/{flow_id}/run")
@@ -3222,6 +3283,31 @@ async def run_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depend
     def _stream():
         try:
             yield from flow_engine.build_and_run_flow(flow["config"], input_text)
+        except Exception as exc:
+            import traceback as _tb
+            _tb.print_exc()
+            yield f"data: {json.dumps({'event': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+class FlowPreviewRequest(BaseModel):
+    config: dict
+    input_text: str = ""
+
+
+@app.post("/api/flows/preview")
+async def preview_flow_endpoint(req: FlowPreviewRequest, _auth: dict = Depends(require_auth)):
+    """Executa um fluxo ad-hoc sem salvá-lo — útil para preview."""
+    import flow_engine
+
+    def _stream():
+        try:
+            yield from flow_engine.build_and_run_flow(req.config, req.input_text)
         except Exception as exc:
             import traceback as _tb
             _tb.print_exc()

@@ -66,6 +66,8 @@ export interface CustomAgent extends Agent {
     description?: string;
     knowledge?: string;
     created_at?: string;
+    type?: 'regular' | 'orquestrador';
+    flow_id?: string;
 }
 
 export interface SelectedModel {

@@ -341,6 +341,40 @@
     text-overflow: ellipsis;
 }
 
+.agent-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.agent-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    flex-shrink: 0;
+}
+
+.agent-badge-orquestrador {
+    background: rgba(59, 130, 246, 0.18);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+:root:not([data-theme="dark"]) .agent-badge-orquestrador {
+    background: #dbeafe;
+    color: #1d4ed8;
+    border-color: #93c5fd;
+}
+
+.agent-card.orquestrador {
+    border-left: 3px solid rgba(59, 130, 246, 0.5);
+}
+
 /* ===== CUSTOM AGENT WRAPPER ===== */
 .custom-agent-wrapper {
     position: relative;
