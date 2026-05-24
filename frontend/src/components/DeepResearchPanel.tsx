@@ -45,12 +45,12 @@ export default function DeepResearchPanel({ state, onClose, onSendToCanvas }: Pr
                 <div className="dr-header-left">
                     <FaFlask size={20} />
                     <div>
-                        <h2 className="dr-title">Deep Research</h2>
+                        <h2 className="dr-title">Deep Research · <span className="dr-badge-high">high effort</span></h2>
                         <p className="dr-subtitle">
                             {state.active
                                 ? state.phase || 'Processando...'
                                 : state.dossier
-                                    ? `Dossiê pronto · ${state.chunksIndexed} trechos indexados · ${doneCount}/${totalQ} pontos investigados`
+                                    ? `Relatório pronto · ${state.chunksIndexed} trechos indexados · ${doneCount}/${totalQ} pontos investigados`
                                     : state.error
                                         ? 'Falha — veja detalhes abaixo'
                                         : 'Aguardando início...'}
@@ -94,7 +94,7 @@ export default function DeepResearchPanel({ state, onClose, onSendToCanvas }: Pr
                             className={`dr-side-item dr-side-dossier ${view === 'dossier' ? 'selected' : ''}`}
                             onClick={() => setView('dossier')}
                         >
-                            📋 Dossiê consolidado
+                            📋 Relatório completo
                         </button>
                     )}
                     {state.questions.length > 0 && (
@@ -131,7 +131,7 @@ export default function DeepResearchPanel({ state, onClose, onSendToCanvas }: Pr
                             <div className="dr-viewer-toolbar">
                                 <button className="dr-toolbar-btn" onClick={handleCopy}>
                                     {copied ? <FaClipboardCheck size={13} /> : <FaCopy size={13} />}
-                                    {copied ? ' Copiado' : ' Copiar dossiê'}
+                                    {copied ? ' Copiado' : ' Copiar relatório'}
                                 </button>
                                 {onSendToCanvas && (
                                     <button

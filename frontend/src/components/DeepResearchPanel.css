@@ -34,6 +34,21 @@
     margin: 0;
     color: var(--gray-900);
     line-height: 1.2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dr-badge-high {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, #7c3aed, #a855f7);
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(124, 58, 237, 0.25);
 }
 
 :root[data-theme="dark"] .dr-title {

@@ -25,10 +25,12 @@ import backend as be
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gpt-5.3-chat"
-TOP_K = 5                  # chunks retrieved per question
+DEFAULT_MODEL = "gpt-5.3-chat"  # reasoning model — auto-activates reasoning_effort=high
+TOP_K = 8                       # chunks retrieved per question (raised for richer evidence)
 MAX_QUESTIONS = 12
-PLANNER_EXCERPT_CHARS = 8000   # how much of the text we show the planner
+PLANNER_EXCERPT_CHARS = 12000   # how much of the text we show the planner
+MAX_OUTPUT_TOKENS_RESEARCH = 4000   # per-question answer budget
+MAX_OUTPUT_TOKENS_DOSSIER = 16000   # final dossier budget (large prose synthesis)
 
 
 # ── Prompts ────────────────────────────────────────────────────────────────
@@ -56,69 +58,140 @@ Devolva APENAS um JSON no formato:
 Não inclua explicações fora do JSON."""
 
 
-PROMPT_RESEARCH = """Você é um analista jurídico investigando um processo. A pergunta abaixo \
-precisa ser respondida com base **estritamente** nos trechos do processo fornecidos.
+PROMPT_RESEARCH = """Você é um analista jurídico sênior investigando profundamente um processo \
+judicial. A pergunta abaixo exige análise minuciosa, exaustiva e rigorosa, baseada \
+**estritamente** nos trechos do processo fornecidos.
 
-PERGUNTA:
+PERGUNTA SOB INVESTIGAÇÃO:
 {question}
 
 TRECHOS RECUPERADOS DO PROCESSO:
 {chunks}
 
-Instruções:
-- Responda em 1-3 parágrafos objetivos.
-- Cite o trecho de onde a informação foi extraída usando [Trecho N].
-- Se a informação NÃO está nos trechos, responda "Não foi possível localizar no processo." (não invente).
-- Mantenha linguagem técnica jurídica."""
+INSTRUÇÕES DE EXECUÇÃO (cumpra todas):
+
+1. **Profundidade**: produza uma resposta extensa e detalhada — múltiplos parágrafos, \
+nunca menos de 4. Quando houver várias dimensões na pergunta, separe em subtópicos com \
+títulos `###`.
+
+2. **Raciocínio explícito**: antes de concluir, explicite o raciocínio jurídico passo a passo. \
+Demonstre como cada elemento dos trechos sustenta sua conclusão.
+
+3. **Citações rastreáveis**: toda afirmação factual deve vir acompanhada de citação \
+`[Trecho N]`. Se uma mesma informação aparece em múltiplos trechos, cite todos.
+
+4. **Análise crítica**: não se limite a descrever — analise. Aponte:
+   - Contradições internas nos autos, se houver
+   - Lacunas probatórias relevantes
+   - Implicações para a decisão final
+   - Riscos processuais identificados
+
+5. **Fundamentação legal**: quando aplicável, identifique os dispositivos legais (CPC, \
+CC, leis especiais, súmulas, temas vinculantes) que se conectam aos fatos descritos.
+
+6. **Rigor**: se a informação NÃO está nos trechos, escreva explicitamente \
+"Não foi possível localizar nos trechos analisados" — NUNCA invente nem extrapole.
+
+7. **Linguagem**: técnica jurídica, precisa, sem floreios desnecessários, mas sem \
+cortes que sacrifiquem a completude."""
 
 
-PROMPT_DOSSIER = """Você recebeu um conjunto de perguntas e respostas sobre um processo judicial.
-Consolide tudo num **dossiê estruturado** em markdown que servirá de base para o magistrado \
-decidir o processo.
+PROMPT_DOSSIER = """Você é um magistrado experiente redigindo um **relatório de análise \
+processual completo e minucioso** sobre um processo judicial. Você recebeu o resultado \
+de uma investigação aprofundada (perguntas e respostas detalhadas) e precisa consolidar \
+tudo em um relatório técnico extenso que servirá de base para sua decisão.
 
-ESTRUTURA OBRIGATÓRIA:
+⚠️ ESTE NÃO É UM RESUMO. É um relatório completo, denso, com todas as nuances. \
+Aproveite TODO o conteúdo das respostas — não suprima informações relevantes.
 
-# Dossiê de Análise Processual
+ESTRUTURA OBRIGATÓRIA DO RELATÓRIO (markdown):
 
-## 1. Identificação
-(partes, classe, valor da causa, fase atual)
+# Relatório de Análise Processual
 
-## 2. Síntese dos fatos
-(narrativa concisa)
+## I. Identificação do Processo
+Partes (qualificação completa, se disponível), classe processual, valor da causa, \
+fase atual, juízo competente. Não apenas listar — contextualize.
 
-## 3. Histórico processual
-(fases relevantes)
+## II. Histórico Processual Detalhado
+Narrativa cronológica das fases do processo: distribuição, citação, contestação, \
+réplica, audiências, perícias, decisões interlocutórias relevantes. Inclua datas \
+quando disponíveis e o conteúdo essencial de cada ato.
 
-## 4. Pedidos
-(lista)
+## III. Síntese dos Fatos
+Narrativa detalhada dos fatos da causa, com todas as versões (autor e réu) e \
+contextualização suficiente para compreender a controvérsia. Mínimo 3-5 parágrafos.
 
-## 5. Defesa
-(preliminares + mérito)
+## IV. Pedidos e Causa de Pedir
+Análise individualizada de cada pedido formulado (principal e sucessivos), \
+identificando a causa de pedir próxima e remota, a natureza da tutela pretendida \
+(declaratória, condenatória, constitutiva, mandamental, executiva), e os valores \
+ou obrigações específicas pleiteados.
 
-## 6. Provas produzidas
-(o que foi efetivamente juntado/produzido)
+## V. Defesa Apresentada
+### V.1. Preliminares
+Análise individualizada de cada preliminar suscitada, com avaliação de procedência.
 
-## 7. Questões controvertidas
-(o que ainda precisa ser decidido)
+### V.2. Mérito
+Teses defensivas, fatos impeditivos/modificativos/extintivos invocados, fundamentos \
+jurídicos da defesa.
 
-## 8. Preliminares de ordem pública
-(prescrição, decadência, ilegitimidade, AJG — se aplicáveis)
+## VI. Provas Produzidas
+Inventário detalhado: documentos (com identificação), testemunhal (depoimentos \
+relevantes), pericial (conclusões do laudo), depoimentos pessoais. Para cada conjunto \
+probatório, indique o que demonstra ou não demonstra.
 
-## 9. Jurisprudência aplicável
-(se identificada nos autos)
+## VII. Questões Controvertidas
+Enumeração precisa dos pontos ainda pendentes de decisão, com análise sobre quais \
+exigem prova e quais comportam julgamento imediato.
 
-## 10. Pontos críticos para a decisão
-(risco de embargos, atenção especial, recomendações)
+## VIII. Preliminares e Matérias de Ordem Pública
+Análise (mesmo que para descartar) de:
+- Prescrição/decadência
+- Legitimidade ativa e passiva
+- Interesse processual
+- Competência
+- Litispendência/coisa julgada
+- Assistência judiciária gratuita
+- Citação válida / revelia
+- Outras nulidades processuais
+
+## IX. Jurisprudência e Precedentes Aplicáveis
+Súmulas, temas de recursos repetitivos (STJ), temas de repercussão geral (STF), \
+enunciados, e jurisprudência citada nos autos ou claramente aplicável ao caso. \
+Analise como cada precedente se ajusta (ou se distingue) dos fatos.
+
+## X. Análise Crítica e Pontos Críticos para a Decisão
+Esta é a seção mais importante. Discorra extensamente sobre:
+- Pontos fortes e fracos da pretensão autoral
+- Pontos fortes e fracos da defesa
+- Lacunas probatórias e seu impacto no julgamento
+- Contradições nos autos
+- Riscos de embargos de declaração / recurso
+- Recomendações específicas para a redação da decisão
+- Questões de prova dinâmica do ônus, se aplicável
+
+## XI. Sugestão de Encaminhamento
+Indicação fundamentada do próximo ato adequado: saneador, sentença, despacho de mero \
+expediente, designação de audiência, conversão em diligência, etc. — com justificativa.
 
 ---
 
-PERGUNTAS E RESPOSTAS COLETADAS:
+PERGUNTAS E RESPOSTAS DA INVESTIGAÇÃO:
 {qa_pairs}
 
-Regras:
-- Preserve as citações [Trecho N] das respostas individuais para manter a rastreabilidade.
-- Se uma seção não tiver informação suficiente, escreva "Não localizado nos autos analisados."
-- Seja conciso mas completo."""
+REGRAS ABSOLUTAS:
+- ⚠️ EXTENSÃO: o relatório deve ser **completo e minucioso**. Não economize palavras \
+em seções com conteúdo substantivo. Mínimo desejado: 2.500 palavras (mais é melhor \
+quando há matéria nos autos).
+- ⚠️ Preserve TODAS as citações `[Trecho N]` das respostas originais — rastreabilidade \
+é obrigatória.
+- ⚠️ Para informações não localizadas, escreva "Não localizado nos autos analisados." \
+e prossiga (não pule a seção).
+- ⚠️ NÃO seja repetitivo: integre as respostas das perguntas individuais; não copie-as \
+em bloco.
+- ⚠️ Linguagem técnica, formal, precisa — adequada a uma decisão judicial.
+- ⚠️ Quando apropriado, use listas, subseções (`###`) e ênfase (`**negrito**`) para \
+facilitar a leitura."""
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -193,8 +266,24 @@ def run_deep_research(
 
         # ── 3. Plan investigation questions ──
         yield _event("phase", phase="planning", message="Planejando perguntas de investigação...")
-        llm = be.get_llm(model_name=model_name, temperature=0.3, api_key=api_key)
-        plan_response = llm.invoke([
+        # Planner: low-ish temperature, no special budget needed (output is short JSON).
+        planner_llm = be.get_llm(model_name=model_name, temperature=0.3, api_key=api_key)
+        # Research LLM: high output budget so each answer can be exhaustive.
+        # On GPT-5.3 this also auto-enables reasoning_effort=high (see backend.get_llm).
+        research_llm = be.get_llm(
+            model_name=model_name,
+            temperature=0.5,
+            api_key=api_key,
+            max_tokens=MAX_OUTPUT_TOKENS_RESEARCH,
+        )
+        # Dossier LLM: largest output budget — final synthesis is long-form prose.
+        dossier_llm = be.get_llm(
+            model_name=model_name,
+            temperature=0.5,
+            api_key=api_key,
+            max_tokens=MAX_OUTPUT_TOKENS_DOSSIER,
+        )
+        plan_response = planner_llm.invoke([
             SystemMessage(content=PROMPT_PLANNER),
             HumanMessage(content=f"Início do processo (primeiros {PLANNER_EXCERPT_CHARS} caracteres):\n\n{text[:PLANNER_EXCERPT_CHARS]}"),
         ])
@@ -216,9 +305,9 @@ def run_deep_research(
                     f"[Trecho {d.metadata.get('chunk_id', '?')}]\n{d.page_content.strip()}"
                     for d in relevant
                 )
-                research_resp = llm.invoke([
+                research_resp = research_llm.invoke([
                     SystemMessage(content=PROMPT_RESEARCH.format(question=question, chunks=chunks_text)),
-                    HumanMessage(content="Analise e responda."),
+                    HumanMessage(content="Realize a análise minuciosa solicitada."),
                 ])
                 answer = be.safe_content(research_resp)
                 qa_pairs.append({"question": question, "answer": answer})
@@ -229,13 +318,13 @@ def run_deep_research(
                 yield _event("question_error", index=idx, message=str(exc))
 
         # ── 5. Synthesize final dossier ──
-        yield _event("phase", phase="synthesizing", message="Consolidando dossiê final...")
+        yield _event("phase", phase="synthesizing", message="Consolidando relatório completo (high-effort)...")
         qa_text = "\n\n".join(
             f"### {qa['question']}\n{qa['answer']}" for qa in qa_pairs
         )
-        dossier_resp = llm.invoke([
+        dossier_resp = dossier_llm.invoke([
             SystemMessage(content=PROMPT_DOSSIER.format(qa_pairs=qa_text)),
-            HumanMessage(content="Gere o dossiê consolidado."),
+            HumanMessage(content="Redija o relatório completo e minucioso conforme especificado."),
         ])
         dossier = be.safe_content(dossier_resp)
 
