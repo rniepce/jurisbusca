@@ -52,14 +52,22 @@ function serializeFields(fields: ExtractorField[]): string {
         .join('|');
 }
 
+interface CustomAgentRef {
+    id: string;
+    name: string;
+    prompt: string;
+    color?: string;
+}
+
 interface Props {
     node: { id: string; type: string; data: Record<string, string> };
     onChange: (nodeId: string, data: Record<string, string>) => void;
     onClose: () => void;
     availableLabels?: string[];
+    customAgents?: CustomAgentRef[];
 }
 
-export default function NodeConfigPanel({ node, onChange, onClose, availableLabels = [] }: Props) {
+export default function NodeConfigPanel({ node, onChange, onClose, availableLabels = [], customAgents = [] }: Props) {
     const { type, data } = node;
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [uploading, setUploading] = useState(false);
@@ -127,6 +135,33 @@ export default function NodeConfigPanel({ node, onChange, onClose, availableLabe
             {/* ─── AGENT ───────────────────────────────────────────── */}
             {type === 'agent' && (
                 <>
+                    {customAgents.length > 0 && (
+                        <div className="flow-config-field">
+                            <label className="flow-config-label">Usar agente salvo</label>
+                            <select
+                                className="flow-select"
+                                value=""
+                                onChange={e => {
+                                    const agent = customAgents.find(a => a.id === e.target.value);
+                                    if (!agent) return;
+                                    onChange(node.id, {
+                                        ...data,
+                                        label: agent.name,
+                                        prompt: agent.prompt,
+                                    });
+                                }}
+                            >
+                                <option value="">— importar de um agente criado —</option>
+                                {customAgents.map(a => (
+                                    <option key={a.id} value={a.id}>{a.name}</option>
+                                ))}
+                            </select>
+                            <span className="flow-config-help">
+                                Preenche o nome e o prompt deste nó com as configurações do agente selecionado.
+                            </span>
+                        </div>
+                    )}
+
                     <div className="flow-config-field">
                         <label className="flow-config-label">Modelo</label>
                         <select

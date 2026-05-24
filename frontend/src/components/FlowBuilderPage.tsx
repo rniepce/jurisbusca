@@ -89,7 +89,7 @@ interface RunEvent {
     state?: Record<string, string>;
 }
 
-export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
+export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClose?: () => void; customAgents?: { id: string; name: string; prompt: string; color?: string }[] }) {
     const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -504,6 +504,7 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
                         onChange={handleNodeDataChange}
                         onClose={() => setSelectedNode(null)}
                         availableLabels={availableLabels.filter(l => l !== (selectedNode.data as Record<string, string>).label)}
+                        customAgents={customAgents}
                     />
                 )}
 

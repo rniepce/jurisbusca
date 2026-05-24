@@ -377,6 +377,7 @@ function MainApp() {
                     if (currentPath === ROUTES.engenheiroPrompts) navigate(ROUTES.home);
                 }}
                 initialPrompt={agents.pendingPrompt}
+                customAgents={agents.customAgents}
             />
 
             <ShareAgentDialog
