@@ -13,7 +13,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import {
     FaPlus, FaFloppyDisk, FaPlay, FaTrash, FaChevronLeft,
-    FaCodeBranch, FaRobot, FaFlag, FaListUl, FaEye, FaXmark,
+    FaCodeBranch, FaRobot, FaListUl, FaEye, FaXmark,
 } from 'react-icons/fa6';
 import AgentNode from './flow/AgentNode';
 import RouterNode from './flow/RouterNode';
@@ -96,10 +96,8 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
     );
 
     const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-        if (node.type === 'start' || node.type === 'end') {
-            setSelectedNode(null);
-            return;
-        }
+        // start/end podem ser selecionados (para deletar via toolbar) mas
+        // não abrem painel de configuração — não há nada a configurar.
         setSelectedNode(node);
     }, []);
 
@@ -328,12 +326,6 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
                 <button onClick={() => addNode('router')} className="flow-btn flow-btn-add router">
                     <FaCodeBranch size={12} /> Roteador
                 </button>
-                <button onClick={() => addNode('start')} className="flow-btn flow-btn-add start">
-                    <FaPlay size={10} /> Início
-                </button>
-                <button onClick={() => addNode('end')} className="flow-btn flow-btn-add end">
-                    <FaFlag size={11} /> Fim
-                </button>
 
                 {selectedNode && (
                     <>
@@ -385,7 +377,7 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
                     <Controls />
                 </ReactFlow>
 
-                {selectedNode && (
+                {selectedNode && (selectedNode.type === 'agent' || selectedNode.type === 'router') && (
                     <NodeConfigPanel
                         node={selectedNode as { id: string; type: string; data: Record<string, string> }}
                         onChange={handleNodeDataChange}
