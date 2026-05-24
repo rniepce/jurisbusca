@@ -288,9 +288,10 @@ export async function uploadBatchXray(files: File[], onProgress: ((progress: str
 }
 
 /**
- * Analyze a cluster of processes individually, in parallel.
- * The cluster metadata (situacao + tags) lets the backend auto-select
- * a specialized skill from ./skills/ to inject into the prompt.
+ * Analyze a cluster of processes one-by-one, streaming results via SSE.
+ * Optional onResult callback fires as each process finishes; the returned
+ * promise resolves with the same shape as the old JSON response so callers
+ * don't need to change.
  */
 export async function analyzeCluster(
     processes: Array<{ filename: string; text: string }>,
@@ -299,6 +300,7 @@ export async function analyzeCluster(
     llm: string | null = null,
     clusterSituacao: string | null = null,
     clusterTags: string[] | null = null,
+    onResult?: (result: { filename: string; status: string; response: string; model: string }) => void,
 ) {
     const res = await fetch(`${API_BASE}/cluster-analyze`, {
         method: 'POST',
@@ -314,12 +316,52 @@ export async function analyzeCluster(
         redirect: 'error',
     });
 
-    if (!res.ok) {
+    if (!res.ok || !res.body) {
         const err = await safeJson(res, 'Cluster Analyze').catch(() => ({}));
         throw new Error(err.detail || `Análise em lote falhou (${res.status})`);
     }
 
-    return safeJson(res, 'Cluster Analyze');
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const results: Array<{ filename: string; status: string; response: string; model: string }> = [];
+    let donePayload: { total: number; ok_count: number; skill_applied: string | null } | null = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let sepIdx: number;
+        while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {
+            const raw = buffer.slice(0, sepIdx);
+            buffer = buffer.slice(sepIdx + 2);
+            const dataLine = raw.split('\n').find((l) => l.startsWith('data: '));
+            if (!dataLine) continue;
+            try {
+                const parsed = JSON.parse(dataLine.slice(6));
+                if (parsed.event === 'result') {
+                    const r = { filename: parsed.filename, status: parsed.status, response: parsed.response, model: parsed.model };
+                    results.push(r);
+                    onResult?.(r);
+                } else if (parsed.event === 'done') {
+                    donePayload = { total: parsed.total, ok_count: parsed.ok_count, skill_applied: parsed.skill_applied };
+                } else if (parsed.event === 'error') {
+                    throw new Error(parsed.message || 'Erro na análise em lote');
+                }
+            } catch (e) {
+                if (e instanceof SyntaxError) continue; // malformed SSE line
+                throw e;
+            }
+        }
+    }
+
+    results.sort((a, b) => a.filename.localeCompare(b.filename));
+    return {
+        results,
+        total: donePayload?.total ?? results.length,
+        ok_count: donePayload?.ok_count ?? results.filter((r) => r.status === 'ok').length,
+        skill_applied: donePayload?.skill_applied ?? null,
+    };
 }
 
 /**
@@ -1028,4 +1070,103 @@ export async function chatSustentacao(processId: string, messages: Array<{ role:
         throw new Error(err.detail || `Erro no chat (${res.status})`);
     }
     return safeJson(res, 'Sustentação Chat');
+}
+
+// ── Agent Flows ────────────────────────────────────────────────────────────
+
+export interface FlowSummary {
+    id: string;
+    name: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface FlowConfig {
+    nodes: Array<{ id: string; type: string; position: { x: number; y: number }; data: Record<string, string> }>;
+    edges: Array<{ id: string; source: string; target: string; label?: string; sourceHandle?: string }>;
+}
+
+export interface Flow {
+    id: string;
+    name: string;
+    config: FlowConfig;
+    created_at: string;
+    updated_at: string;
+}
+
+export async function listFlows(): Promise<FlowSummary[]> {
+    const res = await fetch(`${API_BASE}/flows`, {
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Erro ao listar fluxos (${res.status})`);
+    const data = await safeJson(res, 'List flows');
+    return data.flows ?? [];
+}
+
+export async function createFlow(name: string, config: FlowConfig): Promise<Flow> {
+    const res = await fetch(`${API_BASE}/flows`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ name, config }),
+    });
+    if (!res.ok) throw new Error(`Erro ao criar fluxo (${res.status})`);
+    return safeJson(res, 'Create flow');
+}
+
+export async function getFlow(flowId: string): Promise<Flow> {
+    const res = await fetch(`${API_BASE}/flows/${flowId}`, {
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Fluxo não encontrado (${res.status})`);
+    return safeJson(res, 'Get flow');
+}
+
+export async function updateFlow(flowId: string, name: string, config: FlowConfig): Promise<void> {
+    const res = await fetch(`${API_BASE}/flows/${flowId}`, {
+        method: 'PUT',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ name, config }),
+    });
+    if (!res.ok) throw new Error(`Erro ao salvar fluxo (${res.status})`);
+}
+
+export async function deleteFlow(flowId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/flows/${flowId}`, {
+        method: 'DELETE',
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Erro ao apagar fluxo (${res.status})`);
+}
+
+export async function runFlow(
+    flowId: string,
+    inputText: string,
+    onEvent: (event: Record<string, unknown>) => void,
+): Promise<void> {
+    const res = await fetch(`${API_BASE}/flows/${flowId}/run`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ input_text: inputText }),
+    });
+    if (!res.ok) throw new Error(`Erro ao executar fluxo (${res.status})`);
+    const reader = res.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                try {
+                    onEvent(JSON.parse(line.slice(6)));
+                } catch {
+                    // ignore malformed
+                }
+            }
+        }
+    }
 }

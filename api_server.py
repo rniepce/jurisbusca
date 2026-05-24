@@ -1472,72 +1472,75 @@ def _analyze_single_process(
 @app.post("/api/cluster-analyze")
 async def cluster_analyze(req: ClusterAnalyzeRequest, _auth: dict = Depends(require_auth)):
     """
-    Process all files in a cluster individually, in parallel.
-    Returns a list of individual analysis results.
+    Process all files in a cluster one-by-one, streaming each result as an SSE event.
+    Streams: start → result (×N) → done
     """
-    import concurrent.futures
+    import asyncio
 
-    try:
-        # Resolve LLM deployment: prefer explicit llm field, fallback to MODEL_MAP
-        model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.3-chat")
+    if not req.processes:
+        raise HTTPException(status_code=400, detail="Nenhum processo para analisar.")
 
-        if not req.processes:
-            raise HTTPException(status_code=400, detail="Nenhum processo para analisar.")
+    model_name = req.llm or MODEL_MAP.get(req.model, "gpt-5.3-chat")
+    collection_name = "rag_templates_persistent"
 
-        collection_name = "rag_templates_persistent"
-
-        # Auto-select a specialized skill once for the whole cluster
-        # (every process in a cluster shares the same type of decision).
-        skill = skills_loader.select_skill(
-            situacao=req.cluster_situacao,
-            tags=req.cluster_tags,
+    skill = skills_loader.select_skill(
+        situacao=req.cluster_situacao,
+        tags=req.cluster_tags,
+    )
+    skill_block = skills_loader.format_skill_for_prompt(skill) if skill else ""
+    if skill:
+        logger.info(
+            "cluster-analyze: skill '%s' selected (situacao=%r, tags=%r) for %d processes",
+            skill.name, req.cluster_situacao, req.cluster_tags, len(req.processes),
         )
-        skill_block = skills_loader.format_skill_for_prompt(skill) if skill else ""
-        if skill:
-            logger.info(
-                "cluster-analyze: skill '%s' selected (situacao=%r, tags=%r) for %d processes",
-                skill.name, req.cluster_situacao, req.cluster_tags, len(req.processes),
-            )
 
-        results = []
-        # Serial execution (max_workers=1) to respect Azure S0 token-per-minute limits
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            futures = {}
-            for i, p in enumerate(req.processes):
-                if not p.get("text"):
-                    continue
-                # Stagger submissions to avoid rate limit bursts (Azure S0)
-                if i > 0:
-                    import time as _time
-                    _time.sleep(5)
-                future = executor.submit(
+    processes = [p for p in req.processes if p.get("text")]
+    total = len(processes)
+    agent_prompt = req.agent_prompt or ""
+    skill_name = skill.name if skill else None
+
+    async def _stream():
+        loop = asyncio.get_event_loop()
+        ok_count = 0
+
+        yield f"data: {json.dumps({'event': 'start', 'total': total, 'skill_applied': skill_name})}\n\n"
+
+        for i, p in enumerate(processes):
+            # Non-blocking stagger to respect Azure S0 token-per-minute limits
+            if i > 0:
+                await asyncio.sleep(5)
+
+            try:
+                result = await loop.run_in_executor(
+                    None,
                     _analyze_single_process,
                     p["filename"],
                     p["text"],
-                    req.agent_prompt or "",
+                    agent_prompt,
                     model_name,
                     collection_name,
                     skill_block,
                 )
-                futures[future] = p["filename"]
-            for future in concurrent.futures.as_completed(futures):
-                results.append(future.result())
+            except Exception as exc:
+                result = {
+                    "filename": p["filename"],
+                    "status": "error",
+                    "response": f"Erro: {exc}",
+                    "model": model_name,
+                }
 
-        # Sort by filename for consistent ordering
-        results.sort(key=lambda r: r["filename"])
+            if result["status"] == "ok":
+                ok_count += 1
 
-        return {
-            "results": results,
-            "total": len(results),
-            "ok_count": sum(1 for r in results if r["status"] == "ok"),
-            "skill_applied": skill.name if skill else None,
-        }
+            yield f"data: {json.dumps({'event': 'result', 'index': i, 'total': total, **result})}\n\n"
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro na análise em lote: {str(e)}")
+        yield f"data: {json.dumps({'event': 'done', 'total': total, 'ok_count': ok_count, 'skill_applied': skill_name})}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
 
 
 # ── Deep Research on uploaded process ─────────────────────────────────────────
@@ -3137,6 +3140,97 @@ async def analisar_sentenca(req: AnaliseDocumentoRequest, _auth: dict = Depends(
         documento_label="MINUTA DE SENTENÇA",
         documento_empty_msg="Sentença vazia.",
         system_prompt=ps_prompts.ANALISE_SENTENCA_SYSTEM,
+    )
+
+
+# ── Agent Flows ───────────────────────────────────────────────────────────────
+
+class FlowSaveRequest(BaseModel):
+    name: str
+    config: dict
+
+
+@app.get("/api/flows")
+async def list_flows_endpoint(request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import list_flows
+    return {"flows": list_flows(user_id)}
+
+
+@app.post("/api/flows", status_code=201)
+async def create_flow_endpoint(req: FlowSaveRequest, request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    flow_id = f"flow_{uuid.uuid4().hex[:12]}"
+    from history_db import create_flow
+    return create_flow(user_id, flow_id, req.name, req.config)
+
+
+@app.get("/api/flows/{flow_id}")
+async def get_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import get_flow
+    flow = get_flow(flow_id, user_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
+    return flow
+
+
+@app.put("/api/flows/{flow_id}")
+async def update_flow_endpoint(flow_id: str, req: FlowSaveRequest, request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import get_flow, update_flow
+    if not get_flow(flow_id, user_id):
+        raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
+    update_flow(flow_id, user_id, req.name, req.config)
+    return {"status": "ok"}
+
+
+@app.delete("/api/flows/{flow_id}")
+async def delete_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import delete_flow
+    delete_flow(flow_id, user_id)
+    return {"status": "ok"}
+
+
+@app.post("/api/flows/{flow_id}/run")
+async def run_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+
+    body = await request.json()
+    input_text = body.get("input_text", "")
+
+    from history_db import get_flow
+    flow = get_flow(flow_id, user_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
+
+    import flow_engine
+
+    def _stream():
+        try:
+            yield from flow_engine.build_and_run_flow(flow["config"], input_text)
+        except Exception as exc:
+            import traceback as _tb
+            _tb.print_exc()
+            yield f"data: {json.dumps({'event': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
 
 
