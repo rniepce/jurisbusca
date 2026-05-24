@@ -57,6 +57,16 @@ def init_db():
                 updated_at TEXT DEFAULT (datetime('now'))
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS flow_shares (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                flow_id TEXT NOT NULL,
+                shared_with_email TEXT NOT NULL,
+                shared_by_user_id TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(flow_id, shared_with_email)
+            )
+        """)
         try:
             conn.execute("ALTER TABLE agent_flows ADD COLUMN description TEXT DEFAULT ''")
         except Exception:
@@ -303,8 +313,76 @@ def delete_flow(flow_id: str, user_id: str) -> bool:
             "DELETE FROM agent_flows WHERE id = ? AND user_id = ?",
             (flow_id, user_id)
         )
+        conn.execute(
+            "DELETE FROM flow_shares WHERE flow_id = ? AND shared_by_user_id = ?",
+            (flow_id, user_id)
+        )
         conn.commit()
     return True
+
+
+def share_flow(flow_id: str, owner_user_id: str, email: str) -> bool:
+    """Compartilha um fluxo com outro usuário via email."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO flow_shares (flow_id, shared_with_email, shared_by_user_id) VALUES (?, ?, ?)",
+            (flow_id, email.strip().lower(), owner_user_id),
+        )
+        conn.commit()
+    return True
+
+
+def list_shared_flows_for_email(email: str) -> list:
+    """Retorna fluxos compartilhados com o email recebido (e ainda existentes)."""
+    if not email:
+        return []
+    e = email.strip().lower()
+    with get_db() as conn:
+        cur = conn.execute(
+            """
+            SELECT f.id, f.name, f.description, f.color, f.created_at, f.updated_at, s.shared_by_user_id
+            FROM flow_shares s
+            JOIN agent_flows f ON f.id = s.flow_id
+            WHERE s.shared_with_email = ?
+            ORDER BY f.updated_at DESC
+            """,
+            (e,),
+        )
+        return [{
+            "id": r["id"], "name": r["name"],
+            "description": r["description"] or "",
+            "color": r["color"] or "#3b82f6",
+            "created_at": r["created_at"], "updated_at": r["updated_at"],
+            "shared_by_user_id": r["shared_by_user_id"],
+            "shared": True,
+        } for r in cur.fetchall()]
+
+
+def get_flow_shared(flow_id: str, email: str) -> dict | None:
+    """Busca um fluxo se foi compartilhado com o email do solicitante."""
+    if not email:
+        return None
+    e = email.strip().lower()
+    with get_db() as conn:
+        cur = conn.execute(
+            """
+            SELECT f.id, f.user_id, f.name, f.description, f.color, f.config_json, f.created_at, f.updated_at
+            FROM flow_shares s
+            JOIN agent_flows f ON f.id = s.flow_id
+            WHERE s.flow_id = ? AND s.shared_with_email = ?
+            """,
+            (flow_id, e),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"], "user_id": row["user_id"], "name": row["name"],
+            "description": row["description"] or "",
+            "color": row["color"] or "#3b82f6",
+            "config": json.loads(row["config_json"]),
+            "created_at": row["created_at"], "updated_at": row["updated_at"],
+        }
 
 
 _db_initialized = False

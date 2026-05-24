@@ -13,7 +13,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import {
     FaPlus, FaFloppyDisk, FaPlay, FaTrash, FaChevronLeft,
-    FaListUl, FaEye, FaXmark, FaShapes, FaWandMagicSparkles,
+    FaListUl, FaEye, FaXmark, FaShapes, FaWandMagicSparkles, FaShareNodes,
 } from 'react-icons/fa6';
 import AgentNode from './flow/AgentNode';
 import RouterNode from './flow/RouterNode';
@@ -26,6 +26,7 @@ import {
 } from './flow/SpecialNodes';
 import {
     listFlows, createFlow, getFlow, updateFlow, deleteFlow, previewFlow,
+    extractFlowFiles, shareFlow,
     type FlowSummary, type FlowConfig,
 } from '../services/api';
 import './FlowBuilderPage.css';
@@ -98,6 +99,9 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
     const [flows, setFlows] = useState<FlowSummary[]>([]);
     const [loadingFlows, setLoadingFlows] = useState(false);
     const [finalOutput, setFinalOutput] = useState('');
+    const [dragOver, setDragOver] = useState(false);
+    const [pdfDropping, setPdfDropping] = useState(false);
+    const [pdfFiles, setPdfFiles] = useState<string[]>([]);
     const logEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -141,6 +145,39 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
         .filter(n => n.type !== 'start' && n.type !== 'end')
         .map(n => (n.data as Record<string, string>).label || n.id)
         .filter(Boolean);
+
+    // ── Drag-and-drop de PDF/DOCX no canvas → vira input do Início ──
+    const handleCanvasDragOver = (e: React.DragEvent) => {
+        if (e.dataTransfer.types.includes('Files')) {
+            e.preventDefault();
+            setDragOver(true);
+        }
+    };
+    const handleCanvasDragLeave = (e: React.DragEvent) => {
+        // só desativa se sair do wrapper (não de filho)
+        if (e.currentTarget === e.target) setDragOver(false);
+    };
+    const handleCanvasDrop = async (e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOver(false);
+        const files = Array.from(e.dataTransfer.files || []);
+        if (files.length === 0) return;
+        const acceptable = files.filter(f => /\.(pdf|docx?|txt|md)$/i.test(f.name));
+        if (acceptable.length === 0) {
+            alert('Solte arquivos PDF, DOCX, TXT ou Markdown.');
+            return;
+        }
+        setPdfDropping(true);
+        try {
+            const result = await extractFlowFiles(acceptable);
+            setInputText(prev => prev ? `${prev}\n\n${result.text}` : result.text);
+            setPdfFiles(prev => [...prev, ...result.files]);
+        } catch (err) {
+            alert(`Erro ao processar arquivo: ${err}`);
+        } finally {
+            setPdfDropping(false);
+        }
+    };
 
     const loadTemplateFlow = (template: { name: string; color: string; desc: string; config: FlowConfig }) => {
         setFlowId(null);
@@ -318,6 +355,17 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
         }
     };
 
+    const handleShareFlow = async (id: string, name: string) => {
+        const email = window.prompt(`Compartilhar "${name}" com qual e-mail?`, '');
+        if (!email || !email.includes('@')) return;
+        try {
+            await shareFlow(id, email.trim());
+            alert(`✓ Fluxo compartilhado com ${email.trim()}.\n\nA pessoa verá esse fluxo como um agente orquestrador na barra lateral assim que recarregar.`);
+        } catch (err) {
+            alert(`Erro ao compartilhar: ${err}`);
+        }
+    };
+
     const handleDeleteFlow = async (id: string) => {
         if (!confirm('Apagar este fluxo? Ele também sumirá da lista de agentes.')) return;
         try {
@@ -408,8 +456,13 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
                 )}
             </div>
 
-            {/* Canvas */}
-            <div className="flow-canvas-wrap">
+            {/* Canvas (suporta drag-and-drop de PDF/DOCX) */}
+            <div
+                className={`flow-canvas-wrap ${dragOver ? 'drag-over' : ''}`}
+                onDragOver={handleCanvasDragOver}
+                onDragLeave={handleCanvasDragLeave}
+                onDrop={handleCanvasDrop}
+            >
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}
@@ -435,6 +488,29 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
                         onClose={() => setSelectedNode(null)}
                         availableLabels={availableLabels.filter(l => l !== (selectedNode.data as Record<string, string>).label)}
                     />
+                )}
+
+                {/* Overlay de drag-and-drop */}
+                {dragOver && (
+                    <div className="flow-canvas-dropzone">
+                        <div className="flow-canvas-dropzone-content">
+                            📄 Solte aqui para usar como entrada do fluxo
+                            <span>PDF, DOCX, TXT, MD</span>
+                        </div>
+                    </div>
+                )}
+                {pdfDropping && (
+                    <div className="flow-canvas-dropzone uploading">
+                        <div className="flow-canvas-dropzone-content">⏳ Extraindo texto...</div>
+                    </div>
+                )}
+
+                {/* Chip dos arquivos prontos */}
+                {pdfFiles.length > 0 && (
+                    <div className="flow-canvas-pdf-chip">
+                        📎 {pdfFiles.length} arquivo{pdfFiles.length > 1 ? 's' : ''} pronto{pdfFiles.length > 1 ? 's' : ''}: {pdfFiles.slice(-2).join(', ')}{pdfFiles.length > 2 ? '...' : ''}
+                        <button onClick={() => { setPdfFiles([]); setInputText(''); }} title="Limpar"><FaXmark size={10} /></button>
+                    </div>
                 )}
             </div>
 
@@ -539,6 +615,9 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
                                     <button onClick={() => handleOpenFlow(f.id)} className="flow-btn flow-btn-primary">
                                         Abrir
                                     </button>
+                                    <button onClick={() => handleShareFlow(f.id, f.name)} className="flow-btn flow-btn-ghost" title="Compartilhar">
+                                        <FaShareNodes size={10} />
+                                    </button>
                                     <button onClick={() => handleDeleteFlow(f.id)} className="flow-btn flow-btn-danger">
                                         <FaTrash size={10} />
                                     </button>
@@ -581,15 +660,20 @@ export default function FlowBuilderPage({ onClose }: { onClose?: () => void }) {
 
                         {runLog.length > 0 && (
                             <div className="flow-run-log">
-                                {runLog.map((ev, i) => (
+                                {runLog.map((ev, i) => {
+                                    const evAny = ev as RunEvent & { node_ids?: string[]; labels?: string[] };
+                                    return (
                                     <div key={i} className={`flow-run-log-line ${ev.event}`}>
+                                        {ev.event === 'parallel_start' && `⫴ Executando em paralelo: ${(evAny.labels || []).join(', ')}`}
+                                        {ev.event === 'parallel_done' && `⫴ Etapa paralela concluída`}
                                         {ev.event === 'node_start' && `▶ ${ev.label} — iniciando...`}
                                         {ev.event === 'node_done' && `✓ ${ev.label} — concluído${ev.branch ? ` (${ev.branch})` : ''}`}
                                         {ev.event === 'node_error' && `✗ ${ev.label} — erro: ${ev.error}`}
+                                        {ev.event === 'human_required' && `⏸ ${ev.label} — aguardando aprovação humana (no chat)`}
                                         {ev.event === 'flow_done' && '🏁 Fluxo concluído'}
                                         {ev.event === 'error' && `✗ Erro: ${ev.error}`}
                                     </div>
-                                ))}
+                                );})}
                                 <div ref={logEndRef} />
                             </div>
                         )}

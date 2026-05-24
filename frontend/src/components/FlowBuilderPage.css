@@ -228,6 +228,94 @@
     background: var(--bg-color);
 }
 
+.flow-canvas-wrap.drag-over::after {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    border: 3px dashed var(--primary-color);
+    border-radius: 14px;
+    background: rgba(59, 130, 246, 0.05);
+    pointer-events: none;
+    z-index: 15;
+}
+
+.flow-canvas-dropzone {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.flow-canvas-dropzone.uploading {
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(2px);
+}
+
+.flow-canvas-dropzone-content {
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px 28px;
+    color: var(--text-color);
+    font-size: 16px;
+    font-weight: 600;
+    box-shadow: var(--shadow-hover);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.flow-canvas-dropzone-content span {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--secondary-text-color);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.flow-canvas-pdf-chip {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 12;
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--primary-color);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-color);
+    box-shadow: var(--shadow-soft);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 70%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.flow-canvas-pdf-chip button {
+    background: transparent;
+    border: none;
+    color: var(--secondary-text-color);
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    display: inline-flex;
+}
+
+.flow-canvas-pdf-chip button:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
 /* React Flow color overrides (works in both themes) */
 .flow-canvas-wrap .react-flow,
 .flow-canvas-wrap .react-flow__renderer,
@@ -1035,6 +1123,9 @@
 .flow-run-log-line.node_error,
 .flow-run-log-line.error { color: #f87171; }
 .flow-run-log-line.flow_done { color: #a78bfa; font-weight: 600; }
+.flow-run-log-line.parallel_start { color: #c084fc; font-weight: 600; }
+.flow-run-log-line.parallel_done { color: #c084fc; }
+.flow-run-log-line.human_required { color: #fbbf24; font-weight: 600; }
 
 .flow-run-output {
     background: var(--input-bg, var(--bg-color));

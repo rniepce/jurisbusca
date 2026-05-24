@@ -2452,10 +2452,12 @@ async def list_custom_agents(request: Request = None, _auth: dict = Depends(requ
         except Exception as e:
             logger.error("Failed to list custom agents: %s", e)
 
-    # Inclui fluxos como agentes orquestradores
+    # Inclui fluxos como agentes orquestradores (próprios + compartilhados)
     try:
-        from history_db import list_flows
+        from history_db import list_flows, list_shared_flows_for_email
+        seen: set = set()
         for flow in list_flows(user_id):
+            seen.add(flow["id"])
             agents.append({
                 "id": flow["id"],
                 "name": flow["name"],
@@ -2463,6 +2465,20 @@ async def list_custom_agents(request: Request = None, _auth: dict = Depends(requ
                 "color": flow.get("color") or "#3b82f6",
                 "type": "orquestrador",
                 "flow_id": flow["id"],
+                "prompt": "",
+                "knowledge": "",
+            })
+        for flow in list_shared_flows_for_email(_auth.get("email", "")):
+            if flow["id"] in seen:
+                continue
+            agents.append({
+                "id": flow["id"],
+                "name": flow["name"],
+                "description": (flow.get("description") or "Fluxo compartilhado") + " · compartilhado",
+                "color": flow.get("color") or "#3b82f6",
+                "type": "orquestrador",
+                "flow_id": flow["id"],
+                "shared": True,
                 "prompt": "",
                 "knowledge": "",
             })
@@ -3175,8 +3191,14 @@ async def list_flows_endpoint(request: Request, _auth: dict = Depends(require_au
     user_id = _extract_user_id(request)
     if not user_id:
         raise HTTPException(status_code=401, detail="Autenticação necessária.")
-    from history_db import list_flows
-    return {"flows": list_flows(user_id)}
+    from history_db import list_flows, list_shared_flows_for_email
+    email = _auth.get("email", "")
+    own = list_flows(user_id)
+    shared = list_shared_flows_for_email(email)
+    # evita duplicatas (caso fluxo próprio também esteja compartilhado)
+    seen_ids = {f["id"] for f in own}
+    merged = own + [f for f in shared if f["id"] not in seen_ids]
+    return {"flows": merged}
 
 
 @app.post("/api/flows", status_code=201)
@@ -3194,11 +3216,35 @@ async def get_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depend
     user_id = _extract_user_id(request)
     if not user_id:
         raise HTTPException(status_code=401, detail="Autenticação necessária.")
-    from history_db import get_flow
+    from history_db import get_flow, get_flow_shared
     flow = get_flow(flow_id, user_id)
+    if not flow:
+        # tenta como fluxo compartilhado
+        flow = get_flow_shared(flow_id, _auth.get("email", ""))
     if not flow:
         raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
     return flow
+
+
+class FlowShareRequest(BaseModel):
+    email: str
+
+
+@app.post("/api/flows/{flow_id}/share")
+async def share_flow_endpoint(flow_id: str, req: FlowShareRequest, request: Request, _auth: dict = Depends(require_auth)):
+    """Compartilha um fluxo com outro usuário (por e-mail)."""
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import get_flow, share_flow
+    flow = get_flow(flow_id, user_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Fluxo não encontrado ou você não é o proprietário.")
+    email = (req.email or "").strip()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="E-mail inválido.")
+    share_flow(flow_id, user_id, email)
+    return {"status": "ok", "message": f"Fluxo compartilhado com {email}."}
 
 
 @app.put("/api/flows/{flow_id}")
@@ -3290,8 +3336,8 @@ async def run_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depend
     input_text = body.get("input_text", "")
     token = _extract_token(request)
 
-    from history_db import get_flow
-    flow = get_flow(flow_id, user_id)
+    from history_db import get_flow, get_flow_shared
+    flow = get_flow(flow_id, user_id) or get_flow_shared(flow_id, _auth.get("email", ""))
     if not flow:
         raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
 
@@ -3328,8 +3374,8 @@ async def resume_flow_endpoint(flow_id: str, req: FlowResumeRequest, request: Re
     if not user_id:
         raise HTTPException(status_code=401, detail="Autenticação necessária.")
 
-    from history_db import get_flow
-    flow = get_flow(flow_id, user_id)
+    from history_db import get_flow, get_flow_shared
+    flow = get_flow(flow_id, user_id) or get_flow_shared(flow_id, _auth.get("email", ""))
     if not flow:
         raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
 

@@ -1158,6 +1158,19 @@ export async function deleteFlow(flowId: string): Promise<void> {
     if (!res.ok) throw new Error(`Erro ao apagar fluxo (${res.status})`);
 }
 
+export async function shareFlow(flowId: string, email: string): Promise<{ status: string; message: string }> {
+    const res = await fetch(`${API_BASE}/flows/${flowId}/share`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ email }),
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Share flow').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao compartilhar (${res.status})`);
+    }
+    return safeJson(res, 'Share flow');
+}
+
 export async function extractFlowFiles(files: File[]): Promise<{ text: string; files: string[] }> {
     const form = new FormData();
     files.forEach(f => form.append('files', f));

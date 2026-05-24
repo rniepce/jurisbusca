@@ -22,6 +22,8 @@ import re
 import base64
 import uuid
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Generator
 
 
@@ -288,6 +290,60 @@ def _run_estilo(node, cfg, state, input_text, label_map):
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Worker thread-safe para nós "simples" (executáveis em paralelo)
+# ─────────────────────────────────────────────────────────────────────
+
+SIMPLE_NODE_TYPES = {"agent", "juris", "modelo", "estilo", "docx"}
+
+_SPECIAL_HANDLERS = {
+    "juris": _run_juris,
+    "modelo": _run_modelo,
+    "estilo": _run_estilo,
+}
+
+
+def _execute_simple_node(node, state_snapshot, input_text, label_map):
+    """Executa um nó simples e retorna (eventos, state_updates).
+
+    Roda em qualquer thread. Recebe um snapshot do state (cópia) e devolve só
+    as variáveis novas que devem ser mergidas no state global.
+    """
+    node_id = node["id"]
+    ntype = node["type"]
+    cfg = node.get("data", node.get("config", {}))
+    label = cfg.get("label") or node_id
+
+    events: list[dict] = [{"event": "node_start", "node_id": node_id, "label": label}]
+    updates: dict = {}
+
+    try:
+        if ntype == "agent":
+            output, ovar = _run_agent(node, cfg, state_snapshot, input_text, label_map)
+            updates[ovar] = output
+            events.append({"event": "node_done", "node_id": node_id, "label": label,
+                           "output": output, "output_var": ovar})
+
+        elif ntype == "docx":
+            output, ovar, url = _run_docx(node, cfg, state_snapshot, input_text, label_map)
+            updates[ovar] = url
+            updates["__docx_url"] = url
+            events.append({"event": "node_done", "node_id": node_id, "label": label,
+                           "output": output, "output_var": ovar, "download_url": url})
+
+        elif ntype in _SPECIAL_HANDLERS:
+            output, ovar = _SPECIAL_HANDLERS[ntype](node, cfg, state_snapshot, input_text, label_map)
+            updates[ovar] = output
+            events.append({"event": "node_done", "node_id": node_id, "label": label,
+                           "output": output, "output_var": ovar})
+
+    except Exception as exc:
+        events.append({"event": "node_error", "node_id": node_id, "label": label, "error": str(exc)})
+        updates["__error__"] = str(exc)
+
+    return events, updates
+
+
+# ─────────────────────────────────────────────────────────────────────
 # MAIN: build_and_run_flow
 # ─────────────────────────────────────────────────────────────────────
 
@@ -298,174 +354,222 @@ def build_and_run_flow(
     start_from: str | None = None,
     initial_state: dict | None = None,
 ) -> Generator[str, None, None]:
-    """Executa o fluxo e emite eventos SSE.
-
-    Args:
-        flow_config: dict com nodes/edges
-        input_text: entrada principal
-        start_from: se fornecido, começa deste node_id (resume após HIL)
-        initial_state: state pré-existente (resume)
-    """
+    """Executa o fluxo com scheduler topológico (suporta fan-out paralelo)."""
     nodes_list = flow_config.get("nodes", [])
     nodes = {n["id"]: n for n in nodes_list}
     edges = flow_config.get("edges", [])
     label_map = _build_label_map(nodes_list)
 
-    # adjacency: node_id -> list of (target_id, edge_label, source_handle)
+    # adjacency: source -> list of (target, label, source_handle)
     adj: dict[str, list[tuple[str, str, str]]] = {}
+    # predecessors: target -> list of (source, source_handle)
+    predecessors: dict[str, list[tuple[str, str]]] = {n["id"]: [] for n in nodes_list}
     for e in edges:
-        adj.setdefault(e["source"], []).append((
-            e["target"],
-            e.get("label", ""),
-            e.get("sourceHandle", "") or "",
-        ))
+        src, tgt = e["source"], e["target"]
+        h = e.get("sourceHandle", "") or ""
+        adj.setdefault(src, []).append((tgt, e.get("label", ""), h))
+        predecessors[tgt].append((src, h))
 
     state: dict = dict(initial_state or {})
     state.setdefault("input_text", input_text)
+    state_lock = threading.Lock()
 
+    completed: set[str] = set()
+    cancelled: set[str] = set()
+
+    # Pre-marca como completed: tudo na initial_state (resume) que já tem chave igual a output_var
+    if start_from and initial_state:
+        for n in nodes_list:
+            ovar = (n.get("data") or {}).get("output_var") or n["id"]
+            if ovar in state and n["id"] != start_from:
+                completed.add(n["id"])
+
+    # determina start
+    start_node = next((n for n in nodes_list if n["type"] == "start"), None)
+    start_id = start_from or (start_node["id"] if start_node else None)
+    if not start_id:
+        yield _sse({"event": "error", "message": "Nenhum nó de início encontrado no fluxo."})
+        return
+
+    # Para resume, podemos precisar pular o start
     if start_from:
-        current_id: str | None = start_from
-    else:
-        start = next((n for n in nodes_list if n["type"] == "start"), None)
-        if not start:
-            yield _sse({"event": "error", "message": "Nenhum nó de início encontrado no fluxo."})
+        # marca start como completed para liberar successors
+        if start_node:
+            completed.add(start_node["id"])
+
+    def _cancel_subtree(skipped_targets: list[str]):
+        """Propaga cancelamento: nós cujos predecessors todos viraram cancelled."""
+        stack = list(skipped_targets)
+        while stack:
+            n = stack.pop()
+            if n in cancelled or n in completed:
+                continue
+            preds = predecessors.get(n, [])
+            if preds and all(p in cancelled or (p, _) in [] for p, _ in preds):
+                # se todos os predecessors estão cancelled, cancela este também
+                if all(p in cancelled for p, _ in preds):
+                    cancelled.add(n)
+                    for tgt, _l, _h in adj.get(n, []):
+                        stack.append(tgt)
+
+    def _ready_nodes() -> list[str]:
+        out: list[str] = []
+        for n_id in nodes:
+            if n_id in completed or n_id in cancelled:
+                continue
+            preds = predecessors[n_id]
+            if not preds:
+                if n_id == start_id and start_id not in completed:
+                    out.append(n_id)
+                continue
+            all_decided = all(p in completed or p in cancelled for p, _ in preds)
+            any_alive = any(p in completed for p, _ in preds)
+            if all_decided and any_alive:
+                out.append(n_id)
+        return out
+
+    def _emit_final():
+        # pega o último output não-meta
+        final_output = state.get("input_text", input_text)
+        for k, v in state.items():
+            if k != "input_text" and not k.startswith("__"):
+                final_output = v
+        return _sse({"event": "flow_done", "output": final_output, "state": state})
+
+    # ── Loop principal ──────────────────────────────────────────────
+    safety = 0
+    while True:
+        safety += 1
+        if safety > 200:  # circuit breaker
+            yield _sse({"event": "error", "message": "Loop overflow no fluxo."})
             return
-        current_id = start["id"]
 
-    visited: set[str] = set()
-
-    while current_id and current_id not in visited:
-        visited.add(current_id)
-        node = nodes.get(current_id)
-        if not node:
+        ready = _ready_nodes()
+        if not ready:
             break
 
-        ntype = node["type"]
-        cfg = node.get("data", node.get("config", {}))
-        label = cfg.get("label") or node["id"]
+        # processa nós "control flow" um a um (não dá pra paralelizar decisões)
+        control_ids = [r for r in ready if nodes[r]["type"] in ("start", "end", "router", "switch", "hil")]
+        simple_ids = [r for r in ready if nodes[r]["type"] in SIMPLE_NODE_TYPES]
 
-        # ─── start ─────────────────────────────────────────────────
-        if ntype == "start":
-            targets = adj.get(current_id, [])
-            current_id = targets[0][0] if targets else None
-            continue
+        # ── 1. START / END / ROUTER / SWITCH / HIL — sequencial ────
+        if control_ids:
+            current_id = control_ids[0]
+            node = nodes[current_id]
+            ntype = node["type"]
+            cfg = node.get("data", node.get("config", {}))
+            label = cfg.get("label") or current_id
 
-        # ─── end ───────────────────────────────────────────────────
-        if ntype == "end":
-            final_output = state.get("input_text", input_text)
-            for k, v in state.items():
-                if k != "input_text" and not k.startswith("__"):
-                    final_output = v
-            yield _sse({"event": "flow_done", "output": final_output, "state": state})
-            return
+            if ntype == "start":
+                completed.add(current_id)
+                continue
 
-        # ─── router (true/false) ───────────────────────────────────
-        if ntype == "router":
-            condition = cfg.get("condition", "True")
-            yield _sse({"event": "node_start", "node_id": current_id, "label": label})
-            branch = "true" if _safe_eval(condition, state) else "false"
-            yield _sse({"event": "node_done", "node_id": current_id, "label": label, "branch": branch})
-            targets = adj.get(current_id, [])
-            matched = next((tgt for tgt, lbl, _h in targets if lbl == branch or (lbl == "" and branch == "true")), None)
-            if not matched and targets:
-                matched = targets[0][0]
-            current_id = matched
-            continue
+            if ntype == "end":
+                yield _emit_final()
+                return
 
-        # ─── switch (multi-saída via LLM) ──────────────────────────
-        if ntype == "switch":
-            yield _sse({"event": "node_start", "node_id": current_id, "label": label})
-            try:
-                chosen = _run_switch(node, cfg, state, input_text, label_map)
-                state[cfg.get("output_var") or current_id] = chosen
+            if ntype == "router":
+                condition = cfg.get("condition", "True")
+                yield _sse({"event": "node_start", "node_id": current_id, "label": label})
+                branch = "true" if _safe_eval(condition, state) else "false"
+                yield _sse({"event": "node_done", "node_id": current_id, "label": label, "branch": branch})
+                targets = adj.get(current_id, [])
+                chosen_target = next(
+                    (tgt for tgt, lbl, _h in targets if lbl == branch or (lbl == "" and branch == "true")),
+                    targets[0][0] if targets else None,
+                )
+                # cancela os outros
+                for tgt, _l, _h in targets:
+                    if tgt != chosen_target:
+                        cancelled.add(tgt)
+                        _cancel_subtree([tgt])
+                completed.add(current_id)
+                continue
+
+            if ntype == "switch":
+                yield _sse({"event": "node_start", "node_id": current_id, "label": label})
+                try:
+                    chosen = _run_switch(node, cfg, state, input_text, label_map)
+                    state[cfg.get("output_var") or current_id] = chosen
+                except Exception as exc:
+                    yield _sse({"event": "node_error", "node_id": current_id, "label": label, "error": str(exc)})
+                    return
                 yield _sse({"event": "node_done", "node_id": current_id, "label": label,
                             "branch": chosen, "output": chosen})
                 targets = adj.get(current_id, [])
-                # encontra edge pelo sourceHandle == chosen
-                matched = next((tgt for tgt, _l, h in targets if h.lower() == chosen.lower()), None)
-                if not matched and targets:
-                    matched = targets[0][0]
-                current_id = matched
-            except Exception as exc:
-                yield _sse({"event": "node_error", "node_id": current_id, "label": label, "error": str(exc)})
+                chosen_target = next(
+                    (tgt for tgt, _l, h in targets if h.lower() == chosen.lower()),
+                    targets[0][0] if targets else None,
+                )
+                for tgt, _l, _h in targets:
+                    if tgt != chosen_target:
+                        cancelled.add(tgt)
+                        _cancel_subtree([tgt])
+                completed.add(current_id)
+                continue
+
+            if ntype == "hil":
+                yield _sse({"event": "node_start", "node_id": current_id, "label": label})
+                last_output = state.get("input_text", input_text)
+                for k, v in state.items():
+                    if k != "input_text" and not k.startswith("__"):
+                        last_output = v
+                targets = adj.get(current_id, [])
+                next_id = targets[0][0] if targets else None
+                yield _sse({
+                    "event": "human_required",
+                    "node_id": current_id,
+                    "label": label,
+                    "question": cfg.get("question") or "Aprove para continuar.",
+                    "content": last_output,
+                    "next_node_id": next_id,
+                    "state": {k: v for k, v in state.items() if not k.startswith("__")},
+                })
                 return
-            continue
 
-        # ─── HIL (pausa) ───────────────────────────────────────────
-        if ntype == "hil":
-            yield _sse({"event": "node_start", "node_id": current_id, "label": label})
-            # pega o último output como conteúdo a aprovar
-            last_output = state.get("input_text", input_text)
-            for k, v in state.items():
-                if k != "input_text" and not k.startswith("__"):
-                    last_output = v
-            # pula direto para o nó seguinte ao resume
-            targets = adj.get(current_id, [])
-            next_id = targets[0][0] if targets else None
-            yield _sse({
-                "event": "human_required",
-                "node_id": current_id,
-                "label": label,
-                "question": cfg.get("question") or "Aprove para continuar.",
-                "content": last_output,
-                "next_node_id": next_id,
-                "state": state,
-            })
-            return  # encerra stream; resume será chamada à parte
+        # ── 2. nós simples — paralelo se mais de 1 ─────────────────
+        elif simple_ids:
+            # snapshot atual do state (cada thread recebe sua cópia)
+            with state_lock:
+                snapshot = dict(state)
 
-        # ─── DOCX ──────────────────────────────────────────────────
-        if ntype == "docx":
-            yield _sse({"event": "node_start", "node_id": current_id, "label": label})
-            try:
-                content, ovar, url = _run_docx(node, cfg, state, input_text, label_map)
-                state[ovar] = url
-                state["__docx_url"] = url
-                yield _sse({"event": "node_done", "node_id": current_id, "label": label,
-                            "output": content, "output_var": ovar, "download_url": url})
-            except Exception as exc:
-                yield _sse({"event": "node_error", "node_id": current_id, "label": label, "error": str(exc)})
-                return
-            targets = adj.get(current_id, [])
-            current_id = targets[0][0] if targets else None
-            continue
+            if len(simple_ids) == 1:
+                # single — roda inline (sem overhead de thread)
+                events, updates = _execute_simple_node(
+                    nodes[simple_ids[0]], snapshot, input_text, label_map
+                )
+                for ev in events:
+                    yield _sse(ev)
+                if "__error__" in updates:
+                    return
+                with state_lock:
+                    state.update(updates)
+                completed.add(simple_ids[0])
+            else:
+                # FAN-OUT paralelo
+                yield _sse({
+                    "event": "parallel_start",
+                    "node_ids": simple_ids,
+                    "labels": [nodes[n].get("data", {}).get("label") or n for n in simple_ids],
+                })
+                with ThreadPoolExecutor(max_workers=min(len(simple_ids), 8)) as pool:
+                    futures = {
+                        pool.submit(_execute_simple_node, nodes[n_id], snapshot, input_text, label_map): n_id
+                        for n_id in simple_ids
+                    }
+                    for fut in as_completed(futures):
+                        n_id = futures[fut]
+                        events, updates = fut.result()
+                        for ev in events:
+                            yield _sse(ev)
+                        if "__error__" in updates:
+                            return
+                        with state_lock:
+                            state.update(updates)
+                        completed.add(n_id)
+                yield _sse({"event": "parallel_done"})
+        else:
+            # ready vazio depois das filtragens — algo errado
+            break
 
-        # ─── Juris / Modelo / Estilo (handlers genéricos) ─────────
-        special_handlers = {
-            "juris": _run_juris,
-            "modelo": _run_modelo,
-            "estilo": _run_estilo,
-        }
-        if ntype in special_handlers:
-            yield _sse({"event": "node_start", "node_id": current_id, "label": label})
-            try:
-                output, ovar = special_handlers[ntype](node, cfg, state, input_text, label_map)
-                state[ovar] = output
-                yield _sse({"event": "node_done", "node_id": current_id, "label": label,
-                            "output": output, "output_var": ovar})
-            except Exception as exc:
-                yield _sse({"event": "node_error", "node_id": current_id, "label": label, "error": str(exc)})
-                return
-            targets = adj.get(current_id, [])
-            current_id = targets[0][0] if targets else None
-            continue
-
-        # ─── agent (default) ───────────────────────────────────────
-        if ntype == "agent":
-            yield _sse({"event": "node_start", "node_id": current_id, "label": label})
-            try:
-                output, ovar = _run_agent(node, cfg, state, input_text, label_map)
-                state[ovar] = output
-                yield _sse({"event": "node_done", "node_id": current_id, "label": label,
-                            "output": output, "output_var": ovar})
-            except Exception as exc:
-                yield _sse({"event": "node_error", "node_id": current_id, "label": label, "error": str(exc)})
-                return
-            targets = adj.get(current_id, [])
-            current_id = targets[0][0] if targets else None
-            continue
-
-        # tipo desconhecido — pula
-        targets = adj.get(current_id, [])
-        current_id = targets[0][0] if targets else None
-
-    yield _sse({"event": "flow_done", "output": state.get("output", input_text), "state": state})
+    yield _emit_final()
