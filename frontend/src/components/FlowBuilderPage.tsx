@@ -93,6 +93,7 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
     const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+    const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
     const [flowId, setFlowId] = useState<string | null>(null);
     const [flowName, setFlowName] = useState('Meu Fluxo');
     const [flowDescription, setFlowDescription] = useState('');
@@ -137,9 +138,24 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
         // start/end podem ser selecionados (para deletar via toolbar) mas
         // não abrem painel de configuração — não há nada a configurar.
         setSelectedNode(node);
+        setSelectedEdgeId(null);
     }, []);
 
-    const onPaneClick = useCallback(() => setSelectedNode(null), []);
+    const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+        setSelectedEdgeId(edge.id);
+        setSelectedNode(null);
+    }, []);
+
+    const onPaneClick = useCallback(() => {
+        setSelectedNode(null);
+        setSelectedEdgeId(null);
+    }, []);
+
+    const deleteSelectedEdge = useCallback(() => {
+        if (!selectedEdgeId) return;
+        setEdges(es => es.filter(e => e.id !== selectedEdgeId));
+        setSelectedEdgeId(null);
+    }, [selectedEdgeId, setEdges]);
 
     const handleNodeDataChange = useCallback((nodeId: string, data: Record<string, string>) => {
         setNodes(ns => ns.map(n => n.id === nodeId ? { ...n, data } : n));
@@ -446,6 +462,14 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
                         </button>
                     </>
                 )}
+                {selectedEdgeId && (
+                    <>
+                        <div className="flow-toolbar-divider" />
+                        <button onClick={deleteSelectedEdge} className="flow-btn flow-btn-danger">
+                            <FaTrash size={11} /> Apagar conexão
+                        </button>
+                    </>
+                )}
 
                 <div className="flow-toolbar-spacer" />
 
@@ -482,16 +506,19 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
             >
                 <ReactFlow
                     nodes={nodes}
-                    edges={edges}
+                    edges={edges.map(e => e.id === selectedEdgeId
+                        ? { ...e, style: { ...(e.style || {}), stroke: '#ef4444', strokeWidth: 3 }, animated: true }
+                        : { ...e, style: { stroke: '#94a3b8', strokeWidth: 2 }, animated: false })}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
                     onNodeClick={onNodeClick}
+                    onEdgeClick={onEdgeClick}
                     onPaneClick={onPaneClick}
                     nodeTypes={NODE_TYPES}
                     fitView
                     colorMode="light"
-                    deleteKeyCode={null}
+                    deleteKeyCode={['Backspace', 'Delete']}
                     proOptions={{ hideAttribution: false }}
                 >
                     <Background color="#475569" gap={28} size={1.5} />

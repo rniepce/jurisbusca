@@ -578,11 +578,23 @@ def build_and_run_flow(
         yield _sse({"event": "error", "message": "Nenhum nó de início encontrado no fluxo."})
         return
 
-    # Para resume, podemos precisar pular o start
+    # Para resume, marca todos os ancestrais de start_from como completed.
+    # Sem isso, nós sem output_var em state (ex.: hil) seriam re-executados
+    # pelo scheduler e o fluxo entraria em loop emitindo human_required.
     if start_from:
-        # marca start como completed para liberar successors
         if start_node:
             completed.add(start_node["id"])
+        stack = [start_from]
+        visited: set[str] = set()
+        while stack:
+            n_id = stack.pop()
+            if n_id in visited:
+                continue
+            visited.add(n_id)
+            for pred_id, _h in predecessors.get(n_id, []):
+                if pred_id != start_from:
+                    completed.add(pred_id)
+                stack.append(pred_id)
 
     def _cancel_subtree(skipped_targets: list[str]):
         """Propaga cancelamento: nós cujos predecessors todos viraram cancelled."""

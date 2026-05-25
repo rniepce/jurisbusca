@@ -245,6 +245,88 @@ function V2CollapsibleCard({ icon, title, content }: { icon: string; title: stri
     );
 }
 
+// ── HIL approval card (with inline edit mode) ──
+interface FlowHilCardProps {
+    msg: any;
+    isLoading: boolean;
+    onFlowResume?: (flowId: string, startFrom: string, state: Record<string, unknown>, decision: 'approve' | 'reject', userInput?: string) => void;
+}
+
+function FlowHilCard({ msg, isLoading, onFlowResume }: FlowHilCardProps) {
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState<string>(msg.content || '');
+
+    const handleApprove = () => onFlowResume && onFlowResume(msg.flowId, msg.hilNextNodeId, msg.hilState || {}, 'approve');
+    const handleReject = () => onFlowResume && onFlowResume(msg.flowId, msg.hilNextNodeId, msg.hilState || {}, 'reject');
+    const handleStartEdit = () => {
+        setDraft(msg.content || '');
+        setEditing(true);
+    };
+    const handleCancelEdit = () => setEditing(false);
+    const handleConfirmEdit = () => {
+        if (!onFlowResume) return;
+        onFlowResume(msg.flowId, msg.hilNextNodeId, msg.hilState || {}, 'approve', draft);
+        setEditing(false);
+    };
+
+    return (
+        <div className="flow-hil-card">
+            <div className="flow-hil-header">
+                <span className="flow-hil-icon">⏸</span>
+                <div className="flow-hil-title">
+                    <span className="flow-hil-name">{msg.hilLabel || 'Aprovação necessária'}</span>
+                    {msg.hilQuestion && <span className="flow-hil-question">{msg.hilQuestion}</span>}
+                </div>
+            </div>
+
+            {editing ? (
+                <>
+                    <textarea
+                        className="flow-hil-edit-textarea"
+                        value={draft}
+                        onChange={e => setDraft(e.target.value)}
+                        autoFocus
+                    />
+                    <div className="flow-hil-actions">
+                        <button
+                            className="flow-hil-btn approve"
+                            onClick={handleConfirmEdit}
+                            disabled={isLoading || !draft.trim()}
+                        >
+                            ✓ Salvar e continuar
+                        </button>
+                        <button
+                            className="flow-hil-btn reject"
+                            onClick={handleCancelEdit}
+                            disabled={isLoading}
+                        >
+                            ✗ Cancelar edição
+                        </button>
+                    </div>
+                </>
+            ) : (
+                <>
+                    {msg.content && (
+                        <div className="flow-hil-content markdown"
+                             dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />
+                    )}
+                    <div className="flow-hil-actions">
+                        <button className="flow-hil-btn approve" onClick={handleApprove} disabled={isLoading}>
+                            ✓ Aprovar e continuar
+                        </button>
+                        <button className="flow-hil-btn edit" onClick={handleStartEdit} disabled={isLoading}>
+                            ✏️ Editar
+                        </button>
+                        <button className="flow-hil-btn reject" onClick={handleReject} disabled={isLoading}>
+                            ✗ Rejeitar
+                        </button>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
 // ── Memoized individual message rows ──
 const MessageRow = memo(function MessageRow({ msg, i, isLoading, onRetry, onAutoAction, onPilotReplicate, onPilotDismiss, onFlowResume }: MessageRowProps) {
     // ── Agent Activation Card ──
@@ -311,41 +393,15 @@ const MessageRow = memo(function MessageRow({ msg, i, isLoading, onRetry, onAuto
         );
     }
 
-    // ── Batch Pilot Confirmation Card ──
+    // ── HIL (Human-in-the-loop) Approval Card ──
     if (msg.role === 'flow-hil-pending') {
-        const handleApprove = () => onFlowResume && onFlowResume(msg.flowId, msg.hilNextNodeId, msg.hilState || {}, 'approve');
-        const handleReject = () => onFlowResume && onFlowResume(msg.flowId, msg.hilNextNodeId, msg.hilState || {}, 'reject');
-        const handleEdit = () => {
-            const edited = window.prompt('Edite o conteúdo antes de continuar:', msg.content);
-            if (edited != null && edited !== msg.content) {
-                onFlowResume && onFlowResume(msg.flowId, msg.hilNextNodeId, msg.hilState || {}, 'approve', edited);
-            }
-        };
         return (
-            <div key={i} className="flow-hil-card">
-                <div className="flow-hil-header">
-                    <span className="flow-hil-icon">⏸</span>
-                    <div className="flow-hil-title">
-                        <span className="flow-hil-name">{msg.hilLabel || 'Aprovação necessária'}</span>
-                        {msg.hilQuestion && <span className="flow-hil-question">{msg.hilQuestion}</span>}
-                    </div>
-                </div>
-                {msg.content && (
-                    <div className="flow-hil-content markdown"
-                         dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />
-                )}
-                <div className="flow-hil-actions">
-                    <button className="flow-hil-btn approve" onClick={handleApprove} disabled={isLoading}>
-                        ✓ Aprovar e continuar
-                    </button>
-                    <button className="flow-hil-btn edit" onClick={handleEdit} disabled={isLoading}>
-                        ✏️ Editar
-                    </button>
-                    <button className="flow-hil-btn reject" onClick={handleReject} disabled={isLoading}>
-                        ✗ Rejeitar
-                    </button>
-                </div>
-            </div>
+            <FlowHilCard
+                key={i}
+                msg={msg}
+                isLoading={isLoading}
+                onFlowResume={onFlowResume}
+            />
         );
     }
 

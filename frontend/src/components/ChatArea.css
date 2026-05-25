@@ -1604,3 +1604,26 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+.flow-hil-edit-textarea {
+    width: 100%;
+    min-height: 260px;
+    max-height: 60vh;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid var(--primary-color, #3b82f6);
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-family: var(--font-family);
+    font-size: 13.5px;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    box-sizing: border-box;
+}
+
+.flow-hil-edit-textarea:focus {
+    border-color: var(--primary-color, #3b82f6);
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.22);
+}
