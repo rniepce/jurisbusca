@@ -1280,3 +1280,61 @@ export async function resumeFlow(
     if (!res.ok) throw new Error(`Erro ao retomar fluxo (${res.status})`);
     await streamSseEvents(res, onEvent);
 }
+
+// ─── Observabilidade: histórico de execuções de fluxos ──────────────
+
+export interface FlowRunSummary {
+    id: string;
+    flow_id: string | null;
+    flow_name: string;
+    status: 'running' | 'completed' | 'error' | 'awaiting_human';
+    started_at: string;
+    ended_at: string | null;
+    duration_ms: number;
+    total_input_tokens: number;
+    total_output_tokens: number;
+    total_cost_usd: number;
+    is_preview: number;
+    error: string;
+}
+
+export interface FlowRunEvent {
+    seq: number;
+    ts: string;
+    event_type: string;
+    node_id: string;
+    label: string;
+    data: Record<string, unknown>;
+}
+
+export interface FlowRunDetail extends FlowRunSummary {
+    input_text: string;
+    final_output: string;
+    events: FlowRunEvent[];
+}
+
+export async function listFlowRuns(flowId?: string): Promise<FlowRunSummary[]> {
+    const url = flowId
+        ? `${API_BASE}/flows/${flowId}/runs`
+        : `${API_BASE}/flow-runs`;
+    const res = await fetch(url, { headers: await getAuthHeaders() });
+    if (!res.ok) throw new Error(`Erro ao listar execuções (${res.status})`);
+    const data = await res.json();
+    return data.runs || [];
+}
+
+export async function getFlowRun(runId: string): Promise<FlowRunDetail> {
+    const res = await fetch(`${API_BASE}/flow-runs/${runId}`, {
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Execução não encontrada (${res.status})`);
+    return await res.json();
+}
+
+export async function deleteFlowRun(runId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/flow-runs/${runId}`, {
+        method: 'DELETE',
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Erro ao apagar execução (${res.status})`);
+}

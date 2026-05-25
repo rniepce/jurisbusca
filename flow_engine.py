@@ -87,8 +87,26 @@ def _build_user_message(state: dict, input_text: str) -> str:
 # NÓS ESPECIAIS — handlers individuais
 # ─────────────────────────────────────────────────────────────────────
 
+def _extract_usage(response) -> tuple[int, int]:
+    """Lê tokens (input, output) da resposta LangChain (vários providers)."""
+    try:
+        meta = getattr(response, "usage_metadata", None)
+        if isinstance(meta, dict):
+            return int(meta.get("input_tokens", 0) or 0), int(meta.get("output_tokens", 0) or 0)
+    except Exception:
+        pass
+    try:
+        rm = getattr(response, "response_metadata", None) or {}
+        usage = rm.get("token_usage") or rm.get("usage") or {}
+        inp = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+        out = usage.get("completion_tokens") or usage.get("output_tokens") or 0
+        return int(inp or 0), int(out or 0)
+    except Exception:
+        return 0, 0
+
+
 def _run_agent(node, cfg, state, input_text, label_map):
-    """Agente LLM padrão. Retorna (output_str, output_var) ou levanta exceção."""
+    """Agente LLM padrão. Retorna (output_str, output_var, metrics)."""
     import backend as be
     from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -117,7 +135,8 @@ def _run_agent(node, cfg, state, input_text, label_map):
 
     response = llm.invoke(msgs)
     result = response.content if hasattr(response, "content") else str(response)
-    return result, output_var
+    inp_tok, out_tok = _extract_usage(response)
+    return result, output_var, {"model": model, "input_tokens": inp_tok, "output_tokens": out_tok}
 
 
 def _run_switch(node, cfg, state, input_text, label_map):
@@ -144,7 +163,8 @@ def _run_switch(node, cfg, state, input_text, label_map):
 
     # Encontra a categoria que melhor bate (case-insensitive, prefix)
     chosen = next((c for c in categories if c.lower() in raw.lower()), categories[0])
-    return chosen
+    inp_tok, out_tok = _extract_usage(response)
+    return chosen, {"model": model, "input_tokens": inp_tok, "output_tokens": out_tok}
 
 
 def _run_docx(node, cfg, state, input_text, label_map):
@@ -319,6 +339,8 @@ def _run_extractor(node, cfg, state, input_text, label_map):
     # tentativa + 2 retries com feedback
     last_err = ""
     parsed: dict | None = None
+    total_in = 0
+    total_out = 0
     for attempt in range(3):
         msgs = [SystemMessage(content=sys_prompt), HumanMessage(content=user_input)]
         if attempt > 0 and last_err:
@@ -327,6 +349,9 @@ def _run_extractor(node, cfg, state, input_text, label_map):
                 "Devolva agora apenas o JSON corrigido, sem texto extra."
             )))
         response = llm.invoke(msgs)
+        inp_t, out_t = _extract_usage(response)
+        total_in += inp_t
+        total_out += out_t
         raw = (response.content if hasattr(response, "content") else str(response)).strip()
 
         # remove possível ```json ... ``` wrap
@@ -383,6 +408,7 @@ def _run_extractor(node, cfg, state, input_text, label_map):
     # tudo agregado: as keys individuais + a versão JSON formatada
     extracted_state_updates[output_var] = formatted_json
     extracted_state_updates[f"{output_var}_json"] = formatted_json
+    extracted_state_updates["__metrics__"] = {"model": model, "input_tokens": total_in, "output_tokens": total_out}
 
     return formatted_json, output_var, extracted_state_updates
 
@@ -488,6 +514,9 @@ def _execute_simple_node(node, state_snapshot, input_text, label_map):
     Roda em qualquer thread. Recebe um snapshot do state (cópia) e devolve só
     as variáveis novas que devem ser mergidas no state global.
     """
+    import time as _t
+    import flow_pricing as _fp
+
     node_id = node["id"]
     ntype = node["type"]
     cfg = node.get("data", node.get("config", {}))
@@ -495,37 +524,61 @@ def _execute_simple_node(node, state_snapshot, input_text, label_map):
 
     events: list[dict] = [{"event": "node_start", "node_id": node_id, "label": label}]
     updates: dict = {}
+    metrics: dict = {"model": "", "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+    t0 = _t.perf_counter()
 
     try:
         if ntype == "agent":
-            output, ovar = _run_agent(node, cfg, state_snapshot, input_text, label_map)
+            output, ovar, m = _run_agent(node, cfg, state_snapshot, input_text, label_map)
+            metrics["model"] = m.get("model", "")
+            metrics["input_tokens"] = m.get("input_tokens", 0)
+            metrics["output_tokens"] = m.get("output_tokens", 0)
+            metrics["cost_usd"] = _fp.estimate_cost_usd(
+                metrics["model"], metrics["input_tokens"], metrics["output_tokens"]
+            )
             updates[ovar] = output
             events.append({"event": "node_done", "node_id": node_id, "label": label,
-                           "output": output, "output_var": ovar})
+                           "output": output, "output_var": ovar, **metrics})
 
         elif ntype == "docx":
             output, ovar, url = _run_docx(node, cfg, state_snapshot, input_text, label_map)
             updates[ovar] = url
             updates["__docx_url"] = url
             events.append({"event": "node_done", "node_id": node_id, "label": label,
-                           "output": output, "output_var": ovar, "download_url": url})
+                           "output": output, "output_var": ovar, "download_url": url, **metrics})
 
         elif ntype == "extractor":
             output, ovar, extra_updates = _run_extractor(node, cfg, state_snapshot, input_text, label_map)
+            m = extra_updates.pop("__metrics__", None) if isinstance(extra_updates, dict) else None
             updates.update(extra_updates)  # cada chave do JSON vira variável
+            if m:
+                metrics["model"] = m.get("model", "")
+                metrics["input_tokens"] = m.get("input_tokens", 0)
+                metrics["output_tokens"] = m.get("output_tokens", 0)
+                metrics["cost_usd"] = _fp.estimate_cost_usd(
+                    metrics["model"], metrics["input_tokens"], metrics["output_tokens"]
+                )
             events.append({"event": "node_done", "node_id": node_id, "label": label,
                            "output": output, "output_var": ovar,
-                           "extracted_fields": list(extra_updates.keys())})
+                           "extracted_fields": list(extra_updates.keys()), **metrics})
 
         elif ntype in _SPECIAL_HANDLERS:
             output, ovar = _SPECIAL_HANDLERS[ntype](node, cfg, state_snapshot, input_text, label_map)
             updates[ovar] = output
             events.append({"event": "node_done", "node_id": node_id, "label": label,
-                           "output": output, "output_var": ovar})
+                           "output": output, "output_var": ovar, **metrics})
 
     except Exception as exc:
-        events.append({"event": "node_error", "node_id": node_id, "label": label, "error": str(exc)})
+        duration_ms = int((_t.perf_counter() - t0) * 1000)
+        events.append({"event": "node_error", "node_id": node_id, "label": label,
+                       "error": str(exc), "duration_ms": duration_ms, **metrics})
         updates["__error__"] = str(exc)
+        return events, updates
+
+    # Adiciona duration_ms ao evento node_done
+    duration_ms = int((_t.perf_counter() - t0) * 1000)
+    if events and events[-1].get("event") == "node_done":
+        events[-1]["duration_ms"] = duration_ms
 
     return events, updates
 
@@ -633,7 +686,9 @@ def build_and_run_flow(
         for k, v in state.items():
             if k != "input_text" and not k.startswith("__"):
                 final_output = v
-        return _sse({"event": "flow_done", "output": final_output, "state": state})
+        # state expurgado de chaves internas
+        clean_state = {k: v for k, v in state.items() if not k.startswith("__")}
+        return _sse({"event": "flow_done", "output": final_output, "state": clean_state})
 
     # ── Loop principal ──────────────────────────────────────────────
     safety = 0
@@ -687,14 +742,28 @@ def build_and_run_flow(
 
             if ntype == "switch":
                 yield _sse({"event": "node_start", "node_id": current_id, "label": label})
+                import time as _t
+                t0 = _t.perf_counter()
                 try:
-                    chosen = _run_switch(node, cfg, state, input_text, label_map)
+                    chosen, switch_metrics = _run_switch(node, cfg, state, input_text, label_map)
                     state[cfg.get("output_var") or current_id] = chosen
                 except Exception as exc:
-                    yield _sse({"event": "node_error", "node_id": current_id, "label": label, "error": str(exc)})
+                    duration_ms = int((_t.perf_counter() - t0) * 1000)
+                    yield _sse({"event": "node_error", "node_id": current_id, "label": label,
+                                "error": str(exc), "duration_ms": duration_ms})
                     return
+                duration_ms = int((_t.perf_counter() - t0) * 1000)
+                import flow_pricing as _fp
+                cost_usd = _fp.estimate_cost_usd(
+                    switch_metrics["model"], switch_metrics["input_tokens"], switch_metrics["output_tokens"]
+                )
                 yield _sse({"event": "node_done", "node_id": current_id, "label": label,
-                            "branch": chosen, "output": chosen})
+                            "branch": chosen, "output": chosen,
+                            "duration_ms": duration_ms,
+                            "model": switch_metrics["model"],
+                            "input_tokens": switch_metrics["input_tokens"],
+                            "output_tokens": switch_metrics["output_tokens"],
+                            "cost_usd": cost_usd})
                 targets = adj.get(current_id, [])
                 chosen_target = next(
                     (tgt for tgt, _l, h in targets if h.lower() == chosen.lower()),

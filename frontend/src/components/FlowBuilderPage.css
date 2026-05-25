@@ -1292,3 +1292,233 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* ===== RUNS MODAL (observabilidade) ===== */
+.flow-runs-modal { width: 780px; max-width: 92vw; }
+
+.flow-runs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 60vh;
+    overflow-y: auto;
+    margin: -4px;
+    padding: 4px;
+}
+
+.flow-run-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--input-bg, var(--bg-color));
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.flow-run-item:hover {
+    border-color: var(--primary-color);
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.flow-run-item-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.flow-run-item-name {
+    flex: 1;
+    min-width: 200px;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.flow-run-item-date {
+    font-size: 11px;
+    color: var(--secondary-text-color);
+    white-space: nowrap;
+}
+
+.flow-run-item-stats {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 11.5px;
+    color: var(--secondary-text-color);
+    font-variant-numeric: tabular-nums;
+}
+
+.flow-run-delete {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 7px;
+    cursor: pointer;
+    color: #ef4444;
+    transition: background 0.15s ease;
+}
+.flow-run-delete:hover { background: rgba(239, 68, 68, 0.12); }
+
+.flow-run-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid;
+    white-space: nowrap;
+}
+.flow-run-status-badge.ok    { color: #16a34a; border-color: #16a34a55; background: rgba(22,163,74,0.10); }
+.flow-run-status-badge.err   { color: #ef4444; border-color: #ef444455; background: rgba(239,68,68,0.10); }
+.flow-run-status-badge.run   { color: #3b82f6; border-color: #3b82f655; background: rgba(59,130,246,0.10); }
+.flow-run-status-badge.wait  { color: #f59e0b; border-color: #f59e0b55; background: rgba(245,158,11,0.10); }
+
+/* ─── Detalhe da execução ─── */
+.flow-run-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-height: 65vh;
+    overflow-y: auto;
+}
+
+.flow-run-detail-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px 18px;
+    padding: 12px 14px;
+    background: var(--input-bg, var(--bg-color));
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    font-size: 12.5px;
+}
+.flow-run-detail-summary strong { color: var(--secondary-text-color); font-weight: 500; margin-right: 6px; }
+.flow-run-detail-error {
+    grid-column: 1 / -1;
+    color: #ef4444;
+    font-size: 12px;
+}
+
+.flow-run-detail-section h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--text-color);
+    font-weight: 600;
+}
+.flow-run-detail-section summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--secondary-text-color);
+    padding: 6px 0;
+}
+
+.flow-run-trace-table {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--border-color);
+}
+
+.flow-run-trace-row {
+    display: grid;
+    grid-template-columns: 1.5fr 1.2fr 0.7fr 1.1fr 0.7fr 1.5fr;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--bg-color);
+    font-size: 12px;
+    align-items: center;
+    font-variant-numeric: tabular-nums;
+}
+.flow-run-trace-row.header {
+    background: var(--input-bg, var(--bg-color));
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--secondary-text-color);
+}
+.flow-run-trace-row.error { color: #ef4444; }
+.flow-run-trace-row.done { color: var(--text-color); }
+.flow-run-trace-row > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.flow-run-trace-result {
+    color: var(--secondary-text-color);
+    font-style: italic;
+}
+
+.flow-run-events-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    font-family: var(--font-mono, ui-monospace, "SF Mono", monospace);
+    font-size: 11.5px;
+    background: var(--input-bg, var(--bg-color));
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+.flow-run-event-row {
+    display: grid;
+    grid-template-columns: 40px 130px 1fr;
+    gap: 8px;
+    padding: 2px 0;
+    color: var(--secondary-text-color);
+}
+.flow-run-event-seq { color: #94a3b8; }
+.flow-run-event-type { color: var(--text-color); }
+.flow-run-event-row.node_done .flow-run-event-type { color: #16a34a; }
+.flow-run-event-row.node_error .flow-run-event-type { color: #ef4444; }
+.flow-run-event-row.human_required .flow-run-event-type { color: #f59e0b; }
+.flow-run-event-row.flow_done .flow-run-event-type { color: #3b82f6; }
+
+.flow-run-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 22px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    background: var(--input-bg, var(--bg-color));
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: var(--secondary-text-color);
+    font-variant-numeric: tabular-nums;
+}
+.flow-run-metrics strong {
+    color: var(--text-color);
+    font-weight: 600;
+    margin: 0 2px;
+}
+
+.flow-run-output-pre {
+    margin-top: 6px;
+    padding: 12px 14px;
+    background: var(--input-bg, var(--bg-color));
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: inherit;
+    font-size: 12.5px;
+    line-height: 1.55;
+    max-height: 320px;
+    overflow-y: auto;
+}

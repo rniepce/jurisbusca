@@ -14,7 +14,7 @@ import '@xyflow/react/dist/style.css';
 import {
     FaPlus, FaFloppyDisk, FaPlay, FaTrash, FaChevronLeft,
     FaListUl, FaEye, FaXmark, FaShapes, FaWandMagicSparkles, FaShareNodes,
-    FaClockRotateLeft,
+    FaClockRotateLeft, FaChartLine,
 } from 'react-icons/fa6';
 import AgentNode from './flow/AgentNode';
 import RouterNode from './flow/RouterNode';
@@ -23,6 +23,7 @@ import NodeConfigPanel from './flow/NodeConfigPanel';
 import NodeCatalog from './flow/NodeCatalog';
 import FlowTemplates from './flow/FlowTemplates';
 import FlowVersionsModal from './flow/FlowVersionsModal';
+import FlowRunsModal from './flow/FlowRunsModal';
 import {
     SwitchNode, HILNode, DocxNode, JurisNode, ModeloNode, EstiloNode,
     ExtractorNode, SubflowNode,
@@ -87,6 +88,21 @@ interface RunEvent {
     branch?: string;
     error?: string;
     state?: Record<string, string>;
+    duration_ms?: number;
+    model?: string;
+    input_tokens?: number;
+    output_tokens?: number;
+    cost_usd?: number;
+    run_id?: string;
+}
+
+interface RunMetrics {
+    runId: string;
+    startedAt: number;
+    elapsedMs: number;
+    totalIn: number;
+    totalOut: number;
+    totalCost: number;
 }
 
 export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClose?: () => void; customAgents?: { id: string; name: string; prompt: string; color?: string }[] }) {
@@ -101,6 +117,7 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
     const [saving, setSaving] = useState(false);
     const [running, setRunning] = useState(false);
     const [runLog, setRunLog] = useState<RunEvent[]>([]);
+    const [runMetrics, setRunMetrics] = useState<RunMetrics | null>(null);
     const [showRunModal, setShowRunModal] = useState(false);
     const [runIsPreview, setRunIsPreview] = useState(false);
     const [inputText, setInputText] = useState('');
@@ -109,6 +126,7 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
     const [showCatalog, setShowCatalog] = useState(false);
     const [showTemplates, setShowTemplates] = useState(false);
     const [showVersions, setShowVersions] = useState(false);
+    const [showRuns, setShowRuns] = useState(false);
     const [flows, setFlows] = useState<FlowSummary[]>([]);
     const [loadingFlows, setLoadingFlows] = useState(false);
     const [finalOutput, setFinalOutput] = useState('');
@@ -120,6 +138,15 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
     useEffect(() => {
         logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [runLog]);
+
+    // Atualiza o cronômetro enquanto o fluxo roda
+    useEffect(() => {
+        if (!running || !runMetrics) return;
+        const t = setInterval(() => {
+            setRunMetrics(prev => prev ? { ...prev, elapsedMs: Date.now() - prev.startedAt } : prev);
+        }, 250);
+        return () => clearInterval(t);
+    }, [running, runMetrics?.startedAt]);
 
     const onConnect = useCallback(
         (connection: Connection) => {
@@ -310,15 +337,25 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
         setRunLog([]);
         setFinalOutput('');
         setRunning(true);
+        setRunMetrics({ runId: '', startedAt: Date.now(), elapsedMs: 0, totalIn: 0, totalOut: 0, totalCost: 0 });
 
         const onEvent = (event: Record<string, unknown>) => {
             const ev = event as RunEvent;
             setRunLog(prev => [...prev, ev]);
+            if (ev.event === 'run_started' && ev.run_id) {
+                setRunMetrics(prev => prev ? { ...prev, runId: ev.run_id ?? '' } : prev);
+            }
             if (ev.event === 'node_start' && ev.node_id) {
                 setNodes(ns => ns.map(n => n.id === ev.node_id ? { ...n, data: { ...n.data, status: 'running' } } : n));
             }
             if (ev.event === 'node_done' && ev.node_id) {
                 setNodes(ns => ns.map(n => n.id === ev.node_id ? { ...n, data: { ...n.data, status: 'done', branch: ev.branch ?? '' } } : n));
+                setRunMetrics(prev => prev ? {
+                    ...prev,
+                    totalIn: prev.totalIn + (ev.input_tokens ?? 0),
+                    totalOut: prev.totalOut + (ev.output_tokens ?? 0),
+                    totalCost: prev.totalCost + (ev.cost_usd ?? 0),
+                } : prev);
             }
             if (ev.event === 'node_error' && ev.node_id) {
                 setNodes(ns => ns.map(n => n.id === ev.node_id ? { ...n, data: { ...n.data, status: 'error' } } : n));
@@ -484,9 +521,12 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
                 </button>
                 {flowId && (
                     <button onClick={() => setShowVersions(true)} className="flow-btn flow-btn-ghost" title="Histórico de versões">
-                        <FaClockRotateLeft size={11} /> Histórico
+                        <FaClockRotateLeft size={11} /> Versões
                     </button>
                 )}
+                <button onClick={() => setShowRuns(true)} className="flow-btn flow-btn-ghost" title="Histórico de execuções (logs, tokens, custo)">
+                    <FaChartLine size={11} /> Execuções
+                </button>
                 <button onClick={handleSaveClick} disabled={saving} className="flow-btn flow-btn-primary">
                     <FaFloppyDisk size={11} /> {saving ? 'Salvando...' : flowId ? 'Salvar' : 'Salvar como Agente'}
                 </button>
@@ -579,6 +619,13 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
                 flowId={flowId}
                 onClose={() => setShowVersions(false)}
                 onRestored={() => { if (flowId) void handleOpenFlow(flowId); }}
+            />
+
+            {/* Histórico de execuções (observabilidade) */}
+            <FlowRunsModal
+                open={showRuns}
+                flowId={flowId}
+                onClose={() => setShowRuns(false)}
             />
 
             {/* Save dialog */}
@@ -709,6 +756,23 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
                             <button onClick={executeRun} className="flow-btn flow-btn-success" style={{ justifyContent: 'center', padding: '10px' }}>
                                 <FaPlay size={12} /> {runIsPreview ? 'Iniciar Preview' : 'Iniciar Execução'}
                             </button>
+                        )}
+
+                        {runMetrics && (running || finalOutput) && (
+                            <div className="flow-run-metrics">
+                                <span title="Tempo decorrido">
+                                    ⏱ <strong>{(runMetrics.elapsedMs / 1000).toFixed(1)}s</strong>
+                                </span>
+                                <span title="Tokens de entrada">
+                                    ⬆ <strong>{runMetrics.totalIn.toLocaleString('pt-BR')}</strong> in
+                                </span>
+                                <span title="Tokens de saída">
+                                    ⬇ <strong>{runMetrics.totalOut.toLocaleString('pt-BR')}</strong> out
+                                </span>
+                                <span title="Custo estimado (USD)">
+                                    💰 <strong>${runMetrics.totalCost.toFixed(4)}</strong>
+                                </span>
+                            </div>
                         )}
 
                         {runLog.length > 0 && (

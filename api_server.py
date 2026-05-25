@@ -3347,6 +3347,79 @@ def _flow_run_initial_state(user_id: str, token: str) -> dict:
     return state
 
 
+def _observed_flow_stream(*, user_id: str, flow_id: str | None, flow_name: str,
+                          input_text: str, is_preview: bool,
+                          config: dict, start_from: str | None = None,
+                          initial_state: dict | None = None):
+    """Envolve build_and_run_flow gravando um registro de execução completo no SQLite."""
+    import uuid as _uuid, time as _t, json as _json, history_db, flow_engine
+
+    run_id = _uuid.uuid4().hex
+    history_db.create_flow_run(run_id, user_id, flow_id, flow_name, input_text, is_preview=is_preview)
+
+    seq = 0
+    started = _t.perf_counter()
+    total_in = 0
+    total_out = 0
+    total_cost = 0.0
+    final_output = ""
+    status = "completed"
+    error_msg = ""
+
+    # emite primeiro um event "run_started" para o cliente saber o run_id
+    yield f"data: {_json.dumps({'event': 'run_started', 'run_id': run_id})}\n\n"
+
+    try:
+        for chunk in flow_engine.build_and_run_flow(
+            config, input_text, start_from=start_from, initial_state=initial_state
+        ):
+            # cada chunk é "data: {...}\n\n" — extrai o JSON para persistir
+            try:
+                line = chunk.strip()
+                if line.startswith("data: "):
+                    ev = _json.loads(line[len("data: "):])
+                else:
+                    ev = _json.loads(line)
+            except Exception:
+                ev = {}
+
+            if ev:
+                seq += 1
+                history_db.append_flow_event(
+                    run_id, seq, ev.get("event", ""),
+                    ev.get("node_id", ""), ev.get("label", ""), ev,
+                )
+                if ev.get("event") == "node_done":
+                    total_in += int(ev.get("input_tokens", 0) or 0)
+                    total_out += int(ev.get("output_tokens", 0) or 0)
+                    total_cost += float(ev.get("cost_usd", 0) or 0)
+                elif ev.get("event") == "node_error":
+                    status = "error"
+                    error_msg = ev.get("error", "")
+                elif ev.get("event") == "flow_done":
+                    final_output = ev.get("output", "") or ""
+                elif ev.get("event") == "human_required":
+                    # Pausou para HIL — não fecha o run; marca como aguardando
+                    status = "awaiting_human"
+                elif ev.get("event") == "error":
+                    status = "error"
+                    error_msg = ev.get("message", "") or ev.get("error", "")
+
+            yield chunk
+    except Exception as exc:
+        status = "error"
+        error_msg = str(exc)
+        import traceback as _tb
+        _tb.print_exc()
+        yield f"data: {_json.dumps({'event': 'error', 'message': error_msg})}\n\n"
+    finally:
+        duration_ms = int((_t.perf_counter() - started) * 1000)
+        history_db.finish_flow_run(
+            run_id, status, final_output, error_msg,
+            duration_ms, total_in, total_out, round(total_cost, 6),
+        )
+
+
 @app.post("/api/flows/{flow_id}/run")
 async def run_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depends(require_auth)):
     user_id = _extract_user_id(request)
@@ -3362,21 +3435,14 @@ async def run_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depend
     if not flow:
         raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
 
-    import flow_engine
     initial_state = _flow_run_initial_state(user_id, token)
 
-    def _stream():
-        try:
-            yield from flow_engine.build_and_run_flow(
-                flow["config"], input_text, initial_state=initial_state
-            )
-        except Exception as exc:
-            import traceback as _tb
-            _tb.print_exc()
-            yield f"data: {json.dumps({'event': 'error', 'message': str(exc)})}\n\n"
-
     return StreamingResponse(
-        _stream(),
+        _observed_flow_stream(
+            user_id=user_id, flow_id=flow_id, flow_name=flow.get("name", "Fluxo"),
+            input_text=input_text, is_preview=False,
+            config=flow["config"], initial_state=initial_state,
+        ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
@@ -3419,19 +3485,12 @@ async def resume_flow_endpoint(flow_id: str, req: FlowResumeRequest, request: Re
 
     input_text = state.get("input_text", "")
 
-    def _stream():
-        try:
-            yield from flow_engine.build_and_run_flow(
-                flow["config"], input_text,
-                start_from=req.start_from, initial_state=state,
-            )
-        except Exception as exc:
-            import traceback as _tb
-            _tb.print_exc()
-            yield f"data: {json.dumps({'event': 'error', 'message': str(exc)})}\n\n"
-
     return StreamingResponse(
-        _stream(),
+        _observed_flow_stream(
+            user_id=user_id, flow_id=flow_id, flow_name=flow.get("name", "Fluxo") + " (resume)",
+            input_text=input_text, is_preview=False,
+            config=flow["config"], start_from=req.start_from, initial_state=state,
+        ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
@@ -3459,23 +3518,60 @@ class FlowPreviewRequest(BaseModel):
 
 
 @app.post("/api/flows/preview")
-async def preview_flow_endpoint(req: FlowPreviewRequest, _auth: dict = Depends(require_auth)):
+async def preview_flow_endpoint(req: FlowPreviewRequest, request: Request, _auth: dict = Depends(require_auth)):
     """Executa um fluxo ad-hoc sem salvá-lo — útil para preview."""
-    import flow_engine
-
-    def _stream():
-        try:
-            yield from flow_engine.build_and_run_flow(req.config, req.input_text)
-        except Exception as exc:
-            import traceback as _tb
-            _tb.print_exc()
-            yield f"data: {json.dumps({'event': 'error', 'message': str(exc)})}\n\n"
-
+    user_id = _extract_user_id(request) or "anonymous"
     return StreamingResponse(
-        _stream(),
+        _observed_flow_stream(
+            user_id=user_id, flow_id=None, flow_name="(preview)",
+            input_text=req.input_text, is_preview=True,
+            config=req.config,
+        ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+# ── Histórico de execuções de fluxos ──
+@app.get("/api/flows/{flow_id}/runs")
+async def list_flow_runs_endpoint(flow_id: str, request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import list_flow_runs
+    return {"runs": list_flow_runs(user_id, flow_id=flow_id, limit=100)}
+
+
+@app.get("/api/flow-runs")
+async def list_all_flow_runs_endpoint(request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import list_flow_runs
+    return {"runs": list_flow_runs(user_id, limit=100)}
+
+
+@app.get("/api/flow-runs/{run_id}")
+async def get_flow_run_endpoint(run_id: str, request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import get_flow_run
+    run = get_flow_run(run_id, user_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Execução não encontrada.")
+    return run
+
+
+@app.delete("/api/flow-runs/{run_id}")
+async def delete_flow_run_endpoint(run_id: str, request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _extract_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Autenticação necessária.")
+    from history_db import delete_flow_run
+    if not delete_flow_run(run_id, user_id):
+        raise HTTPException(status_code=404, detail="Execução não encontrada.")
+    return {"ok": True}
 
 
 # ── Serve React frontend (production) ────────────────────────────────────────

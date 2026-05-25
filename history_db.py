@@ -82,6 +82,41 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_flow_versions_flow ON flow_versions(flow_id)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS flow_runs (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                flow_id TEXT,
+                flow_name TEXT,
+                status TEXT NOT NULL DEFAULT 'running',
+                started_at TEXT DEFAULT (datetime('now')),
+                ended_at TEXT,
+                duration_ms INTEGER DEFAULT 0,
+                input_text TEXT DEFAULT '',
+                final_output TEXT DEFAULT '',
+                error TEXT DEFAULT '',
+                total_input_tokens INTEGER DEFAULT 0,
+                total_output_tokens INTEGER DEFAULT 0,
+                total_cost_usd REAL DEFAULT 0.0,
+                is_preview INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_flow_runs_user ON flow_runs(user_id, started_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_flow_runs_flow ON flow_runs(flow_id, started_at DESC)")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS flow_run_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                ts TEXT DEFAULT (datetime('now')),
+                event_type TEXT NOT NULL,
+                node_id TEXT,
+                label TEXT,
+                data_json TEXT,
+                FOREIGN KEY (run_id) REFERENCES flow_runs(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_flow_run_events_run ON flow_run_events(run_id, seq)")
         try:
             conn.execute("ALTER TABLE agent_flows ADD COLUMN description TEXT DEFAULT ''")
         except Exception:
@@ -468,6 +503,109 @@ def get_flow_shared(flow_id: str, email: str) -> dict | None:
             "config": json.loads(row["config_json"]),
             "created_at": row["created_at"], "updated_at": row["updated_at"],
         }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Flow Runs (observabilidade)
+# ─────────────────────────────────────────────────────────────────────
+
+def create_flow_run(run_id: str, user_id: str, flow_id: str | None, flow_name: str,
+                    input_text: str, is_preview: bool = False) -> None:
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO flow_runs (id, user_id, flow_id, flow_name, status, input_text, is_preview)
+               VALUES (?, ?, ?, ?, 'running', ?, ?)""",
+            (run_id, user_id, flow_id, flow_name, input_text or "", 1 if is_preview else 0),
+        )
+        conn.commit()
+
+
+def append_flow_event(run_id: str, seq: int, event_type: str,
+                      node_id: str = "", label: str = "", data: dict | None = None) -> None:
+    payload = json.dumps(data or {}, ensure_ascii=False)
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO flow_run_events (run_id, seq, event_type, node_id, label, data_json)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (run_id, seq, event_type, node_id or "", label or "", payload),
+        )
+        conn.commit()
+
+
+def finish_flow_run(run_id: str, status: str, final_output: str, error: str,
+                    duration_ms: int, total_in: int, total_out: int, total_cost: float) -> None:
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE flow_runs
+               SET status = ?, ended_at = datetime('now'), duration_ms = ?,
+                   final_output = ?, error = ?,
+                   total_input_tokens = ?, total_output_tokens = ?, total_cost_usd = ?
+               WHERE id = ?""",
+            (status, duration_ms, final_output or "", error or "",
+             total_in, total_out, total_cost, run_id),
+        )
+        conn.commit()
+
+
+def list_flow_runs(user_id: str, flow_id: str | None = None, limit: int = 50) -> list[dict]:
+    with get_db() as conn:
+        if flow_id:
+            cur = conn.execute(
+                """SELECT id, flow_id, flow_name, status, started_at, ended_at, duration_ms,
+                          total_input_tokens, total_output_tokens, total_cost_usd, is_preview, error
+                   FROM flow_runs
+                   WHERE user_id = ? AND flow_id = ?
+                   ORDER BY started_at DESC LIMIT ?""",
+                (user_id, flow_id, limit),
+            )
+        else:
+            cur = conn.execute(
+                """SELECT id, flow_id, flow_name, status, started_at, ended_at, duration_ms,
+                          total_input_tokens, total_output_tokens, total_cost_usd, is_preview, error
+                   FROM flow_runs
+                   WHERE user_id = ?
+                   ORDER BY started_at DESC LIMIT ?""",
+                (user_id, limit),
+            )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def get_flow_run(run_id: str, user_id: str) -> dict | None:
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT * FROM flow_runs WHERE id = ? AND user_id = ?",
+            (run_id, user_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        run = dict(row)
+        cur = conn.execute(
+            """SELECT seq, ts, event_type, node_id, label, data_json
+               FROM flow_run_events WHERE run_id = ? ORDER BY seq ASC""",
+            (run_id,),
+        )
+        events = []
+        for e in cur.fetchall():
+            d = dict(e)
+            try:
+                d["data"] = json.loads(d.pop("data_json") or "{}")
+            except Exception:
+                d["data"] = {}
+            events.append(d)
+        run["events"] = events
+        return run
+
+
+def delete_flow_run(run_id: str, user_id: str) -> bool:
+    with get_db() as conn:
+        cur = conn.execute(
+            "DELETE FROM flow_runs WHERE id = ? AND user_id = ?",
+            (run_id, user_id),
+        )
+        conn.execute("DELETE FROM flow_run_events WHERE run_id = ?", (run_id,))
+        conn.commit()
+        return cur.rowcount > 0
 
 
 _db_initialized = False
