@@ -308,9 +308,13 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
     };
 
     const startRun = async (preview: boolean) => {
-        setRunning(true);
+        // Abre o modal num estado "pronto para executar" — o usuário ainda
+        // precisa clicar em "Iniciar Preview/Execução". Não marca running aqui;
+        // running só fica true em executeRun, durante a chamada de fato.
+        setRunning(false);
         setRunIsPreview(preview);
         setRunLog([]);
+        setRunMetrics(null);
         setFinalOutput('');
         setShowRunModal(true);
         setNodes(ns => ns.map(n => ({ ...n, data: { ...n.data, status: 'idle' } })));
