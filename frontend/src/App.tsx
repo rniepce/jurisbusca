@@ -225,6 +225,14 @@ function MainApp() {
                     }
                 />
                 <Route
+                    path={`${ROUTES.flows}/:flowId`}
+                    element={
+                        <LazyPanel label="Construtor de Fluxos" onReset={goHome}>
+                            <FlowBuilderPage onClose={goHome} />
+                        </LazyPanel>
+                    }
+                />
+                <Route
                     path="*"
                     element={
                         hasMessages || style.styleAnalyzing || batch.xrayLoading || ocr.ocrProcessing ? (

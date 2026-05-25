@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import {
     ReactFlow,
     addEdge,
@@ -106,6 +107,7 @@ interface RunMetrics {
 }
 
 export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClose?: () => void; customAgents?: { id: string; name: string; prompt: string; color?: string }[] }) {
+    const { flowId: routeFlowId } = useParams<{ flowId?: string }>();
     const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -464,9 +466,13 @@ export default function FlowBuilderPage({ onClose, customAgents = [] }: { onClos
     };
 
     useEffect(() => {
-        handleNewFlow();
+        if (routeFlowId) {
+            void handleOpenFlow(routeFlowId);
+        } else {
+            handleNewFlow();
+        }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [routeFlowId]);
 
     const closeIcon = (<FaXmark size={16} />);
 

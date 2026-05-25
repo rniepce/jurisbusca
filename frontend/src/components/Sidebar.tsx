@@ -5,7 +5,7 @@ import {
     FaScaleBalanced,
     FaComments,
     FaWandMagicSparkles, FaTrash, FaShareNodes, FaEllipsisVertical, FaRobot,
-    FaGavel, FaLayerGroup, FaBook, FaSitemap, FaBookOpen,
+    FaGavel, FaLayerGroup, FaBook, FaSitemap, FaBookOpen, FaPen,
 } from 'react-icons/fa6';
 import { useNavigate, useLocation } from 'react-router-dom';
 import UserMenu from './UserMenu';
@@ -187,6 +187,19 @@ const Sidebar = ({
                             </button>
                             {menuOpenId === agent.id && (
                                 <div className="agent-context-menu">
+                                    {isOrch && (agent as any).flow_id && (
+                                        <button
+                                            className="context-menu-item"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setMenuOpenId(null);
+                                                navigate(`/flows/${(agent as any).flow_id}`);
+                                                if (onCloseMobile) onCloseMobile();
+                                            }}
+                                        >
+                                            <FaPen size={11} /> Editar fluxo
+                                        </button>
+                                    )}
                                     <button
                                         className="context-menu-item"
                                         onClick={(e) => handleShare(e, agent)}

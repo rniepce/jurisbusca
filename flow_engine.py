@@ -681,12 +681,31 @@ def build_and_run_flow(
         return out
 
     def _emit_final():
-        # pega o último output não-meta
-        final_output = state.get("input_text", input_text)
-        for k, v in state.items():
-            if k != "input_text" and not k.startswith("__"):
-                final_output = v
-        # state expurgado de chaves internas
+        # Preferência: usar o output_var do nó imediatamente anterior ao "end"
+        # (a verdadeira "saída final" do fluxo, respeitando o ramo escolhido).
+        final_output: object | None = None
+        end_node_local = next((n for n in nodes_list if n["type"] == "end"), None)
+        if end_node_local is not None:
+            preds = predecessors.get(end_node_local["id"], [])
+            # entre os predecessors, prioriza os que realmente rodaram (completed)
+            ordered_preds = sorted(
+                preds, key=lambda p: 0 if p[0] in completed else 1
+            )
+            for pred_id, _h in ordered_preds:
+                if pred_id in cancelled:
+                    continue
+                pred_node = nodes.get(pred_id) or {}
+                pred_cfg = pred_node.get("data", pred_node.get("config", {}))
+                ovar = pred_cfg.get("output_var") or pred_id
+                if ovar in state:
+                    final_output = state[ovar]
+                    break
+        # Fallback: último valor não-meta gravado no state
+        if final_output is None:
+            final_output = state.get("input_text", input_text)
+            for k, v in state.items():
+                if k != "input_text" and not k.startswith("__"):
+                    final_output = v
         clean_state = {k: v for k, v in state.items() if not k.startswith("__")}
         return _sse({"event": "flow_done", "output": final_output, "state": clean_state})
 
@@ -728,10 +747,31 @@ def build_and_run_flow(
                 branch = "true" if _safe_eval(condition, state) else "false"
                 yield _sse({"event": "node_done", "node_id": current_id, "label": label, "branch": branch})
                 targets = adj.get(current_id, [])
+                # Matching robusto: sourceHandle ("true"/"false") OU label em pt-br
+                # ("verdadeiro"/"falso") OU label igual ao branch.
+                pt_alias = {"true": ("verdadeiro", "verdadeiro"), "false": ("falso", "falso")}
+                pt_label = pt_alias[branch][0]
                 chosen_target = next(
-                    (tgt for tgt, lbl, _h in targets if lbl == branch or (lbl == "" and branch == "true")),
-                    targets[0][0] if targets else None,
+                    (tgt for tgt, lbl, h in targets
+                     if (h or "").lower() == branch
+                     or (lbl or "").strip().lower() == pt_label
+                     or (lbl or "").strip().lower() == branch),
+                    None,
                 )
+                if chosen_target is None:
+                    if len(targets) == 1:
+                        chosen_target = targets[0][0]
+                    elif targets:
+                        # Ramo "true"/"false" não está conectado — fluxo travaria
+                        # silenciosamente; emite erro para o usuário entender.
+                        yield _sse({
+                            "event": "node_error", "node_id": current_id, "label": label,
+                            "error": (
+                                f"Roteador sem conexão para o ramo '{branch}'. "
+                                "Conecte as saídas Verde (verdadeiro) e Laranja (falso) do nó."
+                            ),
+                        })
+                        return
                 # cancela os outros
                 for tgt, _l, _h in targets:
                     if tgt != chosen_target:
