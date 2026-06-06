@@ -496,10 +496,16 @@ def process_uploaded_file(file_obj, filename: str, api_key=None, ocr_engine_choi
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key: str = None, **kwargs):
+def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key: str = None,
+            anthropic_api_key: str = None, google_api_key: str = None, **kwargs):
     """
     Factory centralizada — suporta Azure OpenAI, Google Gemini e Anthropic Claude.
     model_name: 'gpt-5.3-chat' (Azure), 'gemini-3.1-pro' (Google), 'claude-sonnet-4-6' (Anthropic).
+
+    Chaves (todas opcionais; caem para variável de ambiente se não informadas):
+      - api_key: Azure OpenAI / Azure AI Foundry
+      - anthropic_api_key: chave do usuário para Claude
+      - google_api_key: chave do usuário para Gemini
     """
     deployment = model_name or os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5.3-chat")
 
@@ -509,8 +515,8 @@ def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key:
             from langchain_google_genai import ChatGoogleGenerativeAI
         except ImportError:
             raise ImportError("langchain-google-genai não instalado. Execute: pip install langchain-google-genai")
-        
-        google_key = os.getenv("GOOGLE_API_KEY", "")
+
+        google_key = google_api_key or os.getenv("GOOGLE_API_KEY", "")
         if not google_key:
             raise ValueError("GOOGLE_API_KEY deve estar configurada para usar Gemini.")
         
@@ -547,7 +553,7 @@ def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key:
         except ImportError:
             raise ImportError("langchain-anthropic não instalado. Execute: pip install langchain-anthropic")
         
-        anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+        anthropic_key = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY", "")
         if not anthropic_key:
             raise ValueError("ANTHROPIC_API_KEY deve estar configurada para usar Claude.")
         

@@ -166,7 +166,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Azure-Key", "Accept"],
+    allow_headers=["Content-Type", "Authorization", "X-Azure-Key", "X-Anthropic-Key", "X-Google-Key", "Accept"],
 )
 logger.info("CORS origins: %s", _cors_origins)
 
@@ -1681,6 +1681,20 @@ async def arena_compare(req: ArenaCompareRequest, request: Request,
     user_id = _auth.get("sub", "") or _extract_user_id(request)
     user_email = _auth.get("email", "") or ""
 
+    # Chaves de API fornecidas pelo usuário (nunca logadas). Cada provider usa a sua;
+    # se ausente, get_llm cai para a variável de ambiente do servidor.
+    azure_key = request.headers.get("X-Azure-Key", "").strip() or None
+    anthropic_key = request.headers.get("X-Anthropic-Key", "").strip() or None
+    google_key = request.headers.get("X-Google-Key", "").strip() or None
+
+    def _key_kwargs(model: str) -> dict:
+        m = model.lower()
+        if m.startswith("claude"):
+            return {"anthropic_api_key": anthropic_key}
+        if m.startswith("gemini"):
+            return {"google_api_key": google_key}
+        return {"api_key": azure_key}  # Azure OpenAI / Foundry
+
     # Embaralha qual modelo cai no slot A/B (mantém o cego para o avaliador)
     chosen = [req.model_a, req.model_b]
     random.shuffle(chosen)
@@ -1707,7 +1721,7 @@ async def arena_compare(req: ArenaCompareRequest, request: Request,
             combined = None
             err = ""
             try:
-                llm = be.get_llm(model_name, temperature=0.3)
+                llm = be.get_llm(model_name, temperature=0.3, **_key_kwargs(model_name))
                 async for chunk in llm.astream(messages):
                     piece = be.safe_content(chunk)
                     if piece:

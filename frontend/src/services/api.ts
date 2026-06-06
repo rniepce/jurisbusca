@@ -58,8 +58,12 @@ export interface UploadResult {
  */
 async function getAuthHeaders(existingHeaders: Record<string, string> = {}): Promise<Record<string, string>> {
     const azureKey = localStorage.getItem('azure_openai_key');
+    const anthropicKey = localStorage.getItem('anthropic_api_key');
+    const googleKey = localStorage.getItem('google_api_key');
     const headers = { ...existingHeaders };
     if (azureKey) headers['X-Azure-Key'] = azureKey;
+    if (anthropicKey) headers['X-Anthropic-Key'] = anthropicKey;
+    if (googleKey) headers['X-Google-Key'] = googleKey;
 
     // Anexar JWT do Supabase
     const { data: { session } } = await supabase.auth.getSession();

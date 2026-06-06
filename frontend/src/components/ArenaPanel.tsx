@@ -61,6 +61,13 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
     const [agents, setAgents] = useState<AgentOpt[]>([]);
     const [agentId, setAgentId] = useState('');
 
+    // Chaves de API do usuário (Claude/Gemini) — persistidas no navegador
+    const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem('anthropic_api_key') || '');
+    const [googleKey, setGoogleKey] = useState(() => localStorage.getItem('google_api_key') || '');
+    const [showKeys, setShowKeys] = useState(false);
+    const saveAnthropicKey = (v: string) => { setAnthropicKey(v); localStorage.setItem('anthropic_api_key', v); };
+    const saveGoogleKey = (v: string) => { setGoogleKey(v); localStorage.setItem('google_api_key', v); };
+
     const [running, setRunning] = useState(false);
     const [error, setError] = useState('');
     const [comparisonId, setComparisonId] = useState('');
@@ -89,6 +96,10 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
     }, []);
 
     const sameModel = modelA === modelB;
+    const needsAnthropic = [modelA, modelB].some((m) => m.toLowerCase().startsWith('claude'));
+    const needsGoogle = [modelA, modelB].some((m) => m.toLowerCase().startsWith('gemini'));
+    const missingAnthropic = needsAnthropic && !anthropicKey.trim();
+    const missingGoogle = needsGoogle && !googleKey.trim();
     const canRun = !running && !sameModel && (prompt.trim() !== '' || docText.trim() !== '');
     const bothDone = status.A !== 'idle' && status.A !== 'streaming'
         && status.B !== 'idle' && status.B !== 'streaming';
@@ -241,6 +252,48 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
                 </div>
 
                 {sameModel && <p className="arena-warn">Escolha dois modelos diferentes.</p>}
+
+                {(needsAnthropic || needsGoogle) && (
+                    <div className="arena-keys">
+                        <button className="arena-doc-toggle" onClick={() => setShowKeys((v) => !v)} type="button">
+                            {showKeys ? '▾' : '▸'} 🔑 Minhas chaves de API (Claude / Gemini)
+                            {(missingAnthropic || missingGoogle) && <em className="arena-key-missing"> · faltando</em>}
+                        </button>
+                        {showKeys && (
+                            <div className="arena-keys-fields">
+                                {needsAnthropic && (
+                                    <label className="arena-field arena-field-grow">
+                                        <span>Anthropic API Key {missingAnthropic && <em className="arena-key-missing">(obrigatória)</em>}</span>
+                                        <input
+                                            type="password"
+                                            autoComplete="off"
+                                            placeholder="sk-ant-…"
+                                            value={anthropicKey}
+                                            onChange={(e) => saveAnthropicKey(e.target.value)}
+                                            disabled={running}
+                                        />
+                                    </label>
+                                )}
+                                {needsGoogle && (
+                                    <label className="arena-field arena-field-grow">
+                                        <span>Google API Key {missingGoogle && <em className="arena-key-missing">(obrigatória)</em>}</span>
+                                        <input
+                                            type="password"
+                                            autoComplete="off"
+                                            placeholder="AIza…"
+                                            value={googleKey}
+                                            onChange={(e) => saveGoogleKey(e.target.value)}
+                                            disabled={running}
+                                        />
+                                    </label>
+                                )}
+                                <p className="arena-keys-hint">
+                                    As chaves ficam apenas no seu navegador e são enviadas só para chamar o modelo escolhido.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <textarea
                     className="arena-prompt"

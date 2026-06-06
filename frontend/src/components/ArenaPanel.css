@@ -71,7 +71,8 @@
     min-width: 170px;
 }
 .arena-field-grow { flex: 1; min-width: 200px; }
-.arena-field select {
+.arena-field select,
+.arena-field input {
     padding: 8px 10px;
     border: 1px solid #cbd5e1;
     border-radius: 9px;
@@ -80,7 +81,31 @@
     background: #fff;
     cursor: pointer;
 }
-.arena-field select:disabled { opacity: 0.6; cursor: not-allowed; }
+.arena-field input {
+    cursor: text;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.arena-field select:disabled,
+.arena-field input:disabled { opacity: 0.6; cursor: not-allowed; }
+.arena-field input:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+/* ── Chaves de API ── */
+.arena-keys { display: flex; flex-direction: column; gap: 8px; }
+.arena-keys-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+}
+.arena-keys-hint { flex-basis: 100%; margin: 0; font-size: 12px; color: #94a3b8; }
+.arena-key-missing { color: #b45309; font-style: normal; font-weight: 600; }
 .arena-vs {
     font-size: 18px;
     font-weight: 700;
