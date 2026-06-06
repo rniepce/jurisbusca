@@ -13,10 +13,24 @@ import './ArenaPanel.css';
 
 // Modelos disponíveis na Arena — DEVE casar com ARENA_MODELS no backend.
 const ARENA_MODEL_OPTIONS = [
+    // Azure OpenAI (GPT)
+    { name: 'GPT-5.5', color: '#4285F4', deployment: 'gpt-5.5' },
+    { name: 'GPT-5.4 Pro', color: '#4285F4', deployment: 'gpt-5.4-pro' },
+    { name: 'GPT-5.4 Mini', color: '#60A5FA', deployment: 'gpt-5.4-mini' },
     { name: 'GPT-5.3', color: '#4285F4', deployment: 'gpt-5.3-chat' },
+    { name: 'GPT-5.2', color: '#4285F4', deployment: 'gpt-5.2' },
+    { name: 'GPT-5.2 Chat', color: '#60A5FA', deployment: 'gpt-5.2-chat' },
+    { name: 'GPT-4.1 Mini', color: '#93C5FD', deployment: 'gpt-4.1-mini' },
+    // Azure AI Foundry (parceiros)
+    { name: 'DeepSeek V4 Pro', color: '#0891B2', deployment: 'DeepSeek-V4-Pro' },
+    { name: 'DeepSeek V4 Flash', color: '#22D3EE', deployment: 'DeepSeek-V4-Flash' },
+    { name: 'DeepSeek V3.2 Speciale', color: '#0E7490', deployment: 'DeepSeek-V3.2-Speciale' },
+    { name: 'Grok 4.3', color: '#1F2937', deployment: 'grok-4.3' },
+    { name: 'Kimi K2.5', color: '#7C3AED', deployment: 'Kimi-K2.5' },
+    { name: 'Kimi K2.6', color: '#8B5CF6', deployment: 'Kimi-K2.6' },
+    // Nativos (chaves próprias)
     { name: 'Gemini 3.1 Pro', color: '#34A853', deployment: 'gemini-3.1-pro' },
     { name: 'Claude Sonnet 4.6', color: '#D97706', deployment: 'claude-sonnet-4-6' },
-    { name: 'DeepSeek V4 Pro', color: '#0891B2', deployment: 'DeepSeek-V4-Pro' },
 ];
 
 type SlotStatus = 'idle' | 'streaming' | 'done' | 'error';
@@ -39,8 +53,8 @@ function fmtCost(usd: number): string {
 }
 
 export default function ArenaPanel({ onClose }: { onClose: () => void }) {
-    const [modelA, setModelA] = useState(ARENA_MODEL_OPTIONS[0].deployment);
-    const [modelB, setModelB] = useState(ARENA_MODEL_OPTIONS[2].deployment);
+    const [modelA, setModelA] = useState('gpt-5.3-chat');
+    const [modelB, setModelB] = useState('DeepSeek-V4-Pro');
     const [prompt, setPrompt] = useState('');
     const [docText, setDocText] = useState('');
     const [showDoc, setShowDoc] = useState(false);

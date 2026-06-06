@@ -582,11 +582,12 @@ def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key:
             **kwargs,
         )
 
-    # ── Azure AI Foundry — DeepSeek (e demais modelos servidos pelo endpoint OpenAI-compatível) ──
+    # ── Azure AI Foundry — modelos parceiros (DeepSeek, Grok, Kimi) ──
     # Endpoint estilo "v1": https://<resource>.services.ai.azure.com/openai/v1/
     # Diferente do endpoint Azure OpenAI tradicional. Usa autenticação via api_key e o
     # SDK OpenAI nativo (que LangChain expõe via ChatOpenAI).
-    if deployment.lower().startswith("deepseek"):
+    _foundry_prefixes = ("deepseek", "grok", "kimi")
+    if any(deployment.lower().startswith(_p) for _p in _foundry_prefixes):
         if not HAS_OPENAI:
             raise ImportError("langchain-openai não instalado. Execute: pip install langchain-openai")
 
@@ -600,14 +601,14 @@ def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key:
 
         if not foundry_key:
             raise ValueError(
-                "AZURE_AI_FOUNDRY_KEY ou AZURE_OPENAI_API_KEY deve estar configurada para usar DeepSeek."
+                "AZURE_AI_FOUNDRY_KEY ou AZURE_OPENAI_API_KEY deve estar configurada para usar modelos do Azure AI Foundry."
             )
 
         # ChatOpenAI usa max_tokens (não max_completion_tokens) — converter se necessário
         if 'max_completion_tokens' in kwargs:
             kwargs['max_tokens'] = kwargs.pop('max_completion_tokens')
 
-        print(f"🔵 DeepSeek (Azure AI Foundry): {deployment} via {foundry_endpoint}")
+        print(f"🔵 Azure AI Foundry: {deployment} via {foundry_endpoint}")
         return ChatOpenAI(
             model=deployment,
             base_url=foundry_endpoint,
@@ -638,14 +639,15 @@ def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key:
         # Enable full reasoning power
         if 'reasoning_effort' not in kwargs:
             kwargs['reasoning_effort'] = 'high'
-        # Default max_completion_tokens to 16384 (reasoning tokens + output tokens)
-        if 'max_completion_tokens' not in kwargs:
-            kwargs['max_completion_tokens'] = 16384
-        print(f"🧠 Reasoning model: {deployment} | effort={kwargs['reasoning_effort']} | max_tokens={kwargs['max_completion_tokens']}")
+        print(f"🧠 Reasoning model: {deployment} | effort={kwargs['reasoning_effort']}")
+    # Toda a família GPT-5.x recebe um orçamento de saída para evitar truncamento
+    if deployment.startswith("gpt-5") and 'max_completion_tokens' not in kwargs:
+        kwargs['max_completion_tokens'] = 16384
 
-    # GPT-5.3 doesn't support custom temperature — only default (1)
+    # Família GPT-5.x não aceita temperature custom — usar o default do modelo
     models_no_temp = {"gpt-5.3-chat"}
-    use_temperature = temperature if deployment not in models_no_temp else None
+    no_temp = deployment in models_no_temp or deployment.startswith("gpt-5")
+    use_temperature = None if no_temp else temperature
 
     llm_kwargs = dict(
         azure_deployment=deployment,

@@ -1598,7 +1598,16 @@ async def deep_research_endpoint(req: DeepResearchRequest, _auth: dict = Depends
 # tokens/voto/justificativa) para servir de prova na troca de modelo.
 
 # Allowlist de modelos válidos (rejeita qualquer deployment arbitrário em get_llm).
-ARENA_MODELS = {"gpt-5.3-chat", "gemini-3.1-pro", "claude-sonnet-4-6", "DeepSeek-V4-Pro"}
+ARENA_MODELS = {
+    # Nativos (chaves próprias)
+    "gemini-3.1-pro", "claude-sonnet-4-6",
+    # Azure OpenAI (GPT)
+    "gpt-5.5", "gpt-5.4-pro", "gpt-5.4-mini", "gpt-5.3-chat",
+    "gpt-5.2", "gpt-5.2-chat", "gpt-4.1-mini",
+    # Azure AI Foundry (modelos parceiros)
+    "DeepSeek-V4-Pro", "DeepSeek-V4-Flash", "DeepSeek-V3.2-Speciale",
+    "grok-4.3", "Kimi-K2.5", "Kimi-K2.6",
+}
 ARENA_VOTES = {"A", "B", "tie", "both_bad"}
 ARENA_MAX_PROMPT = 50_000
 ARENA_MAX_DOC = 400_000
