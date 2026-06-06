@@ -9,6 +9,7 @@ import {
     type ArenaVote, type ArenaVoteResult, type ArenaSlot, type ArenaTurnHistory,
 } from '../services/api';
 import { formatMarkdown } from '../utils/markdown';
+import { useAgentStore } from '../store';
 import ArenaHistoryModal from './ArenaHistoryModal';
 import './ArenaPanel.css';
 
@@ -73,8 +74,17 @@ function fmtCost(usd: number): string {
 export default function ArenaPanel({ onClose }: { onClose: () => void }) {
     const [modelA, setModelA] = useState('gpt-5.3-chat');
     const [modelB, setModelB] = useState('DeepSeek-V4-Pro');
-    const [agents, setAgents] = useState<AgentOpt[]>([]);
     const [agentId, setAgentId] = useState('');
+    // Agentes lidos do store global: atualiza ao vivo quando um novo é criado
+    // (ex.: pela barra lateral) mesmo com a Arena já aberta.
+    const allAgents = useAgentStore((s) => s.customAgents);
+    const setCustomAgents = useAgentStore((s) => s.setCustomAgents);
+    const agents: AgentOpt[] = useMemo(
+        () => (allAgents || [])
+            .filter((a: any) => ((a.prompt || '') as string).trim())
+            .map((a: any) => ({ id: a.id, name: a.name, prompt: a.prompt })),
+        [allAgents],
+    );
 
     // Chaves de API do usuário (Claude/Gemini) — persistidas no navegador
     const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem('anthropic_api_key') || '');
@@ -109,15 +119,9 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
     const convoEndRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
-        getCustomAgents()
-            .then((data: any) => {
-                const regular = (data.agents || [])
-                    .filter((a: any) => a.type === 'regular' && a.prompt)
-                    .map((a: any) => ({ id: a.id, name: a.name, prompt: a.prompt }));
-                setAgents(regular);
-            })
-            .catch(() => setAgents([]));
-    }, []);
+        // Ao abrir a Arena, refresca o store (pega agentes recém-criados já persistidos).
+        getCustomAgents().then((data: any) => setCustomAgents(data.agents || [])).catch(() => {});
+    }, [setCustomAgents]);
 
     useEffect(() => { convoEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [turns]);
 
