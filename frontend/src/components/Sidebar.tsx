@@ -5,7 +5,7 @@ import {
     FaScaleBalanced,
     FaComments,
     FaWandMagicSparkles, FaTrash, FaShareNodes, FaEllipsisVertical, FaRobot,
-    FaGavel, FaLayerGroup, FaBook, FaSitemap, FaBookOpen, FaPen,
+    FaGavel, FaLayerGroup, FaBook, FaSitemap, FaBookOpen, FaPen, FaFlask,
 } from 'react-icons/fa6';
 import { useNavigate, useLocation } from 'react-router-dom';
 import UserMenu from './UserMenu';
@@ -49,6 +49,7 @@ const Sidebar = ({
         { path: '/jurisprudencia', label: 'Jurisprudência', icon: <FaScaleBalanced size={13} /> },
         { path: '/modelos', label: 'Gestor de Modelos', icon: <FaBook size={13} /> },
         { path: '/engenheiro-prompts', label: 'Engenheiro de Prompts', icon: <FaWandMagicSparkles size={13} /> },
+        { path: '/arena', label: 'Arena (A/B)', icon: <FaFlask size={13} /> },
     ];
 
     const handleAgentClick = (agent) => {

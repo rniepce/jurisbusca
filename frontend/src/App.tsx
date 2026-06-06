@@ -39,6 +39,7 @@ const AgentBuilderChat = lazy(() => import('./components/AgentBuilderChat'));
 const LotePage = lazy(() => import('./components/LotePage'));
 const DeepResearchPanel = lazy(() => import('./components/DeepResearchPanel'));
 const FlowBuilderPage = lazy(() => import('./components/FlowBuilderPage'));
+const ArenaPanel = lazy(() => import('./components/ArenaPanel'));
 
 // ── Route constants ──
 const ROUTES = {
@@ -53,6 +54,7 @@ const ROUTES = {
     engenheiroPrompts: '/engenheiro-prompts',
     lote: '/lote',
     flows: '/flows',
+    arena: '/arena',
 } as const;
 
 const PANEL_PATHS = new Set<string>([
@@ -62,6 +64,7 @@ const PANEL_PATHS = new Set<string>([
     ROUTES.engenheiroPrompts,
     ROUTES.lote,
     ROUTES.flows,
+    ROUTES.arena,
 ]);
 
 function MainApp() {
@@ -229,6 +232,14 @@ function MainApp() {
                     element={
                         <LazyPanel label="Construtor de Fluxos" onReset={goHome}>
                             <FlowBuilderPage onClose={goHome} />
+                        </LazyPanel>
+                    }
+                />
+                <Route
+                    path={ROUTES.arena}
+                    element={
+                        <LazyPanel label="Arena" onReset={goHome}>
+                            <ArenaPanel onClose={goHome} />
                         </LazyPanel>
                     }
                 />

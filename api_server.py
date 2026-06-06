@@ -5,6 +5,7 @@ Exposes chat and file upload endpoints, wiring into existing backend.py orchestr
 import os
 import json
 import uuid
+import random
 import hashlib
 import logging
 import tempfile
@@ -1588,6 +1589,275 @@ async def deep_research_endpoint(req: DeepResearchRequest, _auth: dict = Depends
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+# ── Arena: comparação A/B cega entre dois modelos ─────────────────────────────
+# O usuário escolhe dois modelos; as respostas são transmitidas ao vivo em modo
+# cego (slots A/B embaralhados pelo servidor) e só são reveladas após o voto.
+# Tudo fica gravado em arena_comparisons como trilha de auditoria (custo/latência/
+# tokens/voto/justificativa) para servir de prova na troca de modelo.
+
+# Allowlist de modelos válidos (rejeita qualquer deployment arbitrário em get_llm).
+ARENA_MODELS = {"gpt-5.3-chat", "gemini-3.1-pro", "claude-sonnet-4-6", "DeepSeek-V4-Pro"}
+ARENA_VOTES = {"A", "B", "tie", "both_bad"}
+ARENA_MAX_PROMPT = 50_000
+ARENA_MAX_DOC = 400_000
+ARENA_MAX_JUSTIFICATION = 5_000
+
+
+class ArenaCompareRequest(BaseModel):
+    model_a: str
+    model_b: str
+    prompt: str = ""
+    uploaded_text: Optional[str] = None
+    agent_prompt: Optional[str] = None
+    agent_id: Optional[str] = None
+    agent_name: Optional[str] = None
+
+
+class ArenaVoteRequest(BaseModel):
+    vote: str
+    justification: str = ""
+
+
+def _build_arena_messages(prompt: str, uploaded_text: Optional[str],
+                          agent_prompt: Optional[str]) -> list:
+    """Monta a MESMA lista de mensagens enviada aos dois modelos (teste justo).
+
+    system = agent_prompt (se houver) + bloco de documento (se houver);
+    user = prompt. Espelha a montagem do /api/chat, mas enxuto para o head-to-head.
+    """
+    system_parts: list[str] = []
+    if agent_prompt:
+        system_parts.append(agent_prompt)
+    if uploaded_text:
+        system_parts.append(
+            f"\n\n---\n📄 **DOCUMENTO ANEXADO (PEÇA PROCESSUAL — TEXTO INTEGRAL):**\n"
+            f"⚠️ Este É o conteúdo completo do documento/processo. Analise-o diretamente.\n\n"
+            f"{uploaded_text}\n---"
+        )
+    messages: list = []
+    if system_parts:
+        messages.append(SystemMessage(content="\n".join(system_parts)))
+    user_content = (prompt or "").strip()
+    if not user_content:
+        user_content = (
+            "Analise o documento anexado conforme as instruções." if uploaded_text
+            else "Prossiga conforme as instruções."
+        )
+    messages.append(HumanMessage(content=user_content))
+    return messages
+
+
+@app.post("/api/arena/compare")
+@limiter.limit("10/minute")
+async def arena_compare(req: ArenaCompareRequest, request: Request,
+                        _auth: dict = Depends(require_auth)):
+    """Roda o mesmo input em dois modelos e transmite ambas as respostas (SSE, cego)."""
+    import asyncio as _asyncio
+    import time as _time2
+    import flow_engine as _flow_engine
+    import flow_pricing as _flow_pricing
+
+    # Validação de modelos contra allowlist (anti-injeção em get_llm)
+    if req.model_a not in ARENA_MODELS or req.model_b not in ARENA_MODELS:
+        raise HTTPException(status_code=400, detail="Modelo inválido para a Arena.")
+
+    prompt = (req.prompt or "")[:ARENA_MAX_PROMPT]
+    uploaded_text = (req.uploaded_text or "")[:ARENA_MAX_DOC] or None
+    agent_prompt = req.agent_prompt or None
+    if not prompt.strip() and not uploaded_text:
+        raise HTTPException(status_code=400, detail="Forneça um prompt ou um documento.")
+
+    user_id = _auth.get("sub", "") or _extract_user_id(request)
+    user_email = _auth.get("email", "") or ""
+
+    # Embaralha qual modelo cai no slot A/B (mantém o cego para o avaliador)
+    chosen = [req.model_a, req.model_b]
+    random.shuffle(chosen)
+    slot_models = {"A": chosen[0], "B": chosen[1]}
+
+    comparison_id = uuid.uuid4().hex
+    history_db.create_arena_comparison(
+        comparison_id, user_id, user_email,
+        model_a=slot_models["A"], model_b=slot_models["B"], prompt=prompt,
+        agent_id=req.agent_id or "", agent_name=req.agent_name or "",
+        uploaded_text=uploaded_text or "",
+    )
+
+    messages = _build_arena_messages(prompt, uploaded_text, agent_prompt)
+    approx_input_tokens = max(1, sum(len(getattr(m, "content", "") or "") for m in messages) // 4)
+
+    async def _stream():
+        queue: "_asyncio.Queue" = _asyncio.Queue()
+        results: dict = {"A": {}, "B": {}}
+
+        async def run_slot(slot: str, model_name: str):
+            start = _time2.perf_counter()
+            parts: list[str] = []
+            combined = None
+            err = ""
+            try:
+                llm = be.get_llm(model_name, temperature=0.3)
+                async for chunk in llm.astream(messages):
+                    piece = be.safe_content(chunk)
+                    if piece:
+                        parts.append(piece)
+                        await queue.put(("token", slot, piece))
+                    try:
+                        combined = chunk if combined is None else (combined + chunk)
+                    except Exception:
+                        combined = chunk
+            except Exception as exc:  # noqa: BLE001
+                err = str(exc)
+                await queue.put(("slot_error", slot, err))
+            latency_ms = int((_time2.perf_counter() - start) * 1000)
+            text = "".join(parts)
+            in_tok, out_tok = 0, 0
+            try:
+                if combined is not None:
+                    in_tok, out_tok = _flow_engine._extract_usage(combined)
+            except Exception:
+                pass
+            if in_tok == 0:
+                in_tok = approx_input_tokens
+            if out_tok == 0:
+                out_tok = max(1, len(text) // 4)
+            cost = _flow_pricing.estimate_cost_usd(model_name, in_tok, out_tok)
+            results[slot] = {
+                "text": text, "latency_ms": latency_ms, "err": err,
+                "in_tok": in_tok, "out_tok": out_tok, "cost": cost,
+            }
+            await queue.put(("slot_done", slot))
+
+        tasks = [
+            _asyncio.create_task(run_slot("A", slot_models["A"])),
+            _asyncio.create_task(run_slot("B", slot_models["B"])),
+        ]
+
+        yield f"data: {json.dumps({'event': 'start', 'comparison_id': comparison_id})}\n\n"
+        done = 0
+        while done < 2:
+            kind, slot, *rest = await queue.get()
+            if kind == "token":
+                yield f"data: {json.dumps({'event': 'token', 'slot': slot, 'text': rest[0]})}\n\n"
+            elif kind == "slot_error":
+                yield f"data: {json.dumps({'event': 'slot_error', 'slot': slot, 'error': rest[0]})}\n\n"
+            elif kind == "slot_done":
+                done += 1
+                lat = results.get(slot, {}).get("latency_ms", 0)
+                # 'done' do slot revela só latência (não vaza a identidade do modelo)
+                yield f"data: {json.dumps({'event': 'slot_done', 'slot': slot, 'latency_ms': lat})}\n\n"
+
+        await _asyncio.gather(*tasks, return_exceptions=True)
+
+        a, b = results.get("A", {}), results.get("B", {})
+        both_failed = bool(a.get("err")) and bool(b.get("err"))
+        status = "error" if both_failed else "completed"
+        try:
+            history_db.finish_arena_comparison(
+                comparison_id, status=status,
+                error=(a.get("err") or b.get("err") or ""),
+                response_a=a.get("text", ""), response_b=b.get("text", ""),
+                latency_ms_a=a.get("latency_ms", 0), latency_ms_b=b.get("latency_ms", 0),
+                input_tokens_a=a.get("in_tok", 0), output_tokens_a=a.get("out_tok", 0),
+                input_tokens_b=b.get("in_tok", 0), output_tokens_b=b.get("out_tok", 0),
+                cost_usd_a=a.get("cost", 0.0), cost_usd_b=b.get("cost", 0.0),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Arena: falha ao persistir %s: %s", comparison_id, exc)
+        # Log de auditoria SEM conteúdo (LGPD): só ids, modelos e status.
+        logger.info("Arena %s | user=%s | A=%s B=%s | status=%s",
+                    comparison_id, user_id, slot_models["A"], slot_models["B"], status)
+        yield f"data: {json.dumps({'event': 'done', 'comparison_id': comparison_id, 'status': status})}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+@app.post("/api/arena/{comparison_id}/vote")
+async def arena_vote(comparison_id: str, req: ArenaVoteRequest, request: Request,
+                     _auth: dict = Depends(require_auth)):
+    """Grava o voto + justificativa e REVELA a identidade dos modelos + métricas."""
+    if req.vote not in ARENA_VOTES:
+        raise HTTPException(status_code=400, detail="Voto inválido.")
+    user_id = _auth.get("sub", "") or _extract_user_id(request)
+    justification = (req.justification or "")[:ARENA_MAX_JUSTIFICATION]
+
+    ok = history_db.vote_arena_comparison(comparison_id, user_id, req.vote, justification)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Comparação não encontrada.")
+
+    comp = history_db.get_arena_comparison(comparison_id, user_id)
+    if not comp:
+        raise HTTPException(status_code=404, detail="Comparação não encontrada.")
+    logger.info("Arena vote %s | user=%s | vote=%s", comparison_id, user_id, req.vote)
+    # Reveal: nomes dos modelos + métricas completas (custo agora pode aparecer)
+    return {
+        "comparison_id": comparison_id,
+        "vote": comp["vote"],
+        "justification": comp["justification"],
+        "model_a": comp["model_a"],
+        "model_b": comp["model_b"],
+        "metrics": {
+            "A": {"latency_ms": comp["latency_ms_a"], "input_tokens": comp["input_tokens_a"],
+                  "output_tokens": comp["output_tokens_a"], "cost_usd": comp["cost_usd_a"]},
+            "B": {"latency_ms": comp["latency_ms_b"], "input_tokens": comp["input_tokens_b"],
+                  "output_tokens": comp["output_tokens_b"], "cost_usd": comp["cost_usd_b"]},
+        },
+    }
+
+
+@app.get("/api/arena/comparisons")
+async def arena_list(request: Request, _auth: dict = Depends(require_auth)):
+    user_id = _auth.get("sub", "") or _extract_user_id(request)
+    return {"comparisons": history_db.list_arena_comparisons(user_id, limit=200)}
+
+
+@app.get("/api/arena/comparisons/export.csv")
+async def arena_export_csv(request: Request, _auth: dict = Depends(require_auth)):
+    """Exporta o histórico do usuário como CSV (prova documental)."""
+    import csv as _csv
+    import io as _io
+    user_id = _auth.get("sub", "") or _extract_user_id(request)
+    rows = history_db.list_arena_comparisons(user_id, limit=10000)
+    buf = _io.StringIO()
+    cols = ["id", "created_at", "model_a", "model_b", "vote", "justification",
+            "agent_name", "status", "latency_ms_a", "latency_ms_b",
+            "input_tokens_a", "output_tokens_a", "input_tokens_b", "output_tokens_b",
+            "cost_usd_a", "cost_usd_b", "prompt"]
+    writer = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({c: r.get(c, "") for c in cols})
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=arena_comparisons.csv"},
+    )
+
+
+@app.get("/api/arena/comparisons/{comparison_id}")
+async def arena_detail(comparison_id: str, request: Request,
+                       _auth: dict = Depends(require_auth)):
+    user_id = _auth.get("sub", "") or _extract_user_id(request)
+    comp = history_db.get_arena_comparison(comparison_id, user_id)
+    if not comp:
+        raise HTTPException(status_code=404, detail="Comparação não encontrada.")
+    return comp
+
+
+@app.delete("/api/arena/comparisons/{comparison_id}")
+async def arena_delete(comparison_id: str, request: Request,
+                       _auth: dict = Depends(require_auth)):
+    user_id = _auth.get("sub", "") or _extract_user_id(request)
+    if not history_db.delete_arena_comparison(comparison_id, user_id):
+        raise HTTPException(status_code=404, detail="Comparação não encontrada.")
+    return {"ok": True}
 
 
 # ── Batch Pilot Replication (pilot-guided batch analysis) ─────────────────────

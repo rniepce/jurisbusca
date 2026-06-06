@@ -20,6 +20,7 @@ _PRICING_USD: dict[str, tuple[float, float]] = {
     "gemini-2.5-pro":         (1.25,  5.00),
     "gemini-2.5-flash":       (0.075, 0.30),
     # DeepSeek
+    "DeepSeek-V4-Pro":        (0.27,  1.10),
     "deepseek-chat":          (0.27,  1.10),
     "deepseek-reasoner":      (0.55,  2.19),
     # Kimi

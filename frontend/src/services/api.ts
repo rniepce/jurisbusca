@@ -1338,3 +1338,201 @@ export async function deleteFlowRun(runId: string): Promise<void> {
     });
     if (!res.ok) throw new Error(`Erro ao apagar execução (${res.status})`);
 }
+
+
+// ── Arena (comparação A/B cega entre modelos) ────────────────────────────────
+
+export type ArenaSlot = 'A' | 'B';
+export type ArenaVote = 'A' | 'B' | 'tie' | 'both_bad';
+
+export interface RunArenaParams {
+    modelA: string;
+    modelB: string;
+    prompt?: string;
+    uploadedText?: string | null;
+    agentPrompt?: string | null;
+    agentId?: string | null;
+    agentName?: string | null;
+}
+
+export interface ArenaStreamHandlers {
+    onStart?: (comparisonId: string) => void;
+    onToken?: (slot: ArenaSlot, text: string) => void;
+    onSlotDone?: (slot: ArenaSlot, latencyMs: number) => void;
+    onSlotError?: (slot: ArenaSlot, error: string) => void;
+}
+
+export interface ArenaSlotMetrics {
+    latency_ms: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd: number;
+}
+
+export interface ArenaVoteResult {
+    comparison_id: string;
+    vote: ArenaVote;
+    justification: string;
+    model_a: string;
+    model_b: string;
+    metrics: { A: ArenaSlotMetrics; B: ArenaSlotMetrics };
+}
+
+export interface ArenaComparisonSummary {
+    id: string;
+    model_a: string;
+    model_b: string;
+    prompt: string;
+    agent_name: string;
+    status: string;
+    error: string;
+    vote: string;
+    justification: string;
+    voted_at: string | null;
+    created_at: string;
+    latency_ms_a: number;
+    latency_ms_b: number;
+    cost_usd_a: number;
+    cost_usd_b: number;
+    input_tokens_a: number;
+    output_tokens_a: number;
+    input_tokens_b: number;
+    output_tokens_b: number;
+}
+
+export interface ArenaComparisonDetail extends ArenaComparisonSummary {
+    user_email: string;
+    agent_id: string;
+    uploaded_text: string;
+    response_a: string;
+    response_b: string;
+}
+
+/**
+ * Run one prompt against two models and stream both responses live (blind A/B).
+ * Resolves with the comparison id + final status when both slots finish.
+ */
+export async function runArenaCompare(
+    params: RunArenaParams,
+    handlers: ArenaStreamHandlers = {},
+): Promise<{ comparisonId: string; status: string }> {
+    const res = await fetch(`${API_BASE}/arena/compare`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+            model_a: params.modelA,
+            model_b: params.modelB,
+            prompt: params.prompt || '',
+            uploaded_text: params.uploadedText || null,
+            agent_prompt: params.agentPrompt || null,
+            agent_id: params.agentId || null,
+            agent_name: params.agentName || null,
+        }),
+        redirect: 'error',
+    });
+
+    if (!res.ok || !res.body) {
+        const err = await safeJson(res, 'Arena').catch(() => ({}));
+        throw new Error(err.detail || `Arena falhou (${res.status})`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let comparisonId = '';
+    let status = 'completed';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let sepIdx: number;
+        while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {
+            const raw = buffer.slice(0, sepIdx);
+            buffer = buffer.slice(sepIdx + 2);
+            const dataLine = raw.split('\n').find((l) => l.startsWith('data: '));
+            if (!dataLine) continue;
+            try {
+                const ev = JSON.parse(dataLine.slice(6));
+                if (ev.event === 'start') {
+                    comparisonId = ev.comparison_id;
+                    handlers.onStart?.(comparisonId);
+                } else if (ev.event === 'token') {
+                    handlers.onToken?.(ev.slot, ev.text);
+                } else if (ev.event === 'slot_done') {
+                    handlers.onSlotDone?.(ev.slot, ev.latency_ms ?? 0);
+                } else if (ev.event === 'slot_error') {
+                    handlers.onSlotError?.(ev.slot, ev.error || 'Erro');
+                } else if (ev.event === 'done') {
+                    status = ev.status || 'completed';
+                }
+            } catch (e) {
+                if (e instanceof SyntaxError) continue;
+                throw e;
+            }
+        }
+    }
+
+    return { comparisonId, status };
+}
+
+/** Record the vote + justification and reveal both model identities + metrics. */
+export async function voteArena(
+    comparisonId: string,
+    vote: ArenaVote,
+    justification = '',
+): Promise<ArenaVoteResult> {
+    const res = await fetch(`${API_BASE}/arena/${encodeURIComponent(comparisonId)}/vote`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ vote, justification }),
+        redirect: 'error',
+    });
+    if (!res.ok) {
+        const err = await safeJson(res, 'Arena Vote').catch(() => ({}));
+        throw new Error(err.detail || `Erro ao registrar voto (${res.status})`);
+    }
+    return safeJson(res, 'Arena Vote');
+}
+
+export async function listArenaComparisons(): Promise<ArenaComparisonSummary[]> {
+    const res = await fetch(`${API_BASE}/arena/comparisons`, {
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Erro ao listar comparações (${res.status})`);
+    const data = await res.json();
+    return data.comparisons || [];
+}
+
+export async function getArenaComparison(id: string): Promise<ArenaComparisonDetail> {
+    const res = await fetch(`${API_BASE}/arena/comparisons/${encodeURIComponent(id)}`, {
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Comparação não encontrada (${res.status})`);
+    return await res.json();
+}
+
+export async function deleteArenaComparison(id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/arena/comparisons/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Erro ao apagar comparação (${res.status})`);
+}
+
+/** Download the user's comparison history as CSV (auth header required → blob). */
+export async function exportArenaComparisonsCsv(): Promise<void> {
+    const res = await fetch(`${API_BASE}/arena/comparisons/export.csv`, {
+        headers: await getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error(`Erro ao exportar CSV (${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'arena_comparisons.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}

@@ -117,6 +117,37 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_flow_run_events_run ON flow_run_events(run_id, seq)")
+        # ── Arena: comparação A/B cega entre dois modelos (trilha de auditoria) ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS arena_comparisons (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                user_email TEXT DEFAULT '',
+                model_a TEXT NOT NULL,
+                model_b TEXT NOT NULL,
+                prompt TEXT DEFAULT '',
+                agent_id TEXT DEFAULT '',
+                agent_name TEXT DEFAULT '',
+                uploaded_text TEXT DEFAULT '',
+                response_a TEXT DEFAULT '',
+                response_b TEXT DEFAULT '',
+                latency_ms_a INTEGER DEFAULT 0,
+                latency_ms_b INTEGER DEFAULT 0,
+                input_tokens_a INTEGER DEFAULT 0,
+                output_tokens_a INTEGER DEFAULT 0,
+                input_tokens_b INTEGER DEFAULT 0,
+                output_tokens_b INTEGER DEFAULT 0,
+                cost_usd_a REAL DEFAULT 0.0,
+                cost_usd_b REAL DEFAULT 0.0,
+                status TEXT NOT NULL DEFAULT 'running',
+                error TEXT DEFAULT '',
+                vote TEXT DEFAULT '',
+                justification TEXT DEFAULT '',
+                voted_at TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_arena_user ON arena_comparisons(user_id, created_at DESC)")
         try:
             conn.execute("ALTER TABLE agent_flows ADD COLUMN description TEXT DEFAULT ''")
         except Exception:
@@ -604,6 +635,100 @@ def delete_flow_run(run_id: str, user_id: str) -> bool:
             (run_id, user_id),
         )
         conn.execute("DELETE FROM flow_run_events WHERE run_id = ?", (run_id,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+# ── Arena (comparação A/B cega entre modelos) ────────────────────────────────
+
+def create_arena_comparison(comparison_id: str, user_id: str, user_email: str,
+                            model_a: str, model_b: str, prompt: str,
+                            agent_id: str = "", agent_name: str = "",
+                            uploaded_text: str = "") -> None:
+    """Cria o registro da comparação no início do streaming (status 'running')."""
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO arena_comparisons
+                 (id, user_id, user_email, model_a, model_b, prompt,
+                  agent_id, agent_name, uploaded_text, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running')""",
+            (comparison_id, user_id, user_email or "", model_a, model_b, prompt or "",
+             agent_id or "", agent_name or "", uploaded_text or ""),
+        )
+        conn.commit()
+
+
+def finish_arena_comparison(comparison_id: str, *, status: str, error: str = "",
+                            response_a: str = "", response_b: str = "",
+                            latency_ms_a: int = 0, latency_ms_b: int = 0,
+                            input_tokens_a: int = 0, output_tokens_a: int = 0,
+                            input_tokens_b: int = 0, output_tokens_b: int = 0,
+                            cost_usd_a: float = 0.0, cost_usd_b: float = 0.0) -> None:
+    """Grava as respostas e métricas ao fim do streaming."""
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE arena_comparisons
+               SET status = ?, error = ?, response_a = ?, response_b = ?,
+                   latency_ms_a = ?, latency_ms_b = ?,
+                   input_tokens_a = ?, output_tokens_a = ?,
+                   input_tokens_b = ?, output_tokens_b = ?,
+                   cost_usd_a = ?, cost_usd_b = ?
+               WHERE id = ?""",
+            (status, error or "", response_a or "", response_b or "",
+             latency_ms_a, latency_ms_b,
+             input_tokens_a, output_tokens_a, input_tokens_b, output_tokens_b,
+             cost_usd_a, cost_usd_b, comparison_id),
+        )
+        conn.commit()
+
+
+def vote_arena_comparison(comparison_id: str, user_id: str, vote: str,
+                          justification: str = "") -> bool:
+    """Registra o voto + justificativa. Escopado por user_id (anti-IDOR)."""
+    with get_db() as conn:
+        cur = conn.execute(
+            """UPDATE arena_comparisons
+               SET vote = ?, justification = ?, voted_at = datetime('now')
+               WHERE id = ? AND user_id = ?""",
+            (vote, justification or "", comparison_id, user_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def list_arena_comparisons(user_id: str, limit: int = 100) -> list[dict]:
+    with get_db() as conn:
+        cur = conn.execute(
+            """SELECT id, model_a, model_b, prompt, agent_name, status, error,
+                      vote, justification, voted_at, created_at,
+                      latency_ms_a, latency_ms_b,
+                      cost_usd_a, cost_usd_b,
+                      input_tokens_a, output_tokens_a, input_tokens_b, output_tokens_b
+               FROM arena_comparisons
+               WHERE user_id = ?
+               ORDER BY created_at DESC LIMIT ?""",
+            (user_id, limit),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def get_arena_comparison(comparison_id: str, user_id: str) -> dict | None:
+    """Detalhe completo (escopado por user_id; None se não pertencer ao usuário)."""
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT * FROM arena_comparisons WHERE id = ? AND user_id = ?",
+            (comparison_id, user_id),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def delete_arena_comparison(comparison_id: str, user_id: str) -> bool:
+    with get_db() as conn:
+        cur = conn.execute(
+            "DELETE FROM arena_comparisons WHERE id = ? AND user_id = ?",
+            (comparison_id, user_id),
+        )
         conn.commit()
         return cur.rowcount > 0
 
