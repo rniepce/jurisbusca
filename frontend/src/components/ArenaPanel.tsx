@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import {
-    FaFlask, FaXmark, FaClockRotateLeft, FaPlay, FaArrowsRotate,
+    FaFlask, FaXmark, FaClockRotateLeft, FaArrowsRotate,
     FaCircleCheck, FaCircleXmark, FaSpinner, FaTrophy, FaPaperclip, FaFile,
 } from 'react-icons/fa6';
+import { IoSend } from 'react-icons/io5';
 import {
-    runArenaCompare, voteArena, getCustomAgents, uploadFile,
-    type ArenaVote, type ArenaVoteResult, type ArenaSlot,
+    runArenaCompare, continueArena, voteArena, getCustomAgents, uploadFile,
+    type ArenaVote, type ArenaVoteResult, type ArenaSlot, type ArenaTurnHistory,
 } from '../services/api';
 import { formatMarkdown } from '../utils/markdown';
 import ArenaHistoryModal from './ArenaHistoryModal';
@@ -14,23 +15,23 @@ import './ArenaPanel.css';
 // Modelos disponíveis na Arena — DEVE casar com ARENA_MODELS no backend.
 const ARENA_MODEL_OPTIONS = [
     // Azure OpenAI (GPT)
-    { name: 'GPT-5.5', color: '#4285F4', deployment: 'gpt-5.5' },
-    { name: 'GPT-5.4 Pro', color: '#4285F4', deployment: 'gpt-5.4-pro' },
-    { name: 'GPT-5.4 Mini', color: '#60A5FA', deployment: 'gpt-5.4-mini' },
-    { name: 'GPT-5.3', color: '#4285F4', deployment: 'gpt-5.3-chat' },
-    { name: 'GPT-5.2', color: '#4285F4', deployment: 'gpt-5.2' },
-    { name: 'GPT-5.2 Chat', color: '#60A5FA', deployment: 'gpt-5.2-chat' },
-    { name: 'GPT-4.1 Mini', color: '#93C5FD', deployment: 'gpt-4.1-mini' },
+    { name: 'GPT-5.5', deployment: 'gpt-5.5' },
+    { name: 'GPT-5.4 Pro', deployment: 'gpt-5.4-pro' },
+    { name: 'GPT-5.4 Mini', deployment: 'gpt-5.4-mini' },
+    { name: 'GPT-5.3', deployment: 'gpt-5.3-chat' },
+    { name: 'GPT-5.2', deployment: 'gpt-5.2' },
+    { name: 'GPT-5.2 Chat', deployment: 'gpt-5.2-chat' },
+    { name: 'GPT-4.1 Mini', deployment: 'gpt-4.1-mini' },
     // Azure AI Foundry (parceiros)
-    { name: 'DeepSeek V4 Pro', color: '#0891B2', deployment: 'DeepSeek-V4-Pro' },
-    { name: 'DeepSeek V4 Flash', color: '#22D3EE', deployment: 'DeepSeek-V4-Flash' },
-    { name: 'DeepSeek V3.2 Speciale', color: '#0E7490', deployment: 'DeepSeek-V3.2-Speciale' },
-    { name: 'Grok 4.3', color: '#1F2937', deployment: 'grok-4.3' },
-    { name: 'Kimi K2.5', color: '#7C3AED', deployment: 'Kimi-K2.5' },
-    { name: 'Kimi K2.6', color: '#8B5CF6', deployment: 'Kimi-K2.6' },
+    { name: 'DeepSeek V4 Pro', deployment: 'DeepSeek-V4-Pro' },
+    { name: 'DeepSeek V4 Flash', deployment: 'DeepSeek-V4-Flash' },
+    { name: 'DeepSeek V3.2 Speciale', deployment: 'DeepSeek-V3.2-Speciale' },
+    { name: 'Grok 4.3', deployment: 'grok-4.3' },
+    { name: 'Kimi K2.5', deployment: 'Kimi-K2.5' },
+    { name: 'Kimi K2.6', deployment: 'Kimi-K2.6' },
     // Nativos (chaves próprias)
-    { name: 'Gemini 3.1 Pro', color: '#34A853', deployment: 'gemini-3.1-pro' },
-    { name: 'Claude Sonnet 4.6', color: '#D97706', deployment: 'claude-sonnet-4-6' },
+    { name: 'Gemini 3.1 Pro', deployment: 'gemini-3.1-pro' },
+    { name: 'Claude Sonnet 4.6', deployment: 'claude-sonnet-4-6' },
 ];
 
 // Engines de OCR aceitos pelo backend (aplicam-se a PDF; DOCX/TXT extraem direto).
@@ -45,12 +46,21 @@ type SlotStatus = 'idle' | 'streaming' | 'done' | 'error';
 
 interface AgentOpt { id: string; name: string; prompt: string; }
 
+interface Turn {
+    user: string;
+    a: string; b: string;
+    aStatus: SlotStatus; bStatus: SlotStatus;
+    aLatency: number; bLatency: number;
+}
+
 const VOTE_BUTTONS: Array<{ vote: ArenaVote; label: string }> = [
     { vote: 'A', label: '◀ Resposta A é melhor' },
     { vote: 'tie', label: 'Empate' },
     { vote: 'both_bad', label: 'Ambas ruins' },
     { vote: 'B', label: 'Resposta B é melhor ▶' },
 ];
+
+const labelOf = (dep: string) => ARENA_MODEL_OPTIONS.find((o) => o.deployment === dep)?.name || dep;
 
 function fmtLatency(ms: number): string {
     if (!ms) return '—';
@@ -63,13 +73,6 @@ function fmtCost(usd: number): string {
 export default function ArenaPanel({ onClose }: { onClose: () => void }) {
     const [modelA, setModelA] = useState('gpt-5.3-chat');
     const [modelB, setModelB] = useState('DeepSeek-V4-Pro');
-    const [prompt, setPrompt] = useState('');
-    const [docText, setDocText] = useState('');        // texto extraído do arquivo
-    const [docFileName, setDocFileName] = useState('');
-    const [uploading, setUploading] = useState(false);
-    const [uploadMsg, setUploadMsg] = useState('');
-    const [ocrEngine, setOcrEngine] = useState('mistral_doc_ai');
-    const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [agents, setAgents] = useState<AgentOpt[]>([]);
     const [agentId, setAgentId] = useState('');
 
@@ -80,21 +83,30 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
     const saveAnthropicKey = (v: string) => { setAnthropicKey(v); localStorage.setItem('anthropic_api_key', v); };
     const saveGoogleKey = (v: string) => { setGoogleKey(v); localStorage.setItem('google_api_key', v); };
 
-    const [running, setRunning] = useState(false);
-    const [error, setError] = useState('');
-    const [comparisonId, setComparisonId] = useState('');
-    const [responses, setResponses] = useState<{ A: string; B: string }>({ A: '', B: '' });
-    const [status, setStatus] = useState<{ A: SlotStatus; B: SlotStatus }>({ A: 'idle', B: 'idle' });
-    const [latency, setLatency] = useState<{ A: number; B: number }>({ A: 0, B: 0 });
+    // Documento (upload + OCR)
+    const [docText, setDocText] = useState('');
+    const [docFileName, setDocFileName] = useState('');
+    const [uploading, setUploading] = useState(false);
+    const [uploadMsg, setUploadMsg] = useState('');
+    const [ocrEngine, setOcrEngine] = useState('mistral_doc_ai');
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+    // Conversa multi-turno
+    const [comparisonId, setComparisonId] = useState('');
+    const [turns, setTurns] = useState<Turn[]>([]);
+    const [input, setInput] = useState('');
+    const [streaming, setStreaming] = useState(false);
+    const [error, setError] = useState('');
+
+    // Voto / reveal
     const [justification, setJustification] = useState('');
     const [reveal, setReveal] = useState<ArenaVoteResult | null>(null);
     const [voting, setVoting] = useState(false);
 
     const [showHistory, setShowHistory] = useState(false);
 
-    // Buffers de streaming acumulados fora do React para não perder tokens entre renders
-    const bufRef = useRef<{ A: string; B: string }>({ A: '', B: '' });
+    const bufRef = useRef<{ a: string; b: string }>({ a: '', b: '' });
+    const convoEndRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         getCustomAgents()
@@ -107,25 +119,29 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
             .catch(() => setAgents([]));
     }, []);
 
+    useEffect(() => { convoEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [turns]);
+
+    const started = turns.length > 0 || comparisonId !== '';
     const sameModel = modelA === modelB;
     const needsAnthropic = [modelA, modelB].some((m) => m.toLowerCase().startsWith('claude'));
     const needsGoogle = [modelA, modelB].some((m) => m.toLowerCase().startsWith('gemini'));
     const missingAnthropic = needsAnthropic && !anthropicKey.trim();
     const missingGoogle = needsGoogle && !googleKey.trim();
-    const canRun = !running && !uploading && !sameModel && (prompt.trim() !== '' || docText.trim() !== '');
-    const bothDone = status.A !== 'idle' && status.A !== 'streaming'
-        && status.B !== 'idle' && status.B !== 'streaming';
     const selectedAgent = useMemo(() => agents.find((a) => a.id === agentId), [agents, agentId]);
 
+    const lastTurn = turns[turns.length - 1];
+    const lastTurnDone = !!lastTurn && lastTurn.aStatus !== 'streaming' && lastTurn.bStatus !== 'streaming';
+    const canSend = !streaming && !uploading && input.trim() !== '' && (started || !sameModel);
+
+    // ── Upload ──
     const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (fileInputRef.current) fileInputRef.current.value = '';  // permite reanexar o mesmo arquivo
+        if (fileInputRef.current) fileInputRef.current.value = '';
         if (!file) return;
         setUploading(true);
         setError('');
         setUploadMsg('📤 Enviando arquivo…');
         try {
-            // vectorize=false: a Arena só precisa do texto extraído, não do índice RAG
             const res = await uploadFile(file, ocrEngine, true, false, (info) => setUploadMsg(info.progress));
             setDocText(res.text || '');
             setDocFileName(res.filename || file.name);
@@ -137,58 +153,67 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
             setUploading(false);
         }
     };
-
     const clearDoc = () => { setDocText(''); setDocFileName(''); };
 
-    const resetResults = () => {
-        bufRef.current = { A: '', B: '' };
-        setResponses({ A: '', B: '' });
-        setStatus({ A: 'idle', B: 'idle' });
-        setLatency({ A: 0, B: 0 });
-        setComparisonId('');
-        setReveal(null);
-        setJustification('');
+    // ── Enviar mensagem (1º turno = compare; demais = continue) ──
+    const handleSend = async () => {
+        const msg = input.trim();
+        if (!msg || streaming || uploading) return;
+        if (!started && sameModel) { setError('Escolha dois modelos diferentes.'); return; }
         setError('');
-    };
 
-    const handleRun = async () => {
-        if (!canRun) return;
-        resetResults();
-        setRunning(true);
-        setStatus({ A: 'streaming', B: 'streaming' });
+        const priorTurns = turns;
+        const idx = priorTurns.length;
+        const newTurn: Turn = {
+            user: msg, a: '', b: '',
+            aStatus: 'streaming', bStatus: 'streaming', aLatency: 0, bLatency: 0,
+        };
+        setTurns([...priorTurns, newTurn]);
+        setInput('');
+        setStreaming(true);
+        bufRef.current = { a: '', b: '' };
+
+        const patch = (i: number, fn: (t: Turn) => Turn) =>
+            setTurns((ts) => ts.map((t, j) => (j === i ? fn(t) : t)));
+
+        const handlers = {
+            onStart: (id: string) => setComparisonId((cur) => cur || id),
+            onToken: (slot: ArenaSlot, text: string) => {
+                if (slot === 'A') { bufRef.current.a += text; patch(idx, (t) => ({ ...t, a: bufRef.current.a })); }
+                else { bufRef.current.b += text; patch(idx, (t) => ({ ...t, b: bufRef.current.b })); }
+            },
+            onSlotDone: (slot: ArenaSlot, ms: number) => {
+                if (slot === 'A') patch(idx, (t) => ({ ...t, aStatus: 'done', aLatency: ms }));
+                else patch(idx, (t) => ({ ...t, bStatus: 'done', bLatency: ms }));
+            },
+            onSlotError: (slot: ArenaSlot, err: string) => {
+                if (slot === 'A') { bufRef.current.a += `\n\n⚠️ Erro: ${err}`; patch(idx, (t) => ({ ...t, a: bufRef.current.a, aStatus: 'error' })); }
+                else { bufRef.current.b += `\n\n⚠️ Erro: ${err}`; patch(idx, (t) => ({ ...t, b: bufRef.current.b, bStatus: 'error' })); }
+            },
+        };
+
         try {
-            await runArenaCompare(
-                {
-                    modelA,
-                    modelB,
-                    prompt,
+            if (!comparisonId) {
+                await runArenaCompare({
+                    modelA, modelB, prompt: msg,
                     uploadedText: docText.trim() || null,
                     agentPrompt: selectedAgent?.prompt || null,
                     agentId: selectedAgent?.id || null,
                     agentName: selectedAgent?.name || null,
-                },
-                {
-                    onStart: (id) => setComparisonId(id),
-                    onToken: (slot: ArenaSlot, text: string) => {
-                        bufRef.current[slot] += text;
-                        setResponses({ ...bufRef.current });
-                    },
-                    onSlotDone: (slot, ms) => {
-                        setLatency((l) => ({ ...l, [slot]: ms }));
-                        setStatus((s) => ({ ...s, [slot]: 'done' }));
-                    },
-                    onSlotError: (slot, err) => {
-                        bufRef.current[slot] += `\n\n⚠️ Erro: ${err}`;
-                        setResponses({ ...bufRef.current });
-                        setStatus((s) => ({ ...s, [slot]: 'error' }));
-                    },
-                },
-            );
+                }, handlers);
+            } else {
+                const history: ArenaTurnHistory[] = priorTurns.map((t) => ({ user: t.user, a: t.a, b: t.b }));
+                await continueArena(comparisonId, msg, history, handlers);
+            }
         } catch (err: any) {
-            setError(err?.message || 'Falha ao rodar a Arena.');
-            setStatus({ A: 'error', B: 'error' });
+            setError(err?.message || 'Falha ao enviar.');
+            patch(idx, (t) => ({
+                ...t,
+                aStatus: t.aStatus === 'streaming' ? 'error' : t.aStatus,
+                bStatus: t.bStatus === 'streaming' ? 'error' : t.bStatus,
+            }));
         } finally {
-            setRunning(false);
+            setStreaming(false);
         }
     };
 
@@ -196,8 +221,7 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
         if (!comparisonId || voting) return;
         setVoting(true);
         try {
-            const result = await voteArena(comparisonId, vote, justification);
-            setReveal(result);
+            setReveal(await voteArena(comparisonId, vote, justification));
         } catch (err: any) {
             setError(err?.message || 'Falha ao registrar voto.');
         } finally {
@@ -205,209 +229,177 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
         }
     };
 
-    const renderColumn = (slot: ArenaSlot) => {
-        const st = status[slot];
-        const revealedName = reveal ? (slot === 'A' ? reveal.model_a : reveal.model_b) : null;
-        const metrics = reveal ? reveal.metrics[slot] : null;
-        const winner = reveal && (reveal.vote === slot);
+    const newComparison = () => {
+        setTurns([]); setComparisonId(''); setReveal(null);
+        setJustification(''); setError(''); setInput('');
+        bufRef.current = { a: '', b: '' };
+    };
+
+    const onInputKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSend(); }
+    };
+
+    // ── Render de uma célula (resposta de um slot num turno) ──
+    const slotCell = (turn: Turn, slot: ArenaSlot) => {
+        const text = slot === 'A' ? turn.a : turn.b;
+        const st = slot === 'A' ? turn.aStatus : turn.bStatus;
+        const lat = slot === 'A' ? turn.aLatency : turn.bLatency;
         return (
-            <div className={`arena-col ${winner ? 'winner' : ''}`}>
-                <div className="arena-col-head">
-                    <span className="arena-col-title">
-                        {winner && <FaTrophy size={12} className="arena-trophy" />}
-                        {revealedName ? revealedName : `Resposta ${slot}`}
-                    </span>
-                    <span className={`arena-col-status ${st}`}>
-                        {st === 'streaming' && <><FaSpinner size={11} className="spin" /> gerando…</>}
-                        {st === 'done' && <><FaCircleCheck size={11} /> {fmtLatency(latency[slot])}</>}
-                        {st === 'error' && <><FaCircleXmark size={11} /> erro</>}
-                    </span>
-                </div>
+            <div className={`arena-col ${reveal && reveal.vote === slot ? 'winner' : ''}`}>
                 <div
                     className="arena-col-body markdown"
-                    dangerouslySetInnerHTML={{ __html: formatMarkdown(responses[slot] || '') }}
+                    dangerouslySetInnerHTML={{ __html: formatMarkdown(text || '') }}
                 />
-                {metrics && (
-                    <div className="arena-col-metrics">
-                        <span title="Latência">⏱ {fmtLatency(metrics.latency_ms)}</span>
-                        <span title="Tokens entrada/saída">🔤 {metrics.input_tokens}/{metrics.output_tokens}</span>
-                        <span title="Custo estimado (USD)">💰 {fmtCost(metrics.cost_usd)}</span>
-                    </div>
+                <div className="arena-col-foot">
+                    {st === 'streaming' && <span className="arena-col-status streaming"><FaSpinner size={10} className="spin" /> gerando…</span>}
+                    {st === 'done' && <span className="arena-col-status done"><FaCircleCheck size={10} /> {fmtLatency(lat)}</span>}
+                    {st === 'error' && <span className="arena-col-status error"><FaCircleXmark size={10} /> erro</span>}
+                </div>
+            </div>
+        );
+    };
+
+    const headCell = (slot: ArenaSlot) => {
+        const name = reveal ? (slot === 'A' ? reveal.model_a : reveal.model_b) : `Resposta ${slot}`;
+        const m = reveal ? reveal.metrics[slot] : null;
+        const winner = reveal && reveal.vote === slot;
+        return (
+            <div className={`arena-head-cell ${winner ? 'winner' : ''}`}>
+                <span className="arena-head-title">
+                    {winner && <FaTrophy size={11} className="arena-trophy" />}
+                    {name}
+                </span>
+                {m && (
+                    <span className="arena-head-metrics">
+                        ⏱ {fmtLatency(m.latency_ms)} · 🔤 {m.input_tokens}/{m.output_tokens} · 💰 {fmtCost(m.cost_usd)}
+                    </span>
                 )}
             </div>
         );
     };
 
-    const hasResults = status.A !== 'idle' || status.B !== 'idle';
-
     return (
         <div className="arena-panel">
             <div className="arena-header">
-                <span className="arena-title">
-                    <FaFlask size={15} /> Arena — comparação A/B cega
-                </span>
+                <span className="arena-title"><FaFlask size={15} /> Arena — chat A/B cego</span>
                 <div className="arena-header-actions">
                     <button className="arena-ghost-btn" onClick={() => setShowHistory(true)} title="Histórico">
                         <FaClockRotateLeft size={13} /> Histórico
                     </button>
-                    <button className="arena-ghost-btn" onClick={onClose} title="Fechar">
-                        <FaXmark size={15} />
-                    </button>
+                    <button className="arena-ghost-btn" onClick={onClose} title="Fechar"><FaXmark size={15} /></button>
                 </div>
             </div>
 
-            <div className="arena-config">
-                <div className="arena-model-row">
-                    <label className="arena-field">
-                        <span>Modelo A</span>
-                        <select value={modelA} onChange={(e) => setModelA(e.target.value)} disabled={running}>
-                            {ARENA_MODEL_OPTIONS.map((m) => (
-                                <option key={m.deployment} value={m.deployment}>{m.name}</option>
-                            ))}
-                        </select>
-                    </label>
-                    <span className="arena-vs">×</span>
-                    <label className="arena-field">
-                        <span>Modelo B</span>
-                        <select value={modelB} onChange={(e) => setModelB(e.target.value)} disabled={running}>
-                            {ARENA_MODEL_OPTIONS.map((m) => (
-                                <option key={m.deployment} value={m.deployment}>{m.name}</option>
-                            ))}
-                        </select>
-                    </label>
-                    <label className="arena-field arena-field-grow">
-                        <span>Agente (opcional)</span>
-                        <select value={agentId} onChange={(e) => setAgentId(e.target.value)} disabled={running}>
-                            <option value="">— nenhum —</option>
-                            {agents.map((a) => (
-                                <option key={a.id} value={a.id}>{a.name}</option>
-                            ))}
-                        </select>
-                    </label>
-                </div>
+            {/* Setup (antes do 1º turno) ou barra travada (durante a conversa) */}
+            {!started ? (
+                <div className="arena-config">
+                    <div className="arena-model-row">
+                        <label className="arena-field">
+                            <span>Modelo A</span>
+                            <select value={modelA} onChange={(e) => setModelA(e.target.value)}>
+                                {ARENA_MODEL_OPTIONS.map((m) => <option key={m.deployment} value={m.deployment}>{m.name}</option>)}
+                            </select>
+                        </label>
+                        <span className="arena-vs">×</span>
+                        <label className="arena-field">
+                            <span>Modelo B</span>
+                            <select value={modelB} onChange={(e) => setModelB(e.target.value)}>
+                                {ARENA_MODEL_OPTIONS.map((m) => <option key={m.deployment} value={m.deployment}>{m.name}</option>)}
+                            </select>
+                        </label>
+                        <label className="arena-field arena-field-grow">
+                            <span>Agente (opcional)</span>
+                            <select value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+                                <option value="">— nenhum —</option>
+                                {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                            </select>
+                        </label>
+                    </div>
+                    {sameModel && <p className="arena-warn">Escolha dois modelos diferentes.</p>}
 
-                {sameModel && <p className="arena-warn">Escolha dois modelos diferentes.</p>}
+                    {(needsAnthropic || needsGoogle) && (
+                        <div className="arena-keys">
+                            <button className="arena-doc-toggle" onClick={() => setShowKeys((v) => !v)} type="button">
+                                {showKeys ? '▾' : '▸'} 🔑 Minhas chaves de API (Claude / Gemini)
+                                {(missingAnthropic || missingGoogle) && <em className="arena-key-missing"> · faltando</em>}
+                            </button>
+                            {showKeys && (
+                                <div className="arena-keys-fields">
+                                    {needsAnthropic && (
+                                        <label className="arena-field arena-field-grow">
+                                            <span>Anthropic API Key {missingAnthropic && <em className="arena-key-missing">(obrigatória)</em>}</span>
+                                            <input type="password" autoComplete="off" placeholder="sk-ant-…" value={anthropicKey} onChange={(e) => saveAnthropicKey(e.target.value)} />
+                                        </label>
+                                    )}
+                                    {needsGoogle && (
+                                        <label className="arena-field arena-field-grow">
+                                            <span>Google API Key {missingGoogle && <em className="arena-key-missing">(obrigatória)</em>}</span>
+                                            <input type="password" autoComplete="off" placeholder="AIza…" value={googleKey} onChange={(e) => saveGoogleKey(e.target.value)} />
+                                        </label>
+                                    )}
+                                    <p className="arena-keys-hint">As chaves ficam apenas no seu navegador e são enviadas só para chamar o modelo escolhido.</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-                {(needsAnthropic || needsGoogle) && (
-                    <div className="arena-keys">
-                        <button className="arena-doc-toggle" onClick={() => setShowKeys((v) => !v)} type="button">
-                            {showKeys ? '▾' : '▸'} 🔑 Minhas chaves de API (Claude / Gemini)
-                            {(missingAnthropic || missingGoogle) && <em className="arena-key-missing"> · faltando</em>}
-                        </button>
-                        {showKeys && (
-                            <div className="arena-keys-fields">
-                                {needsAnthropic && (
-                                    <label className="arena-field arena-field-grow">
-                                        <span>Anthropic API Key {missingAnthropic && <em className="arena-key-missing">(obrigatória)</em>}</span>
-                                        <input
-                                            type="password"
-                                            autoComplete="off"
-                                            placeholder="sk-ant-…"
-                                            value={anthropicKey}
-                                            onChange={(e) => saveAnthropicKey(e.target.value)}
-                                            disabled={running}
-                                        />
-                                    </label>
-                                )}
-                                {needsGoogle && (
-                                    <label className="arena-field arena-field-grow">
-                                        <span>Google API Key {missingGoogle && <em className="arena-key-missing">(obrigatória)</em>}</span>
-                                        <input
-                                            type="password"
-                                            autoComplete="off"
-                                            placeholder="AIza…"
-                                            value={googleKey}
-                                            onChange={(e) => saveGoogleKey(e.target.value)}
-                                            disabled={running}
-                                        />
-                                    </label>
-                                )}
-                                <p className="arena-keys-hint">
-                                    As chaves ficam apenas no seu navegador e são enviadas só para chamar o modelo escolhido.
-                                </p>
+                    <div className="arena-doc-upload">
+                        <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,.txt" hidden onChange={handleFile} disabled={uploading} />
+                        {!docFileName && !uploading && (
+                            <>
+                                <button className="arena-attach-btn" type="button" onClick={() => fileInputRef.current?.click()}>
+                                    <FaPaperclip size={12} /> Anexar documento (PDF, DOCX, TXT)
+                                </button>
+                                <label className="arena-ocr-pick" title="Mecanismo de OCR aplicado a PDFs">
+                                    <span>OCR:</span>
+                                    <select value={ocrEngine} onChange={(e) => setOcrEngine(e.target.value)}>
+                                        {OCR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    </select>
+                                </label>
+                            </>
+                        )}
+                        {uploading && <span className="arena-upload-status"><FaSpinner size={12} className="spin" /> {uploadMsg || 'Processando…'}</span>}
+                        {docFileName && !uploading && (
+                            <div className="arena-doc-chip">
+                                <FaFile size={12} />
+                                <span className="arena-doc-chip-name">{docFileName}</span>
+                                <em>{docText.length.toLocaleString('pt-BR')} caracteres</em>
+                                <button type="button" onClick={clearDoc} title="Remover documento"><FaXmark size={12} /></button>
                             </div>
                         )}
                     </div>
-                )}
-
-                <textarea
-                    className="arena-prompt"
-                    placeholder="Digite o prompt que será enviado igualmente aos dois modelos…"
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    disabled={running}
-                    rows={3}
-                />
-
-                <div className="arena-doc-upload">
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".pdf,.docx,.doc,.txt"
-                        hidden
-                        onChange={handleFile}
-                        disabled={running || uploading}
-                    />
-                    {!docFileName && !uploading && (
-                        <>
-                            <button
-                                className="arena-attach-btn"
-                                type="button"
-                                onClick={() => fileInputRef.current?.click()}
-                                disabled={running}
-                            >
-                                <FaPaperclip size={12} /> Anexar documento (PDF, DOCX, TXT)
-                            </button>
-                            <label className="arena-ocr-pick" title="Mecanismo de OCR aplicado a PDFs">
-                                <span>OCR:</span>
-                                <select value={ocrEngine} onChange={(e) => setOcrEngine(e.target.value)} disabled={running}>
-                                    {OCR_OPTIONS.map((o) => (
-                                        <option key={o.value} value={o.value}>{o.label}</option>
-                                    ))}
-                                </select>
-                            </label>
-                        </>
-                    )}
-                    {uploading && (
-                        <span className="arena-upload-status">
-                            <FaSpinner size={12} className="spin" /> {uploadMsg || 'Processando…'}
-                        </span>
-                    )}
-                    {docFileName && !uploading && (
-                        <div className="arena-doc-chip">
-                            <FaFile size={12} />
-                            <span className="arena-doc-chip-name">{docFileName}</span>
-                            <em>{docText.length.toLocaleString('pt-BR')} caracteres</em>
-                            <button type="button" onClick={clearDoc} title="Remover documento" disabled={running}>
-                                <FaXmark size={12} />
-                            </button>
-                        </div>
-                    )}
                 </div>
-
-                <div className="arena-run-row">
-                    <button className="arena-run-btn" onClick={handleRun} disabled={!canRun}>
-                        {running ? <><FaSpinner size={13} className="spin" /> Comparando…</>
-                            : hasResults ? <><FaArrowsRotate size={13} /> Comparar de novo</>
-                            : <><FaPlay size={13} /> Comparar</>}
+            ) : (
+                <div className="arena-locked-bar">
+                    <span className="arena-locked-models">{labelOf(modelA)} <em>×</em> {labelOf(modelB)}</span>
+                    {selectedAgent && <span className="arena-locked-tag">🤖 {selectedAgent.name}</span>}
+                    {docFileName && <span className="arena-locked-tag">📄 {docFileName}</span>}
+                    <button className="arena-ghost-btn" onClick={newComparison} title="Começar nova comparação">
+                        <FaArrowsRotate size={12} /> Nova comparação
                     </button>
                 </div>
+            )}
 
-                {error && <p className="arena-error">{error}</p>}
-            </div>
-
-            {hasResults && (
-                <div className="arena-results">
-                    <div className="arena-cols">
-                        {renderColumn('A')}
-                        {renderColumn('B')}
+            {/* Conversa */}
+            {started && (
+                <div className="arena-convo">
+                    <div className="arena-convo-head">
+                        {headCell('A')}
+                        {headCell('B')}
                     </div>
+                    {turns.map((t, i) => (
+                        <div key={i} className="arena-turn">
+                            <div className="arena-turn-user"><strong>Você:</strong> {t.user}</div>
+                            <div className="arena-turn-cols">
+                                {slotCell(t, 'A')}
+                                {slotCell(t, 'B')}
+                            </div>
+                        </div>
+                    ))}
 
-                    {bothDone && !reveal && (
+                    {lastTurnDone && !reveal && (
                         <div className="arena-vote">
-                            <p className="arena-vote-q">
-                                Qual resposta foi melhor? <em>(os modelos só serão revelados após o voto)</em>
-                            </p>
+                            <p className="arena-vote-q">Qual coluna está melhor? <em>(os modelos só serão revelados após o voto)</em></p>
                             <textarea
                                 className="arena-justify"
                                 placeholder="Justifique sua escolha (fica registrada no log como prova)…"
@@ -417,12 +409,7 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
                             />
                             <div className="arena-vote-btns">
                                 {VOTE_BUTTONS.map((b) => (
-                                    <button
-                                        key={b.vote}
-                                        className={`arena-vote-btn vote-${b.vote}`}
-                                        onClick={() => handleVote(b.vote)}
-                                        disabled={voting}
-                                    >
+                                    <button key={b.vote} className={`arena-vote-btn vote-${b.vote}`} onClick={() => handleVote(b.vote)} disabled={voting}>
                                         {b.label}
                                     </button>
                                 ))}
@@ -436,14 +423,33 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
                             <strong>
                                 {reveal.vote === 'A' ? `${reveal.model_a} (A)`
                                     : reveal.vote === 'B' ? `${reveal.model_b} (B)`
-                                    : reveal.vote === 'tie' ? 'Empate'
-                                    : 'Ambas ruins'}
+                                    : reveal.vote === 'tie' ? 'Empate' : 'Ambas ruins'}
                             </strong>
                             {reveal.justification && <span className="arena-revealed-just"> — “{reveal.justification}”</span>}
+                            <span className="arena-revealed-hint"> · pode continuar conversando abaixo</span>
                         </div>
                     )}
+                    <div ref={convoEndRef} />
                 </div>
             )}
+
+            {error && <p className="arena-error">{error}</p>}
+
+            {/* Barra de input (sempre) */}
+            <div className="arena-input-bar">
+                <textarea
+                    className="arena-input"
+                    placeholder={started ? 'Continue a conversa com ambos os modelos…' : 'Digite o prompt inicial para os dois modelos…'}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={onInputKey}
+                    disabled={streaming}
+                    rows={2}
+                />
+                <button className="arena-send-btn" onClick={handleSend} disabled={!canSend} title="Enviar (Enter)">
+                    {streaming ? <FaSpinner size={15} className="spin" /> : <IoSend size={15} />}
+                </button>
+            </div>
 
             <ArenaHistoryModal open={showHistory} onClose={() => setShowHistory(false)} />
         </div>

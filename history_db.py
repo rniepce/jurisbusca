@@ -128,7 +128,9 @@ def init_db():
                 prompt TEXT DEFAULT '',
                 agent_id TEXT DEFAULT '',
                 agent_name TEXT DEFAULT '',
+                agent_prompt TEXT DEFAULT '',
                 uploaded_text TEXT DEFAULT '',
+                turns INTEGER DEFAULT 1,
                 response_a TEXT DEFAULT '',
                 response_b TEXT DEFAULT '',
                 latency_ms_a INTEGER DEFAULT 0,
@@ -148,6 +150,12 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_arena_user ON arena_comparisons(user_id, created_at DESC)")
+        # Migrações para DBs já existentes (chat multi-turno)
+        for _arena_col, _arena_decl in (("agent_prompt", "TEXT DEFAULT ''"), ("turns", "INTEGER DEFAULT 1")):
+            try:
+                conn.execute(f"ALTER TABLE arena_comparisons ADD COLUMN {_arena_col} {_arena_decl}")
+            except Exception:
+                pass
         try:
             conn.execute("ALTER TABLE agent_flows ADD COLUMN description TEXT DEFAULT ''")
         except Exception:
@@ -644,18 +652,46 @@ def delete_flow_run(run_id: str, user_id: str) -> bool:
 def create_arena_comparison(comparison_id: str, user_id: str, user_email: str,
                             model_a: str, model_b: str, prompt: str,
                             agent_id: str = "", agent_name: str = "",
-                            uploaded_text: str = "") -> None:
+                            agent_prompt: str = "", uploaded_text: str = "") -> None:
     """Cria o registro da comparação no início do streaming (status 'running')."""
     with get_db() as conn:
         conn.execute(
             """INSERT INTO arena_comparisons
                  (id, user_id, user_email, model_a, model_b, prompt,
-                  agent_id, agent_name, uploaded_text, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running')""",
+                  agent_id, agent_name, agent_prompt, uploaded_text, status, turns)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', 1)""",
             (comparison_id, user_id, user_email or "", model_a, model_b, prompt or "",
-             agent_id or "", agent_name or "", uploaded_text or ""),
+             agent_id or "", agent_name or "", agent_prompt or "", uploaded_text or ""),
         )
         conn.commit()
+
+
+def append_arena_turn(comparison_id: str, user_id: str, *, status: str = "completed",
+                      error: str = "", response_a: str = "", response_b: str = "",
+                      latency_ms_a: int = 0, latency_ms_b: int = 0,
+                      add_input_a: int = 0, add_output_a: int = 0,
+                      add_input_b: int = 0, add_output_b: int = 0,
+                      add_cost_a: float = 0.0, add_cost_b: float = 0.0) -> bool:
+    """Continua a conversa: sobrescreve o transcript completo (response_a/b),
+    ACUMULA tokens/custo, registra latência do último turno e incrementa 'turns'.
+    Escopado por user_id (anti-IDOR)."""
+    with get_db() as conn:
+        cur = conn.execute(
+            """UPDATE arena_comparisons
+               SET status = ?, error = ?, response_a = ?, response_b = ?,
+                   latency_ms_a = ?, latency_ms_b = ?,
+                   input_tokens_a = input_tokens_a + ?, output_tokens_a = output_tokens_a + ?,
+                   input_tokens_b = input_tokens_b + ?, output_tokens_b = output_tokens_b + ?,
+                   cost_usd_a = cost_usd_a + ?, cost_usd_b = cost_usd_b + ?,
+                   turns = turns + 1
+               WHERE id = ? AND user_id = ?""",
+            (status, error or "", response_a or "", response_b or "",
+             latency_ms_a, latency_ms_b,
+             add_input_a, add_output_a, add_input_b, add_output_b,
+             add_cost_a, add_cost_b, comparison_id, user_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
 
 
 def finish_arena_comparison(comparison_id: str, *, status: str, error: str = "",

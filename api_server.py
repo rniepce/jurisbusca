@@ -1629,12 +1629,19 @@ class ArenaVoteRequest(BaseModel):
     justification: str = ""
 
 
-def _build_arena_messages(prompt: str, uploaded_text: Optional[str],
-                          agent_prompt: Optional[str]) -> list:
-    """Monta a MESMA lista de mensagens enviada aos dois modelos (teste justo).
+class ArenaContinueRequest(BaseModel):
+    message: str
+    history: list = []  # [{user, a, b}, ...] turnos anteriores (texto de cada slot)
 
-    system = agent_prompt (se houver) + bloco de documento (se houver);
-    user = prompt. Espelha a montagem do /api/chat, mas enxuto para o head-to-head.
+
+def _build_arena_messages(prompt: str, uploaded_text: Optional[str],
+                          agent_prompt: Optional[str],
+                          history: Optional[list] = None, slot_key: Optional[str] = None) -> list:
+    """Monta a lista de mensagens de UM slot (chat multi-turno).
+
+    system = agent_prompt (se houver) + bloco de documento (sempre reincluído, pois
+    cada chamada ao LLM é stateless); depois os turnos anteriores (Human + a resposta
+    DESTE slot, via slot_key 'a'/'b'); por fim a nova mensagem do usuário (prompt).
     """
     system_parts: list[str] = []
     if agent_prompt:
@@ -1648,6 +1655,13 @@ def _build_arena_messages(prompt: str, uploaded_text: Optional[str],
     messages: list = []
     if system_parts:
         messages.append(SystemMessage(content="\n".join(system_parts)))
+    for turn in (history or []):
+        u = (turn.get("user") or "").strip()
+        ans = turn.get(slot_key) or "" if slot_key else ""
+        if u:
+            messages.append(HumanMessage(content=u))
+        if ans:
+            messages.append(AIMessage(content=ans))
     user_content = (prompt or "").strip()
     if not user_content:
         user_content = (
@@ -1681,36 +1695,13 @@ def _arena_chunk_text(chunk) -> str:
     return str(content)
 
 
-@app.post("/api/arena/compare")
-@limiter.limit("10/minute")
-async def arena_compare(req: ArenaCompareRequest, request: Request,
-                        _auth: dict = Depends(require_auth)):
-    """Roda o mesmo input em dois modelos e transmite ambas as respostas (SSE, cego)."""
-    import asyncio as _asyncio
-    import time as _time2
-    import flow_engine as _flow_engine
-    import flow_pricing as _flow_pricing
-
-    # Validação de modelos contra allowlist (anti-injeção em get_llm)
-    if req.model_a not in ARENA_MODELS or req.model_b not in ARENA_MODELS:
-        raise HTTPException(status_code=400, detail="Modelo inválido para a Arena.")
-
-    prompt = (req.prompt or "")[:ARENA_MAX_PROMPT]
-    uploaded_text = (req.uploaded_text or "")[:ARENA_MAX_DOC] or None
-    agent_prompt = req.agent_prompt or None
-    if not prompt.strip() and not uploaded_text:
-        raise HTTPException(status_code=400, detail="Forneça um prompt ou um documento.")
-
-    user_id = _auth.get("sub", "") or _extract_user_id(request)
-    user_email = _auth.get("email", "") or ""
-
-    # Chaves de API fornecidas pelo usuário (nunca logadas). Cada provider usa a sua;
-    # se ausente, get_llm cai para a variável de ambiente do servidor.
+def _arena_key_resolver(request):
+    """Devolve uma função model→kwargs de chave (a do usuário, via headers; nunca logada)."""
     azure_key = request.headers.get("X-Azure-Key", "").strip() or None
     anthropic_key = request.headers.get("X-Anthropic-Key", "").strip() or None
     google_key = request.headers.get("X-Google-Key", "").strip() or None
 
-    def _key_kwargs(model: str) -> dict:
+    def key_kwargs(model: str) -> dict:
         m = model.lower()
         if m.startswith("claude"):
             return {"anthropic_api_key": anthropic_key}
@@ -1718,37 +1709,34 @@ async def arena_compare(req: ArenaCompareRequest, request: Request,
             return {"google_api_key": google_key}
         return {"api_key": azure_key}  # Azure OpenAI / Foundry
 
-    # Embaralha qual modelo cai no slot A/B (mantém o cego para o avaliador)
-    chosen = [req.model_a, req.model_b]
-    random.shuffle(chosen)
-    slot_models = {"A": chosen[0], "B": chosen[1]}
+    return key_kwargs
 
-    comparison_id = uuid.uuid4().hex
-    history_db.create_arena_comparison(
-        comparison_id, user_id, user_email,
-        model_a=slot_models["A"], model_b=slot_models["B"], prompt=prompt,
-        agent_id=req.agent_id or "", agent_name=req.agent_name or "",
-        uploaded_text=uploaded_text or "",
-    )
 
-    messages = _build_arena_messages(prompt, uploaded_text, agent_prompt)
-    approx_input_tokens = max(1, sum(len(getattr(m, "content", "") or "") for m in messages) // 4)
+def _arena_stream_response(*, comparison_id, slot_models, messages_by_slot,
+                          key_kwargs_fn, on_finish, log_label):
+    """SSE compartilhado: roda os dois slots concorrentemente (astream) e transmite
+    tokens em modo cego. on_finish(results, status) persiste. Usado por /compare e /continue."""
+    import asyncio as _asyncio
+    import time as _time2
+    import flow_engine as _flow_engine
+    import flow_pricing as _flow_pricing
 
     async def _stream():
         queue: "_asyncio.Queue" = _asyncio.Queue()
         results: dict = {"A": {}, "B": {}}
 
-        async def run_slot(slot: str, model_name: str):
+        async def run_slot(slot: str, model_name: str, msgs: list):
             start = _time2.perf_counter()
             parts: list[str] = []
             combined = None
             err = ""
+            approx_in = max(1, sum(len(getattr(m, "content", "") or "") for m in msgs) // 4)
             try:
-                llm = be.get_llm(model_name, temperature=0.3, **_key_kwargs(model_name))
-                async for chunk in llm.astream(messages):
+                llm = be.get_llm(model_name, temperature=0.3, **key_kwargs_fn(model_name))
+                async for chunk in llm.astream(msgs):
                     piece = _arena_chunk_text(chunk)
                     if not parts:
-                        piece = piece.lstrip()  # remove só o espaço/quebra inicial da resposta
+                        piece = piece.lstrip()
                     if piece:
                         parts.append(piece)
                         await queue.put(("token", slot, piece))
@@ -1768,7 +1756,7 @@ async def arena_compare(req: ArenaCompareRequest, request: Request,
             except Exception:
                 pass
             if in_tok == 0:
-                in_tok = approx_input_tokens
+                in_tok = approx_in
             if out_tok == 0:
                 out_tok = max(1, len(text) // 4)
             cost = _flow_pricing.estimate_cost_usd(model_name, in_tok, out_tok)
@@ -1779,8 +1767,8 @@ async def arena_compare(req: ArenaCompareRequest, request: Request,
             await queue.put(("slot_done", slot))
 
         tasks = [
-            _asyncio.create_task(run_slot("A", slot_models["A"])),
-            _asyncio.create_task(run_slot("B", slot_models["B"])),
+            _asyncio.create_task(run_slot("A", slot_models["A"], messages_by_slot["A"])),
+            _asyncio.create_task(run_slot("B", slot_models["B"], messages_by_slot["B"])),
         ]
 
         yield f"data: {json.dumps({'event': 'start', 'comparison_id': comparison_id})}\n\n"
@@ -1794,35 +1782,142 @@ async def arena_compare(req: ArenaCompareRequest, request: Request,
             elif kind == "slot_done":
                 done += 1
                 lat = results.get(slot, {}).get("latency_ms", 0)
-                # 'done' do slot revela só latência (não vaza a identidade do modelo)
                 yield f"data: {json.dumps({'event': 'slot_done', 'slot': slot, 'latency_ms': lat})}\n\n"
 
         await _asyncio.gather(*tasks, return_exceptions=True)
-
         a, b = results.get("A", {}), results.get("B", {})
-        both_failed = bool(a.get("err")) and bool(b.get("err"))
-        status = "error" if both_failed else "completed"
+        status = "error" if (bool(a.get("err")) and bool(b.get("err"))) else "completed"
         try:
-            history_db.finish_arena_comparison(
-                comparison_id, status=status,
-                error=(a.get("err") or b.get("err") or ""),
-                response_a=a.get("text", ""), response_b=b.get("text", ""),
-                latency_ms_a=a.get("latency_ms", 0), latency_ms_b=b.get("latency_ms", 0),
-                input_tokens_a=a.get("in_tok", 0), output_tokens_a=a.get("out_tok", 0),
-                input_tokens_b=b.get("in_tok", 0), output_tokens_b=b.get("out_tok", 0),
-                cost_usd_a=a.get("cost", 0.0), cost_usd_b=b.get("cost", 0.0),
-            )
+            on_finish(results, status)
         except Exception as exc:  # noqa: BLE001
             logger.error("Arena: falha ao persistir %s: %s", comparison_id, exc)
-        # Log de auditoria SEM conteúdo (LGPD): só ids, modelos e status.
-        logger.info("Arena %s | user=%s | A=%s B=%s | status=%s",
-                    comparison_id, user_id, slot_models["A"], slot_models["B"], status)
+        logger.info("Arena %s | %s | status=%s", comparison_id, log_label, status)
         yield f"data: {json.dumps({'event': 'done', 'comparison_id': comparison_id, 'status': status})}\n\n"
 
     return StreamingResponse(
         _stream(),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+@app.post("/api/arena/compare")
+@limiter.limit("10/minute")
+async def arena_compare(req: ArenaCompareRequest, request: Request,
+                        _auth: dict = Depends(require_auth)):
+    """1º turno: roda o mesmo input em dois modelos e transmite ambas as respostas (SSE, cego)."""
+    # Validação de modelos contra allowlist (anti-injeção em get_llm)
+    if req.model_a not in ARENA_MODELS or req.model_b not in ARENA_MODELS:
+        raise HTTPException(status_code=400, detail="Modelo inválido para a Arena.")
+
+    prompt = (req.prompt or "")[:ARENA_MAX_PROMPT]
+    uploaded_text = (req.uploaded_text or "")[:ARENA_MAX_DOC] or None
+    agent_prompt = req.agent_prompt or None
+    if not prompt.strip() and not uploaded_text:
+        raise HTTPException(status_code=400, detail="Forneça um prompt ou um documento.")
+
+    user_id = _auth.get("sub", "") or _extract_user_id(request)
+    user_email = _auth.get("email", "") or ""
+    key_kwargs_fn = _arena_key_resolver(request)
+
+    # Embaralha qual modelo cai no slot A/B (mantém o cego para o avaliador)
+    chosen = [req.model_a, req.model_b]
+    random.shuffle(chosen)
+    slot_models = {"A": chosen[0], "B": chosen[1]}
+
+    comparison_id = uuid.uuid4().hex
+    history_db.create_arena_comparison(
+        comparison_id, user_id, user_email,
+        model_a=slot_models["A"], model_b=slot_models["B"], prompt=prompt,
+        agent_id=req.agent_id or "", agent_name=req.agent_name or "",
+        agent_prompt=agent_prompt or "", uploaded_text=uploaded_text or "",
+    )
+
+    # 1º turno: ambos os slots recebem exatamente as mesmas mensagens (teste justo)
+    msgs = _build_arena_messages(prompt, uploaded_text, agent_prompt)
+    messages_by_slot = {"A": msgs, "B": msgs}
+
+    def on_finish(results, status):
+        a, b = results.get("A", {}), results.get("B", {})
+        history_db.finish_arena_comparison(
+            comparison_id, status=status,
+            error=(a.get("err") or b.get("err") or ""),
+            response_a=a.get("text", ""), response_b=b.get("text", ""),
+            latency_ms_a=a.get("latency_ms", 0), latency_ms_b=b.get("latency_ms", 0),
+            input_tokens_a=a.get("in_tok", 0), output_tokens_a=a.get("out_tok", 0),
+            input_tokens_b=b.get("in_tok", 0), output_tokens_b=b.get("out_tok", 0),
+            cost_usd_a=a.get("cost", 0.0), cost_usd_b=b.get("cost", 0.0),
+        )
+
+    return _arena_stream_response(
+        comparison_id=comparison_id, slot_models=slot_models,
+        messages_by_slot=messages_by_slot, key_kwargs_fn=key_kwargs_fn,
+        on_finish=on_finish,
+        log_label=f"user={user_id} A={slot_models['A']} B={slot_models['B']}",
+    )
+
+
+@app.post("/api/arena/{comparison_id}/continue")
+@limiter.limit("30/minute")
+async def arena_continue(comparison_id: str, req: ArenaContinueRequest, request: Request,
+                         _auth: dict = Depends(require_auth)):
+    """Turnos seguintes: continua a conversa com os MESMOS dois modelos (cego mantido).
+
+    O servidor guarda o mapeamento slot→modelo + doc/agente; o cliente envia só o
+    histórico (turnos anteriores) e a nova mensagem.
+    """
+    user_id = _auth.get("sub", "") or _extract_user_id(request)
+    comp = history_db.get_arena_comparison(comparison_id, user_id)
+    if not comp:
+        raise HTTPException(status_code=404, detail="Comparação não encontrada.")
+
+    message = (req.message or "")[:ARENA_MAX_PROMPT]
+    if not message.strip():
+        raise HTTPException(status_code=400, detail="Mensagem não pode estar vazia.")
+
+    # Sanea o histórico recebido do cliente (limites de tamanho)
+    history: list = []
+    for t in (req.history or [])[:50]:
+        if not isinstance(t, dict):
+            continue
+        history.append({
+            "user": str(t.get("user", ""))[:ARENA_MAX_PROMPT],
+            "a": str(t.get("a", ""))[:ARENA_MAX_DOC],
+            "b": str(t.get("b", ""))[:ARENA_MAX_DOC],
+        })
+
+    slot_models = {"A": comp["model_a"], "B": comp["model_b"]}
+    agent_prompt = comp.get("agent_prompt") or None
+    uploaded_text = comp.get("uploaded_text") or None
+    key_kwargs_fn = _arena_key_resolver(request)
+
+    messages_by_slot = {
+        "A": _build_arena_messages(message, uploaded_text, agent_prompt, history=history, slot_key="a"),
+        "B": _build_arena_messages(message, uploaded_text, agent_prompt, history=history, slot_key="b"),
+    }
+
+    def _transcript(slot_key: str, new_text: str) -> str:
+        parts = [f"**🧑 Você:** {t.get('user', '')}\n\n{t.get(slot_key, '')}" for t in history]
+        parts.append(f"**🧑 Você:** {message}\n\n{new_text}")
+        return "\n\n---\n\n".join(parts)
+
+    def on_finish(results, status):
+        a, b = results.get("A", {}), results.get("B", {})
+        history_db.append_arena_turn(
+            comparison_id, user_id, status=status,
+            error=(a.get("err") or b.get("err") or ""),
+            response_a=_transcript("a", a.get("text", "")),
+            response_b=_transcript("b", b.get("text", "")),
+            latency_ms_a=a.get("latency_ms", 0), latency_ms_b=b.get("latency_ms", 0),
+            add_input_a=a.get("in_tok", 0), add_output_a=a.get("out_tok", 0),
+            add_input_b=b.get("in_tok", 0), add_output_b=b.get("out_tok", 0),
+            add_cost_a=a.get("cost", 0.0), add_cost_b=b.get("cost", 0.0),
+        )
+
+    return _arena_stream_response(
+        comparison_id=comparison_id, slot_models=slot_models,
+        messages_by_slot=messages_by_slot, key_kwargs_fn=key_kwargs_fn,
+        on_finish=on_finish, log_label=f"user={user_id} continue",
     )
 
 

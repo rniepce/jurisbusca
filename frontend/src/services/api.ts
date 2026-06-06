@@ -1412,34 +1412,21 @@ export interface ArenaComparisonDetail extends ArenaComparisonSummary {
     response_b: string;
 }
 
-/**
- * Run one prompt against two models and stream both responses live (blind A/B).
- * Resolves with the comparison id + final status when both slots finish.
- */
-export async function runArenaCompare(
-    params: RunArenaParams,
-    handlers: ArenaStreamHandlers = {},
-): Promise<{ comparisonId: string; status: string }> {
-    const res = await fetch(`${API_BASE}/arena/compare`, {
-        method: 'POST',
-        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-            model_a: params.modelA,
-            model_b: params.modelB,
-            prompt: params.prompt || '',
-            uploaded_text: params.uploadedText || null,
-            agent_prompt: params.agentPrompt || null,
-            agent_id: params.agentId || null,
-            agent_name: params.agentName || null,
-        }),
-        redirect: 'error',
-    });
+export interface ArenaTurnHistory {
+    user: string;
+    a: string;
+    b: string;
+}
 
+/** Lê o stream SSE da Arena (start/token/slot_done/slot_error/done) — compartilhado. */
+async function readArenaStream(
+    res: Response,
+    handlers: ArenaStreamHandlers,
+): Promise<{ comparisonId: string; status: string }> {
     if (!res.ok || !res.body) {
         const err = await safeJson(res, 'Arena').catch(() => ({}));
         throw new Error(err.detail || `Arena falhou (${res.status})`);
     }
-
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -1476,8 +1463,47 @@ export async function runArenaCompare(
             }
         }
     }
-
     return { comparisonId, status };
+}
+
+/**
+ * 1º turno: roda o prompt nos dois modelos e transmite ambas as respostas (blind A/B).
+ */
+export async function runArenaCompare(
+    params: RunArenaParams,
+    handlers: ArenaStreamHandlers = {},
+): Promise<{ comparisonId: string; status: string }> {
+    const res = await fetch(`${API_BASE}/arena/compare`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+            model_a: params.modelA,
+            model_b: params.modelB,
+            prompt: params.prompt || '',
+            uploaded_text: params.uploadedText || null,
+            agent_prompt: params.agentPrompt || null,
+            agent_id: params.agentId || null,
+            agent_name: params.agentName || null,
+        }),
+        redirect: 'error',
+    });
+    return readArenaStream(res, handlers);
+}
+
+/** Turnos seguintes: continua a conversa com os mesmos dois modelos (cego mantido). */
+export async function continueArena(
+    comparisonId: string,
+    message: string,
+    history: ArenaTurnHistory[],
+    handlers: ArenaStreamHandlers = {},
+): Promise<{ comparisonId: string; status: string }> {
+    const res = await fetch(`${API_BASE}/arena/${encodeURIComponent(comparisonId)}/continue`, {
+        method: 'POST',
+        headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ message, history }),
+        redirect: 'error',
+    });
+    return readArenaStream(res, handlers);
 }
 
 /** Record the vote + justification and reveal both model identities + metrics. */
