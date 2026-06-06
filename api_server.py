@@ -1658,6 +1658,29 @@ def _build_arena_messages(prompt: str, uploaded_text: Optional[str],
     return messages
 
 
+def _arena_chunk_text(chunk) -> str:
+    """Extrai o texto de um chunk de streaming SEM dar strip (preserva os espaços
+    entre tokens). Pula blocos de 'thinking'. be.safe_content faz .strip() por chunk,
+    o que cola as palavras no streaming — por isso aqui é dedicado."""
+    content = getattr(chunk, "content", None)
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                if item.get("type") == "thinking":
+                    continue
+                if "text" in item:
+                    parts.append(str(item["text"]))
+            elif isinstance(item, str):
+                parts.append(item)
+        return "".join(parts)
+    return str(content)
+
+
 @app.post("/api/arena/compare")
 @limiter.limit("10/minute")
 async def arena_compare(req: ArenaCompareRequest, request: Request,
@@ -1723,7 +1746,9 @@ async def arena_compare(req: ArenaCompareRequest, request: Request,
             try:
                 llm = be.get_llm(model_name, temperature=0.3, **_key_kwargs(model_name))
                 async for chunk in llm.astream(messages):
-                    piece = be.safe_content(chunk)
+                    piece = _arena_chunk_text(chunk)
+                    if not parts:
+                        piece = piece.lstrip()  # remove só o espaço/quebra inicial da resposta
                     if piece:
                         parts.append(piece)
                         await queue.put(("token", slot, piece))
