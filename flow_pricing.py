@@ -26,18 +26,19 @@ _PRICING_USD: dict[str, tuple[float, float]] = {
     "gemini-3.1-pro":         (1.25,  5.00),
     "gemini-2.5-pro":         (1.25,  5.00),
     "gemini-2.5-flash":       (0.075, 0.30),
-    # DeepSeek (Azure AI Foundry)
-    "DeepSeek-V4-Pro":        (0.27,  1.10),
-    "DeepSeek-V4-Flash":      (0.10,  0.40),  # ESTIMATIVA
-    "DeepSeek-V3.2-Speciale": (0.27,  1.10),  # ESTIMATIVA
+    # DeepSeek (Azure AI Foundry) — tarifas padrão públicas (jun/2026); Azure Foundry
+    # pode aplicar markup de ~20-35% sobre estas.
+    "DeepSeek-V4-Pro":        (1.74,  3.48),
+    "DeepSeek-V4-Flash":      (0.14,  0.28),
+    "DeepSeek-V3.2-Speciale": (0.28,  0.42),
     "deepseek-chat":          (0.27,  1.10),
     "deepseek-reasoner":      (0.55,  2.19),
-    # Grok (Azure AI Foundry)
-    "grok-4.3":               (3.00, 15.00),  # ESTIMATIVA
-    # Kimi (Azure AI Foundry)
-    "Kimi-K2.5":              (0.60,  2.50),
-    "Kimi-K2.6":              (0.60,  2.50),  # ESTIMATIVA
-    "kimi-k2.5":              (0.60,  2.50),
+    # Grok (Azure AI Foundry) — Grok 4.3 (jun/2026)
+    "grok-4.3":               (1.25,  2.50),
+    # Kimi (Azure AI Foundry) — Moonshot (jun/2026)
+    "Kimi-K2.5":              (0.60,  3.00),
+    "Kimi-K2.6":              (0.95,  4.00),
+    "kimi-k2.5":              (0.60,  3.00),
 }
 
 
