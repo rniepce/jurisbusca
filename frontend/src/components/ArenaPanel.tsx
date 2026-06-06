@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
     FaFlask, FaXmark, FaClockRotateLeft, FaPlay, FaArrowsRotate,
-    FaCircleCheck, FaCircleXmark, FaSpinner, FaTrophy,
+    FaCircleCheck, FaCircleXmark, FaSpinner, FaTrophy, FaPaperclip, FaFile,
 } from 'react-icons/fa6';
 import {
-    runArenaCompare, voteArena, getCustomAgents,
+    runArenaCompare, voteArena, getCustomAgents, uploadFile,
     type ArenaVote, type ArenaVoteResult, type ArenaSlot,
 } from '../services/api';
 import { formatMarkdown } from '../utils/markdown';
@@ -56,8 +56,11 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
     const [modelA, setModelA] = useState('gpt-5.3-chat');
     const [modelB, setModelB] = useState('DeepSeek-V4-Pro');
     const [prompt, setPrompt] = useState('');
-    const [docText, setDocText] = useState('');
-    const [showDoc, setShowDoc] = useState(false);
+    const [docText, setDocText] = useState('');        // texto extraído do arquivo
+    const [docFileName, setDocFileName] = useState('');
+    const [uploading, setUploading] = useState(false);
+    const [uploadMsg, setUploadMsg] = useState('');
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [agents, setAgents] = useState<AgentOpt[]>([]);
     const [agentId, setAgentId] = useState('');
 
@@ -100,10 +103,33 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
     const needsGoogle = [modelA, modelB].some((m) => m.toLowerCase().startsWith('gemini'));
     const missingAnthropic = needsAnthropic && !anthropicKey.trim();
     const missingGoogle = needsGoogle && !googleKey.trim();
-    const canRun = !running && !sameModel && (prompt.trim() !== '' || docText.trim() !== '');
+    const canRun = !running && !uploading && !sameModel && (prompt.trim() !== '' || docText.trim() !== '');
     const bothDone = status.A !== 'idle' && status.A !== 'streaming'
         && status.B !== 'idle' && status.B !== 'streaming';
     const selectedAgent = useMemo(() => agents.find((a) => a.id === agentId), [agents, agentId]);
+
+    const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (fileInputRef.current) fileInputRef.current.value = '';  // permite reanexar o mesmo arquivo
+        if (!file) return;
+        setUploading(true);
+        setError('');
+        setUploadMsg('📤 Enviando arquivo…');
+        try {
+            // vectorize=false: a Arena só precisa do texto extraído, não do índice RAG
+            const res = await uploadFile(file, 'mistral_doc_ai', true, false, (info) => setUploadMsg(info.progress));
+            setDocText(res.text || '');
+            setDocFileName(res.filename || file.name);
+            setUploadMsg('');
+        } catch (err: any) {
+            setError(err?.message || 'Falha ao processar o arquivo.');
+            setUploadMsg('');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const clearDoc = () => { setDocText(''); setDocFileName(''); };
 
     const resetResults = () => {
         bufRef.current = { A: '', B: '' };
@@ -304,20 +330,41 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
                     rows={3}
                 />
 
-                <button className="arena-doc-toggle" onClick={() => setShowDoc((v) => !v)} type="button">
-                    {showDoc ? '▾' : '▸'} Documento / contexto (opcional)
-                    {docText.trim() && <em> · {docText.length.toLocaleString('pt-BR')} caracteres</em>}
-                </button>
-                {showDoc && (
-                    <textarea
-                        className="arena-doc"
-                        placeholder="Cole aqui o texto do processo/peça a ser analisado pelos dois modelos…"
-                        value={docText}
-                        onChange={(e) => setDocText(e.target.value)}
-                        disabled={running}
-                        rows={5}
+                <div className="arena-doc-upload">
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.docx,.doc,.txt"
+                        hidden
+                        onChange={handleFile}
+                        disabled={running || uploading}
                     />
-                )}
+                    {!docFileName && !uploading && (
+                        <button
+                            className="arena-attach-btn"
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={running}
+                        >
+                            <FaPaperclip size={12} /> Anexar documento (PDF, DOCX, TXT)
+                        </button>
+                    )}
+                    {uploading && (
+                        <span className="arena-upload-status">
+                            <FaSpinner size={12} className="spin" /> {uploadMsg || 'Processando…'}
+                        </span>
+                    )}
+                    {docFileName && !uploading && (
+                        <div className="arena-doc-chip">
+                            <FaFile size={12} />
+                            <span className="arena-doc-chip-name">{docFileName}</span>
+                            <em>{docText.length.toLocaleString('pt-BR')} caracteres</em>
+                            <button type="button" onClick={clearDoc} title="Remover documento" disabled={running}>
+                                <FaXmark size={12} />
+                            </button>
+                        </div>
+                    )}
+                </div>
 
                 <div className="arena-run-row">
                     <button className="arena-run-btn" onClick={handleRun} disabled={!canRun}>

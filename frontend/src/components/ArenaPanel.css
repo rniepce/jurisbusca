@@ -142,6 +142,62 @@
 }
 .arena-doc-toggle em { color: #94a3b8; font-weight: 400; }
 
+/* ── Upload de documento ── */
+.arena-doc-upload { display: flex; align-items: center; min-height: 34px; }
+.arena-attach-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    background: #fff;
+    border: 1px dashed #c7d2fe;
+    border-radius: 10px;
+    color: #4f46e5;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.arena-attach-btn:hover:not(:disabled) { background: #eef2ff; border-color: #6366f1; }
+.arena-attach-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.arena-upload-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    color: #6366f1;
+    font-weight: 500;
+}
+.arena-doc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px 7px 12px;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #3730a3;
+    max-width: 100%;
+}
+.arena-doc-chip-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 360px;
+}
+.arena-doc-chip em { color: #6366f1; font-style: normal; opacity: 0.8; }
+.arena-doc-chip button {
+    display: inline-flex;
+    background: none;
+    border: none;
+    color: #818cf8;
+    cursor: pointer;
+    padding: 2px;
+}
+.arena-doc-chip button:hover:not(:disabled) { color: #dc2626; }
+
 .arena-run-row { display: flex; justify-content: flex-end; }
 .arena-run-btn {
     display: inline-flex;
