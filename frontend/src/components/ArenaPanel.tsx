@@ -33,6 +33,14 @@ const ARENA_MODEL_OPTIONS = [
     { name: 'Claude Sonnet 4.6', color: '#D97706', deployment: 'claude-sonnet-4-6' },
 ];
 
+// Engines de OCR aceitos pelo backend (aplicam-se a PDF; DOCX/TXT extraem direto).
+const OCR_OPTIONS = [
+    { value: 'mistral_doc_ai', label: 'Mistral Document AI (recomendado)' },
+    { value: 'marker', label: 'Marker (local)' },
+    { value: 'tesseract', label: 'Tesseract (local)' },
+    { value: 'none', label: 'Sem OCR — texto nativo do PDF' },
+];
+
 type SlotStatus = 'idle' | 'streaming' | 'done' | 'error';
 
 interface AgentOpt { id: string; name: string; prompt: string; }
@@ -60,6 +68,7 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
     const [docFileName, setDocFileName] = useState('');
     const [uploading, setUploading] = useState(false);
     const [uploadMsg, setUploadMsg] = useState('');
+    const [ocrEngine, setOcrEngine] = useState('mistral_doc_ai');
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [agents, setAgents] = useState<AgentOpt[]>([]);
     const [agentId, setAgentId] = useState('');
@@ -117,7 +126,7 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
         setUploadMsg('📤 Enviando arquivo…');
         try {
             // vectorize=false: a Arena só precisa do texto extraído, não do índice RAG
-            const res = await uploadFile(file, 'mistral_doc_ai', true, false, (info) => setUploadMsg(info.progress));
+            const res = await uploadFile(file, ocrEngine, true, false, (info) => setUploadMsg(info.progress));
             setDocText(res.text || '');
             setDocFileName(res.filename || file.name);
             setUploadMsg('');
@@ -340,14 +349,24 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
                         disabled={running || uploading}
                     />
                     {!docFileName && !uploading && (
-                        <button
-                            className="arena-attach-btn"
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={running}
-                        >
-                            <FaPaperclip size={12} /> Anexar documento (PDF, DOCX, TXT)
-                        </button>
+                        <>
+                            <button
+                                className="arena-attach-btn"
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={running}
+                            >
+                                <FaPaperclip size={12} /> Anexar documento (PDF, DOCX, TXT)
+                            </button>
+                            <label className="arena-ocr-pick" title="Mecanismo de OCR aplicado a PDFs">
+                                <span>OCR:</span>
+                                <select value={ocrEngine} onChange={(e) => setOcrEngine(e.target.value)} disabled={running}>
+                                    {OCR_OPTIONS.map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                            </label>
+                        </>
                     )}
                     {uploading && (
                         <span className="arena-upload-status">
