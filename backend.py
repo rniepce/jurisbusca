@@ -559,14 +559,14 @@ def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key:
         
         # Map deployment names to Anthropic model IDs
         claude_model_map = {
-            "claude-sonnet-4-6": "claude-4-6-sonnet-20260220",
-            "claude-sonnet-4-5": "claude-sonnet-4-5-20250514",
+            "claude-sonnet-4-6": "claude-sonnet-4-6",
+            "claude-sonnet-4-5": "claude-sonnet-4-5-20250929",
         }
         anthropic_model = claude_model_map.get(deployment, deployment)
         
         # Enable extended thinking for Claude Sonnet 4+ models
         # Extended thinking requires temperature=1 (Anthropic constraint)
-        claude_thinking_models = {"claude-4-6-sonnet-20260220", "claude-sonnet-4-5-20250514"}
+        claude_thinking_models = {"claude-sonnet-4-6", "claude-sonnet-4-5-20250929"}
         if anthropic_model in claude_thinking_models:
             if 'thinking' not in kwargs:
                 kwargs['thinking'] = {"type": "enabled", "budget_tokens": 10000}

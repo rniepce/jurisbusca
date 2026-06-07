@@ -17,7 +17,6 @@ import './ArenaPanel.css';
 const ARENA_MODEL_OPTIONS = [
     // Azure OpenAI (GPT)
     { name: 'GPT-5.5', deployment: 'gpt-5.5' },
-    { name: 'GPT-5.4 Pro', deployment: 'gpt-5.4-pro' },
     { name: 'GPT-5.4 Mini', deployment: 'gpt-5.4-mini' },
     { name: 'GPT-5.3', deployment: 'gpt-5.3-chat' },
     { name: 'GPT-5.2', deployment: 'gpt-5.2' },

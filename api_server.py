@@ -1602,7 +1602,7 @@ ARENA_MODELS = {
     # Nativos (chaves próprias)
     "gemini-3.1-pro", "claude-sonnet-4-6",
     # Azure OpenAI (GPT)
-    "gpt-5.5", "gpt-5.4-pro", "gpt-5.4-mini", "gpt-5.3-chat",
+    "gpt-5.5", "gpt-5.4-mini", "gpt-5.3-chat",
     "gpt-5.2", "gpt-5.2-chat", "gpt-4.1-mini",
     # Azure AI Foundry (modelos parceiros)
     "DeepSeek-V4-Pro", "DeepSeek-V4-Flash", "DeepSeek-V3.2-Speciale",
