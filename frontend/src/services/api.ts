@@ -2,6 +2,7 @@
  * API service module — communicates with the FastAPI backend.
  */
 import { supabase } from './supabase';
+import { getApiKey } from './keyStore';
 
 const API_BASE = '/api';
 
@@ -28,6 +29,7 @@ export interface SendMessageParams {
     jurisEnabled?: boolean;
     reasoningEnabled?: boolean;
     agentKnowledge?: string | null;
+    profile?: string;
 }
 
 export interface ReplicateBatchPilotParams {
@@ -57,9 +59,9 @@ export interface UploadResult {
  * Includes Azure OpenAI key if stored, and Supabase JWT.
  */
 async function getAuthHeaders(existingHeaders: Record<string, string> = {}): Promise<Record<string, string>> {
-    const azureKey = localStorage.getItem('azure_openai_key');
-    const anthropicKey = localStorage.getItem('anthropic_api_key');
-    const googleKey = localStorage.getItem('google_api_key');
+    const azureKey = getApiKey('azure_openai_key');
+    const anthropicKey = getApiKey('anthropic_api_key');
+    const googleKey = getApiKey('google_api_key');
     const headers = { ...existingHeaders };
     if (azureKey) headers['X-Azure-Key'] = azureKey;
     if (anthropicKey) headers['X-Anthropic-Key'] = anthropicKey;
@@ -193,7 +195,7 @@ export async function uploadFile(file: File, ocrEngine = 'mistral_doc_ai', compr
  * @param {string|null} params.uploadedText
  * @returns {Promise<{conversation_id: string, response: string, model: string}>}
  */
-export async function sendMessage({ message, model, llm, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false, jurisprudenceContext = null, jurisEnabled = true, reasoningEnabled = false, agentKnowledge = null }: SendMessageParams) {
+export async function sendMessage({ message, model, llm, agentPrompt, conversationId, uploadedText, styleDossier, useRag = false, jurisprudenceContext = null, jurisEnabled = true, reasoningEnabled = false, agentKnowledge = null, profile = 'premium' }: SendMessageParams) {
     const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -211,6 +213,7 @@ export async function sendMessage({ message, model, llm, agentPrompt, conversati
             juris_enabled: jurisEnabled,
             reasoning_enabled: reasoningEnabled,
             agent_knowledge: agentKnowledge || null,
+            profile,
         }),
         redirect: 'error',    // Do NOT follow redirects
     }).catch((err) => {

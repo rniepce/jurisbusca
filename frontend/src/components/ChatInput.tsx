@@ -2,10 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import {
     FaPaperclip, FaChevronDown, FaCheck,
     FaXmark, FaFile, FaDatabase, FaTableColumns,
-    FaRobot, FaScaleBalanced, FaBrain, FaFlask,
+    FaRobot, FaScaleBalanced, FaBrain, FaFlask, FaBolt,
 } from 'react-icons/fa6';
 import { IoSend } from 'react-icons/io5';
 import { getSlmStatus } from '../services/api';
+import { useUIStore } from '../store';
 import './ChatInput.css';
 
 const LLM_OPTIONS = [
@@ -53,6 +54,8 @@ const ChatInput = ({
     const [message, setMessage] = useState('');
     const [selectedModel, setSelectedModel] = useState(LLM_OPTIONS[0]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
+    const harnessEconomico = useUIStore((s) => s.harnessEconomico);
+    const setHarnessEconomico = useUIStore((s) => s.setHarnessEconomico);
 
     const [files, setFiles] = useState<File[]>([]);
     const [skipOcr, setSkipOcr] = useState(false);
@@ -352,6 +355,19 @@ const ChatInput = ({
                             ⚡ <span className="slot-label">Raio-X</span>
                         </button>
                     )}
+
+                    {/* Harness econômico — liga/desliga modelos baratos no pipeline */}
+                    <button
+                        type="button"
+                        className={`slot-btn ${harnessEconomico ? 'active' : ''}`}
+                        onClick={() => setHarnessEconomico(!harnessEconomico)}
+                        title={harnessEconomico
+                            ? 'Harness ATIVO — sua mensagem roda pelo pipeline de análise completo (V3) com modelos baratos: gpt-5.4-mini nos passos leves + DeepSeek-V4-Pro no raciocínio'
+                            : 'Ativar Harness — roda a análise pelo pipeline completo (V3) com modelos baratos, em vez de um único modelo (opt-in)'}
+                    >
+                        <FaBolt size={12} />
+                        <span className="slot-label">Harness</span>
+                    </button>
 
                     {/* LLM model picker (último item à direita) */}
                     <div className="slot-wrapper" ref={dropdownRef}>

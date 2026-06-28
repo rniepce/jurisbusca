@@ -8,12 +8,12 @@ __pycache__/
 
 # Vector Database (Local)
 # Removed from git to force regeneration on new machine (avoid binary conflicts/large files)
-chroma_db/
+chroma_db*/
 
 # Streamlit
 .streamlit/
 
-venv/
+venv*/
 adapters/
 data/
 !data/knowledge_base/
@@ -25,3 +25,7 @@ frontend/node_modules/
 
 # SQLite databases
 *.db
+
+# Build artifacts / local tooling
+frontend/tsconfig.tsbuildinfo
+.claude/worktrees/

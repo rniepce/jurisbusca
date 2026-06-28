@@ -22,29 +22,33 @@ _singleton_lock = threading.Lock()
 
 class MistralDocumentAIEngine:
     """
-    OCR engine using Mistral Document AI 2512 via Azure AI Foundry.
-    Sends pages as base64 images to the API for structured document extraction.
+    OCR engine using Mistral OCR (mistral-ocr-4-0) via Azure AI Foundry.
+    Sends documents/pages as base64 to the API for structured document extraction.
     """
-    
-    # Endpoint dedicado em Sweden Central (deployment mistral-document-ai-2512).
+
+    # Endpoint do recurso Azure AI Foundry 'assistente-web-resource'.
     # Override via MISTRAL_DOC_AI_ENDPOINT em produção.
     ENDPOINT = os.getenv(
         "MISTRAL_DOC_AI_ENDPOINT",
-        "https://rafae-mm2l08qp-swedencentral.services.ai.azure.com/providers/mistral/azure/ocr"
+        "https://assistente-web-resource.services.ai.azure.com/models"
     )
 
+    # Deployment do modelo OCR. Override via MISTRAL_DOC_AI_MODEL para futuras versões.
+    MODEL = os.getenv("MISTRAL_DOC_AI_MODEL", "mistral-ocr-4-0")
+
     def __init__(self):
-        # Chave dedicada do deployment (preferida). Se ausente, cai para a
-        # chave antiga do Azure OpenAI clássico.
+        # Segredo SEMPRE via variável de ambiente (diretriz CESEC: nunca no código).
+        # Mesma resource do Azure AI Foundry, então aceita a chave do Foundry/Azure OpenAI.
         self.api_key = (
             os.getenv("MISTRAL_DOC_AI_KEY", "").strip()
             or os.getenv("AZURE_API_KEY", "").strip()
+            or os.getenv("AZURE_AI_FOUNDRY_KEY", "").strip()
             or os.getenv("AZURE_OPENAI_API_KEY", "").strip()
         )
         if not self.api_key:
             raise ValueError(
-                "Chave de API necessária para Mistral Document AI. "
-                "Defina MISTRAL_DOC_AI_KEY (preferido) ou AZURE_OPENAI_API_KEY."
+                "Chave de API necessária para Mistral OCR. "
+                "Defina MISTRAL_DOC_AI_KEY (preferido), AZURE_AI_FOUNDRY_KEY ou AZURE_OPENAI_API_KEY."
             )
     
     def process_pdf_bytes(self, pdf_bytes: bytes) -> str:
@@ -55,7 +59,7 @@ class MistralDocumentAIEngine:
         document_url = f"data:application/pdf;base64,{b64_data}"
         
         payload = {
-            "model": "mistral-document-ai-2512",
+            "model": self.MODEL,
             "document": {
                 "type": "document_url",
                 "document_url": document_url
@@ -97,7 +101,7 @@ class MistralDocumentAIEngine:
         image_url = f"data:image/png;base64,{b64_data}"
 
         payload = {
-            "model": "mistral-document-ai-2512",
+            "model": self.MODEL,
             "document": {
                 "type": "image_url",
                 "image_url": image_url

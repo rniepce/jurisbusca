@@ -326,6 +326,7 @@ class ChatRequest(BaseModel):
     juris_enabled: bool = True  # whether to trigger background jurisprudence research
     reasoning_enabled: bool = False  # whether to use extended reasoning mode
     agent_knowledge: Optional[str] = None  # custom agent knowledge base text
+    profile: str = "premium"  # tier de custo do harness: 'premium' | 'economico'
 
 
 # ── Model mapping (Azure AI Foundry) ──────────────────────────────────────────
@@ -775,7 +776,7 @@ async def chat(req: ChatRequest, request: Request, _auth: dict = Depends(require
                 try:
                     # Run V3 MoE pipeline with timeout
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(be.run_autonomous_magistrate, full_text, keys, model_name)
+                        future = executor.submit(be.run_autonomous_magistrate, full_text, keys, model_name, req.profile)
                         v3_json, v3_logs = future.result(timeout=V3_TIMEOUT)
 
                     # Format the response
@@ -3849,6 +3850,7 @@ async def run_flow_endpoint(flow_id: str, request: Request, _auth: dict = Depend
         raise HTTPException(status_code=404, detail="Fluxo não encontrado.")
 
     initial_state = _flow_run_initial_state(user_id, token)
+    initial_state["_profile"] = body.get("profile", "premium")
 
     return StreamingResponse(
         _observed_flow_stream(
@@ -3928,6 +3930,7 @@ async def download_flow_docx(filename: str, _auth: dict = Depends(require_auth))
 class FlowPreviewRequest(BaseModel):
     config: dict
     input_text: str = ""
+    profile: str = "premium"
 
 
 @app.post("/api/flows/preview")
@@ -3938,7 +3941,7 @@ async def preview_flow_endpoint(req: FlowPreviewRequest, request: Request, _auth
         _observed_flow_stream(
             user_id=user_id, flow_id=None, flow_name="(preview)",
             input_text=req.input_text, is_preview=True,
-            config=req.config,
+            config=req.config, initial_state={"_profile": req.profile},
         ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
@@ -3999,10 +4002,18 @@ if FRONTEND_DIR.is_dir():
         # Never intercept API routes
         if full_path.startswith("api/") or full_path.startswith("api"):
             raise HTTPException(status_code=404, detail=f"API endpoint not found: /{full_path}")
-        file_path = FRONTEND_DIR / full_path
+        # Resolve and confine to FRONTEND_DIR: the ':path' converter captures
+        # '..' and slashes, so without containment a raw client could request
+        # ../../.env, history.db, etc. Serve index.html for anything outside.
+        root = FRONTEND_DIR.resolve()
+        try:
+            file_path = (root / full_path).resolve()
+            file_path.relative_to(root)  # raises ValueError if path escapes root
+        except (ValueError, OSError):
+            return FileResponse(str(root / "index.html"))
         if file_path.is_file():
             return FileResponse(str(file_path))
-        return FileResponse(str(FRONTEND_DIR / "index.html"))
+        return FileResponse(str(root / "index.html"))
 
 
 if __name__ == "__main__":

@@ -13,11 +13,13 @@ interface UIStoreState {
     canvasMode: boolean;
     batchPanelOpen: boolean;
     selectedModel: SelectedModel;
+    harnessEconomico: boolean;
     setSidebarOpen: (val: boolean) => void;
     toggleSidebar: () => void;
     setCanvasMode: (val: boolean) => void;
     setBatchPanelOpen: (val: boolean) => void;
     setSelectedModel: (model: SelectedModel) => void;
+    setHarnessEconomico: (val: boolean) => void;
 }
 
 export const useUIStore = create<UIStoreState>((set) => ({
@@ -25,12 +27,14 @@ export const useUIStore = create<UIStoreState>((set) => ({
     canvasMode: false,
     batchPanelOpen: false,
     selectedModel: { id: 'deepseek', name: 'DeepSeek V4 Pro', color: '#0891B2', llm: 'DeepSeek-V4-Pro' },
+    harnessEconomico: false,
 
     setSidebarOpen: (val) => set({ sidebarOpen: val }),
     toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
     setCanvasMode: (val) => set({ canvasMode: val }),
     setBatchPanelOpen: (val) => set({ batchPanelOpen: val }),
     setSelectedModel: (model) => set({ selectedModel: model }),
+    setHarnessEconomico: (val) => set({ harnessEconomico: val }),
 }));
 
 // ── Agent Store ────────────────────────────────────────────────────────

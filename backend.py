@@ -119,13 +119,50 @@ except ImportError as e:
     run_autonomous_magistrate = None
 
 # ── Module-level cache for style dossier (avoids re-running expensive analysis) ──
-# Keyed by (user_id, file_hash) for per-user isolation
-_style_dossier_cache = {}
+# Holds two key namespaces: content hashes (from _template_cache_key) and
+# per-user "user:{id}" entries (persisted dossiers). Bounded to avoid unbounded
+# growth as users upload distinct template sets.
+from collections import OrderedDict
+_style_dossier_cache = OrderedDict()
+_STYLE_CACHE_MAX = 64
+
+def _cache_dossier(cache_key, value):
+    """Store a content-keyed dossier with LRU eviction (oldest first)."""
+    _style_dossier_cache[cache_key] = value
+    _style_dossier_cache.move_to_end(cache_key)
+    while len(_style_dossier_cache) > _STYLE_CACHE_MAX:
+        _style_dossier_cache.popitem(last=False)
 
 def _template_cache_key(template_files, user_id="default"):
-    """Gera chave de cache baseada nos nomes dos arquivos de template + user_id."""
-    names = sorted([getattr(f, 'name', str(f)) for f in template_files])
-    return hashlib.md5('|'.join(names).encode()).hexdigest()
+    """Cache key derived from the CONTENT of the template files, not their names.
+
+    Hashing content is what makes this cache safe across users: two users who
+    upload different files that happen to share a filename no longer collide,
+    and a user re-uploading a changed file under the same name gets a fresh
+    analysis. Byte-identical files legitimately share a result — the dossier is
+    a pure function of the bytes, so nothing confidential is exposed.
+    """
+    h = hashlib.sha256()
+    for f in sorted(template_files, key=lambda x: getattr(x, 'name', str(x))):
+        data = b""
+        try:
+            if hasattr(f, 'seek'):
+                f.seek(0)
+            if hasattr(f, 'read'):
+                raw = f.read()
+                data = raw if isinstance(raw, bytes) else str(raw).encode('utf-8', 'ignore')
+            else:
+                data = str(f).encode('utf-8', 'ignore')
+        except Exception:
+            data = getattr(f, 'name', str(f)).encode('utf-8', 'ignore')
+        finally:
+            try:
+                if hasattr(f, 'seek'):
+                    f.seek(0)  # rewind so downstream extraction still reads the file
+            except Exception:
+                pass
+        h.update(hashlib.sha256(data).digest())
+    return h.hexdigest()
 
 
 def safe_content(response) -> str:
@@ -802,14 +839,13 @@ def generate_style_dossier(template_files, api_key):
     Executa a análise dos 5 Pilares uma única vez (cacheado por set de templates).
     Retorna dict com: 'dossier', 'glossary', 'cloning_prompt', 'full_response'.
     """
-    # Check cache first
+    # Check cache first (keyed by file content — safe across users)
     cache_key = _template_cache_key(template_files)
     if cache_key in _style_dossier_cache:
         print(f"✅ Dossiê de estilo recuperado do cache (key: {cache_key[:8]}...)")
+        _style_dossier_cache.move_to_end(cache_key)
         return _style_dossier_cache[cache_key]
-    # Also support per-user cache lookup
-    user_cache_key = f"user:{cache_key}"  # Will be overridden by caller if needed
-    
+
     if not HAS_AZURE_OPENAI:
         print("⚠️ Azure OpenAI não instalado. Dossiê de estilo indisponível.")
         return {"error": "Azure OpenAI não instalado. Dossiê de estilo não disponível."}
@@ -854,8 +890,8 @@ def generate_style_dossier(template_files, api_key):
         result = _parse_dossier_response(content)
         result['full_response'] = content
         
-        # 5. Cache result
-        _style_dossier_cache[cache_key] = result
+        # 5. Cache result (content-keyed, LRU-bounded)
+        _cache_dossier(cache_key, result)
         
         print(f"✅ Dossiê gerado com sucesso:")
         print(f"   - Dossiê: {len(result.get('dossier', ''))} chars")
@@ -937,8 +973,16 @@ def retrieve_mirror_context(text, api_key, template_files, style_dossier=None):
                 rag_context += f"\n{glossary}\n"
         
         # ── ETAPA 2: Golden Sample / Caso Espelho (gabarito estrutural específico) ──
-        retriever, _ = process_templates(template_files, api_key)
-        
+        # Retriever EFÊMERO: construído apenas com os templates DESTE request, em
+        # memória. NÃO usa process_templates aqui porque aquele caminho grava no
+        # bucket global _template_store["default"] e persiste em disco — o que
+        # vazava os modelos de um usuário para outro e causava sobrescrita sob
+        # concorrência. Aqui nada é compartilhado nem persistido.
+        documents = _build_template_documents(template_files)
+        retriever = SimpleRetriever(
+            [{"text": d.page_content, "metadata": d.metadata} for d in documents]
+        ) if documents else None
+
         if not retriever: return rag_context
         
         relevant_docs = retriever.invoke(text[:6000])
@@ -1571,15 +1615,14 @@ def _delete_templates_supabase(user_id: str, source: str = "", token: str = "") 
     return False
 
 
-def process_templates(files, api_key, collection_name="rag_templates_persistent", user_id="default", token=""):
+def _build_template_documents(files):
+    """Extrai e chunka arquivos de template em documentos LangChain.
+
+    Função PURA: não escreve no _template_store global nem persiste em disco.
+    Usada tanto pelo upload explícito (process_templates) quanto pelo retriever
+    efêmero por-request (retrieve_mirror_context), de modo que a análise de um
+    request nunca vaze para o bucket de outro usuário.
     """
-    Processa arquivos de template (PDF/DOCX/TXT) e cria um retriever.
-    100% local chunking. Persists to Supabase (or local JSON fallback).
-    """
-    import time as _time
-    t0 = _time.time()
-    global _template_store
-    
     documents = []
     splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=200)
 
@@ -1589,7 +1632,7 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file.name.split('.')[-1]}") as tmp:
             tmp.write(file.read())
             tmp_path = tmp.name
-        
+
         try:
             text = ""
             if file.name.endswith(".pdf"):
@@ -1604,13 +1647,27 @@ def process_templates(files, api_key, collection_name="rag_templates_persistent"
                     with open(tmp_path, "r", encoding="utf-8") as f: text = f.read()
                 except UnicodeDecodeError:
                      with open(tmp_path, "r", encoding="latin-1") as f: text = f.read()
-            
+
             import datetime as _dt
             doc_chunks = splitter.create_documents([text], metadatas=[{"source": file.name, "upload_date": _dt.datetime.now().isoformat()}])
             documents.extend(doc_chunks)
         finally:
             os.remove(tmp_path)
-    
+
+    return documents
+
+
+def process_templates(files, api_key, collection_name="rag_templates_persistent", user_id="default", token=""):
+    """
+    Processa arquivos de template (PDF/DOCX/TXT) e cria um retriever.
+    100% local chunking. Persists to Supabase (or local JSON fallback).
+    """
+    import time as _time
+    t0 = _time.time()
+    global _template_store
+
+    documents = _build_template_documents(files)
+
     if not documents:
         return None, []
 
@@ -2020,7 +2077,7 @@ def generate_batch_xray(files, api_key, template_files=None, progress_callback=N
 
 
 
-def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None, mode="v1", keys=None, ocr_engine_choice="marker"):
+def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=None, cached_text=None, mode="v1", keys=None, ocr_engine_choice="marker", profile="premium"):
     """
     Função Worker para processar um único caso completo.
     Suporta V1 (Gemini Only) e V2 (Hybrid Agents).
@@ -2174,7 +2231,7 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
 
             # Normalizar output para o formato esperado pelo front
             # returns (final_json, logs_list)
-            v3_json, v3_logs = run_autonomous_magistrate(clean_content, keys)
+            v3_json, v3_logs = run_autonomous_magistrate(clean_content, keys, profile=profile)
             
             # Extract content safely
             final_minuta = v3_json.get("minuta_final", "Minuta não gerada.")

@@ -18,12 +18,14 @@ from knowledge_base_loader import KNOWLEDGE_BASE
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
 import backend as be
+import model_profiles as mp
 
 # ─── STATE DEFINITION ────────────────────────────────────────────────────────
 
 class MagistrateState(TypedDict):
     raw_text: str
     keys: Dict[str, str]
+    profile: str  # tier de custo: 'premium' | 'economico' (via model_profiles)
     repl_tool: LegalREPL
     
     # State evolution through MoE
@@ -56,9 +58,10 @@ Formate com markdown claro, usando tópicos: "1. Fatos Principais", "2. Pedidos 
     ]
 
     # Try Kimi first, fallback to GPT-5.3
-    model_used = "Kimi-K2.5"
+    reader_model = mp.resolve("reader", state.get("profile"))
+    model_used = reader_model
     try:
-        llm = be.get_llm(model_name="Kimi-K2.5", temperature=0.0)
+        llm = be.get_llm(model_name=reader_model, temperature=0.0)
         response = llm.invoke(messages)
     except Exception as e:
         model_used = "gpt-5.3-chat (fallback)"
@@ -101,9 +104,10 @@ Não gere a minuta em JSON final, apenas redija o VOTO / DECISÃO DE FORMA CLARA
 
     knowledge_section = "\n\n# JURISPRUDÊNCIA LOCAL\n" + KNOWLEDGE_BASE if KNOWLEDGE_BASE else ""
 
-    model_used = "DeepSeek-V3.2-Speciale"
+    reasoner_model = mp.resolve("reasoner", state.get("profile"))
+    model_used = reasoner_model
     try:
-        llm = be.get_llm(model_name="DeepSeek-V3.2-Speciale", temperature=0.1)
+        llm = be.get_llm(model_name=reasoner_model, temperature=0.1)
         llm_with_tools = llm.bind_tools([run_python_code])
 
         if not state["messages"]:
@@ -192,7 +196,7 @@ def node_gpt_formatter(state: MagistrateState):
     EXPERT 3: O Assessor Sênior (GPT-5.3)
     Formata o rascunho de decisão no JSON estrito.
     """
-    llm = be.get_llm(model_name="gpt-5.3-chat", temperature=0.0)
+    llm = be.get_llm(model_name=mp.resolve("formatter", state.get("profile")), temperature=0.0)
     
     sys_prompt = f"""Você é um Assessor Sênior rigoroso e formal (GPT-5.3).
 Sua ÚNICA missão é envelopar a Decisão do Juiz Relator num formato JSON estritamente tipado.
@@ -272,18 +276,20 @@ def build_v3_graph():
     
     return workflow.compile()
 
-def run_autonomous_magistrate(text: str, keys: dict, model_name: str = "v3-moe"):
+def run_autonomous_magistrate(text: str, keys: dict, model_name: str = "v3-moe", profile: str | None = None):
     """
     Entry point for V3 - Mixture of Experts.
-    (model_name is ignored as MoE uses specific models natively)
+    `model_name` é ignorado (a MoE escolhe modelos por etapa); `profile` seleciona
+    o tier de custo via model_profiles ('premium' | 'economico').
     """
     app = build_v3_graph()
-    
+
     repl = LegalREPL(text)
-    
+
     initial_state = {
         "raw_text": text,
         "keys": keys,
+        "profile": profile,
         "repl_tool": repl,
         "condensed_facts": "",
         "draft_decision": "",

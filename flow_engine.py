@@ -16,6 +16,7 @@ Substituições de variáveis: `{{Label do Nó}}` no prompt é substituído pela
 do nó cujo label bate (case-insensitive).
 """
 
+import ast
 import json
 import os
 import re
@@ -26,16 +27,60 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Generator
 
+import model_profiles as mp
+
 
 _SAFE_BUILTINS = {
     "len": len, "int": int, "float": float, "str": str, "bool": bool,
     "abs": abs, "min": min, "max": max, "round": round,
 }
 
+# Router conditions come from a flow's JSON config, and flows are shareable and
+# executed by *other* users. eval() with a restricted __builtins__ is NOT safe:
+# ().__class__.__bases__[0].__subclasses__()[...] reaches arbitrary code without
+# touching any builtin. So we gate the expression structurally before eval'ing.
+_COND_ALLOWED_NODES = frozenset({
+    ast.Expression, ast.BoolOp, ast.BinOp, ast.UnaryOp, ast.Compare, ast.IfExp,
+    ast.Call, ast.keyword, ast.Name, ast.Load, ast.Constant,
+    ast.List, ast.Tuple, ast.Dict, ast.Set, ast.Subscript, ast.Slice, ast.Starred,
+    ast.Attribute,  # non-dunder only (enforced below)
+    ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.comprehension,
+    ast.And, ast.Or, ast.Not, ast.Invert, ast.UAdd, ast.USub,
+    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow,
+    ast.LShift, ast.RShift, ast.BitOr, ast.BitXor, ast.BitAnd, ast.MatMult,
+    ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
+    ast.Is, ast.IsNot, ast.In, ast.NotIn,
+})
+
+
+def _condition_is_safe(condition: str):
+    """Returns the parsed expression if structurally safe, else None.
+
+    Rejects any node outside the allowlist and any '_'-prefixed identifier or
+    attribute — which closes dunder-traversal sandbox escapes that a builtins
+    restriction alone cannot.
+    """
+    try:
+        tree = ast.parse(condition, mode="eval")
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        if type(node) not in _COND_ALLOWED_NODES:
+            return None
+        if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+            return None
+        if isinstance(node, ast.Name) and node.id.startswith("_"):
+            return None
+    return tree
+
 
 def _safe_eval(condition: str, state: dict) -> bool:
+    tree = _condition_is_safe(condition)
+    if tree is None:
+        return False
     try:
-        return bool(eval(condition, {"__builtins__": _SAFE_BUILTINS}, state))  # noqa: S307
+        compiled = compile(tree, "<flow_condition>", "eval")
+        return bool(eval(compiled, {"__builtins__": _SAFE_BUILTINS}, state))  # noqa: S307
     except Exception:
         return False
 
@@ -105,12 +150,27 @@ def _extract_usage(response) -> tuple[int, int]:
         return 0, 0
 
 
+def _resolve_model(raw, default_role, state):
+    """Resolve o modelo de um nó respeitando o perfil de custo ativo.
+
+    - '@papel' (ex.: '@reasoner') → usa o perfil ativo em state['_profile'].
+    - nome literal (ex.: 'gpt-5.3-chat') → usado direto (retrocompatível).
+    - vazio/None → cai para o papel default informado, dentro do perfil ativo.
+    """
+    profile = state.get("_profile")
+    if isinstance(raw, str) and raw.startswith("@"):
+        return mp.resolve(raw[1:], profile)
+    if raw:
+        return raw
+    return mp.resolve(default_role, profile)
+
+
 def _run_agent(node, cfg, state, input_text, label_map):
     """Agente LLM padrão. Retorna (output_str, output_var, metrics)."""
     import backend as be
     from langchain_core.messages import SystemMessage, HumanMessage
 
-    model = cfg.get("model") or "gpt-5.3-chat"
+    model = _resolve_model(cfg.get("model"), "default", state)
     prompt = cfg.get("prompt", "")
     knowledge = cfg.get("knowledge", "")
     output_var = cfg.get("output_var") or node["id"]
@@ -144,7 +204,7 @@ def _run_switch(node, cfg, state, input_text, label_map):
     import backend as be
     from langchain_core.messages import SystemMessage, HumanMessage
 
-    model = cfg.get("model") or "gpt-5.4-mini"
+    model = _resolve_model(cfg.get("model"), "classifier", state)
     raw_cats = cfg.get("categories", "")
     categories = [c.strip() for c in raw_cats.split("|") if c.strip()]
     if not categories:
@@ -322,7 +382,7 @@ def _run_extractor(node, cfg, state, input_text, label_map):
     # Build user_msg
     user_input = _build_user_message(state, input_text)
 
-    model = cfg.get("model") or "gpt-5.4-mini"
+    model = _resolve_model(cfg.get("model"), "classifier", state)
     llm = be.get_llm(model, temperature=0.0)
 
     sys_prompt = (
@@ -482,7 +542,7 @@ def _run_estilo(node, cfg, state, input_text, label_map):
     if not style_dossier:
         return last_output + "\n\n*(style dossier não configurado — texto retornado sem ajuste)*", cfg.get("output_var") or node["id"]
 
-    llm = be.get_llm("claude-sonnet-4-6", temperature=0.4)
+    llm = be.get_llm(_resolve_model(cfg.get("model"), "style", state), temperature=0.4)
     sys_msg = SystemMessage(content=(
         "Você é um editor de texto jurídico. Reescreva o texto abaixo aplicando "
         "rigorosamente o estilo de escrita descrito a seguir, sem alterar o conteúdo "

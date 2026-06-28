@@ -239,10 +239,12 @@ export function useMessageSender({ canvas, ragStatus, setRagStatus }: UseMessage
                 }
 
                 const agentKnowledge = (activeAgent as any)?.knowledge || null;
+                const harnessOn = useUIStore.getState().harnessEconomico;
 
                 const result = await sendMessage({
                     message: finalMessage,
-                    model: selectedModel.id,
+                    // Harness ligado → roda o pipeline de análise completo (V3) com modelos baratos.
+                    model: harnessOn ? 'v3' : selectedModel.id,
                     llm: selectedModel.llm || null,
                     agentPrompt,
                     conversationId,
@@ -253,6 +255,7 @@ export function useMessageSender({ canvas, ragStatus, setRagStatus }: UseMessage
                     jurisEnabled,
                     reasoningEnabled,
                     agentKnowledge,
+                    profile: harnessOn ? 'economico' : 'premium',
                 });
 
                 setConversationId(result.conversation_id);
@@ -371,6 +374,7 @@ export function useMessageSender({ canvas, ragStatus, setRagStatus }: UseMessage
                 message: auditMessage,
                 model: globalSelectedModel.id,
                 llm: globalSelectedModel.llm || null,
+                profile: useUIStore.getState().harnessEconomico ? 'economico' : 'premium',
                 agentPrompt: qaPrompt,
                 conversationId: null,
                 uploadedText,
