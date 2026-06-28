@@ -296,7 +296,10 @@ def run_autonomous_magistrate(text: str, keys: dict, model_name: str = "v3-moe",
         "messages": [],
         "iterations": 0,
         "final_json": {},
-        "logs": ["🚀 Iniciando V3 Mixture of Experts (Kimi -> DeepSeek -> GPT)"]
+        "logs": [
+            f"🚀 Iniciando V3 MoE [perfil: {profile or 'premium'}]: "
+            f"{mp.resolve('reader', profile)} → {mp.resolve('reasoner', profile)} → {mp.resolve('formatter', profile)}"
+        ]
     }
     
     final_state = app.invoke(initial_state)

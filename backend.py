@@ -2313,7 +2313,7 @@ def process_single_case_pipeline(pdf_bytes, filename, api_key, template_files=No
     except Exception as e:
         return {"error": str(e), "filename": filename}
 
-def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None, mode="v1", keys=None, ocr_engine_choice="marker"):
+def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=None, progress_callback=None, mode="v1", keys=None, ocr_engine_choice="marker", profile="premium"):
     """
     Processa lista de arquivos EM SÉRIE (para evitar Rate Limit).
     Suporta V1/V2/V3 via worker.
@@ -2379,9 +2379,10 @@ def process_batch_parallel(files, api_key, template_files=None, text_cache_dict=
                 cached_text=data["cached_text"],
                 mode=mode,
                 keys=keys,
-                ocr_engine_choice=ocr_engine_choice
+                ocr_engine_choice=ocr_engine_choice,
+                profile=profile,
             )
-            
+
             # Usa report_id gerado pelo process_single_case_pipeline (evita duplicação)
             res['mode'] = mode
             res['filename'] = filename
