@@ -8,64 +8,8 @@ import {
 } from 'react-icons/fa6';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
 import { saveAs } from 'file-saver';
+import { formatMarkdown } from '../utils/markdown';
 import './CanvasEditor.css';
-
-/**
- * Format markdown text to HTML for initial render.
- */
-function formatMarkdown(text) {
-    if (text === null || text === undefined) return '';
-    if (typeof text !== 'string') {
-        if (Array.isArray(text)) {
-            text = text.map(item => {
-                if (typeof item === 'string') return item;
-                return item?.text || item?.content || JSON.stringify(item);
-            }).filter(Boolean).join('\n');
-        } else if (typeof text === 'object') {
-            text = text.text || text.content || text.output || JSON.stringify(text);
-        } else {
-            text = String(text);
-        }
-    }
-    if (!text || typeof text !== 'string') return '';
-
-    let processed = text.replace(/\\n/g, '\n');
-    let html = processed
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>')
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-        .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-        .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/^---$/gm, '<hr/>')
-        .replace(/^(\|.+\|)\n\|[-| :]+\|\n((?:\|.+\|\n?)+)/gm, (match, header, body) => {
-            const headers = header.split('|').filter(c => c.trim()).map(c => `<th>${c.trim()}</th>`).join('');
-            const rows = body.trim().split('\n').map(row => {
-                const cols = row.split('|').filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join('');
-                return `<tr>${cols}</tr>`;
-            }).join('');
-            return `<table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
-        })
-        .replace(/^\s*[-*] (.+)$/gm, '<li>$1</li>')
-        .replace(/^\s*\d+\.\s(.+)$/gm, '<li>$1</li>')
-        .replace(/\n\n/g, '</p><p>')
-        .replace(/\n/g, '<br/>');
-
-    html = html.replace(/((?:<li>.*?<\/li>(?:<br\/>)?)+)/g, '<ul>$1</ul>');
-    html = html.replace(/<ul>([\s\S]*?)<\/ul>/g, (match, inner) => {
-        return '<ul>' + inner.replace(/<br\/>/g, '') + '</ul>';
-    });
-
-    if (!html.startsWith('<h') && !html.startsWith('<pre') && !html.startsWith('<ul') && !html.startsWith('<table')) {
-        html = '<p>' + html + '</p>';
-    }
-    return html;
-}
 
 /**
  * Extract a short title from content.

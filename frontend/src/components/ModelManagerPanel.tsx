@@ -10,6 +10,7 @@ import {
     listTemplates, deleteTemplate, askTemplates, uploadTemplates,
     extractThemes, verifyTheme, getJurisprudenciaDoc
 } from '../services/api';
+import { formatMarkdown } from '../utils/markdown';
 import './ModelManagerPanel.css';
 
 const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
@@ -651,18 +652,5 @@ const ModelManagerPanel = ({ onClose, onRagStatusChange }) => {
     );
 };
 
-function formatMarkdown(text) {
-    return text
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-        .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-        .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
-        .replace(/<\/ul>\s*<ul>/g, '')
-        .replace(/\n\n/g, '<br/><br/>')
-        .replace(/\n/g, '<br/>');
-}
 
 export default ModelManagerPanel;

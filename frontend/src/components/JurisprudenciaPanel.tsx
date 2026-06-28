@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { FaMagnifyingGlass, FaChevronLeft, FaChevronRight, FaXmark, FaScaleBalanced, FaCalendarDays, FaLocationDot, FaArrowLeft, FaCopy, FaCheck, FaBrain, FaChevronDown, FaChevronUp, FaFileLines } from 'react-icons/fa6';
 import { askJurisprudencia, getJurisprudenciaDoc, getJurisprudenciaStats } from '../services/api';
+import { formatMarkdown, sanitizeSnippet } from '../utils/markdown';
 import './JurisprudenciaPanel.css';
 
 const JurisprudenciaPanel = ({ onClose }) => {
@@ -315,7 +316,7 @@ const JurisprudenciaPanel = ({ onClose }) => {
                                             </div>
                                             <div className={`jurisprudencia-card-snippet ${isSnippetExpanded ? 'expanded' : ''}`}>
                                                 {item.snippet && !isSnippetExpanded
-                                                    ? <span dangerouslySetInnerHTML={{ __html: item.snippet }} />
+                                                    ? <span dangerouslySetInnerHTML={{ __html: sanitizeSnippet(item.snippet) }} />
                                                     : isSnippetExpanded
                                                         ? ementaText
                                                         : ementaText.slice(0, 300) + (isLong ? '…' : '')}
@@ -405,18 +406,5 @@ const JurisprudenciaPanel = ({ onClose }) => {
 };
 
 // Simple markdown to HTML converter
-function formatMarkdown(text) {
-    return text
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-        .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-        .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
-        .replace(/<\/ul>\s*<ul>/g, '')
-        .replace(/\n\n/g, '<br/><br/>')
-        .replace(/\n/g, '<br/>');
-}
 
 export default JurisprudenciaPanel;

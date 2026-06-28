@@ -9,6 +9,7 @@ import {
     type ArenaVote, type ArenaVoteResult, type ArenaSlot, type ArenaTurnHistory,
 } from '../services/api';
 import { formatMarkdown } from '../utils/markdown';
+import { getApiKey, setApiKey } from '../services/keyStore';
 import { useAgentStore } from '../store';
 import ArenaHistoryModal from './ArenaHistoryModal';
 import './ArenaPanel.css';
@@ -85,12 +86,13 @@ export default function ArenaPanel({ onClose }: { onClose: () => void }) {
         [allAgents],
     );
 
-    // Chaves de API do usuário (Claude/Gemini) — persistidas no navegador
-    const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem('anthropic_api_key') || '');
-    const [googleKey, setGoogleKey] = useState(() => localStorage.getItem('google_api_key') || '');
+    // Chaves de API do usuário (Claude/Gemini) — mantidas apenas na sessão do
+    // navegador (sessionStorage via keyStore), nunca persistidas em localStorage.
+    const [anthropicKey, setAnthropicKey] = useState(() => getApiKey('anthropic_api_key'));
+    const [googleKey, setGoogleKey] = useState(() => getApiKey('google_api_key'));
     const [showKeys, setShowKeys] = useState(false);
-    const saveAnthropicKey = (v: string) => { setAnthropicKey(v); localStorage.setItem('anthropic_api_key', v); };
-    const saveGoogleKey = (v: string) => { setGoogleKey(v); localStorage.setItem('google_api_key', v); };
+    const saveAnthropicKey = (v: string) => { setAnthropicKey(v); setApiKey('anthropic_api_key', v); };
+    const saveGoogleKey = (v: string) => { setGoogleKey(v); setApiKey('google_api_key', v); };
 
     // Documento (upload + OCR)
     const [docText, setDocText] = useState('');

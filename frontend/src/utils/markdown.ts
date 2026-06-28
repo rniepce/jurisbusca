@@ -1,10 +1,24 @@
+import DOMPurify from 'dompurify';
+
+/**
+ * Sanitizes an HTML fragment that already contains a small set of trusted tags
+ * (e.g. the FTS5 snippet, which wraps matched terms in <mark>). All other tags
+ * and every attribute/event handler are stripped. Use for any server- or
+ * document-derived HTML that is NOT produced by formatMarkdown.
+ */
+export function sanitizeSnippet(html: any): string {
+    if (typeof html !== 'string') return '';
+    return DOMPurify.sanitize(html, { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: [] });
+}
+
 /**
  * Minimal markdown-to-HTML renderer used across the app.
  * Handles: headers, bold/italic, code blocks, inline code, lists, tables, hr,
  * line breaks, and robust coercion of non-string LLM payloads (arrays/objects).
  *
- * Output is meant to be injected via dangerouslySetInnerHTML — already escapes
- * & < > before processing markdown.
+ * Output is injected via dangerouslySetInnerHTML: it escapes & < > before
+ * processing markdown AND runs the final HTML through DOMPurify, so LLM- or
+ * document-derived content cannot smuggle <script>/onerror/javascript: through.
  */
 export function formatMarkdown(text: any): string {
     if (text === null || text === undefined) return '';
@@ -60,5 +74,7 @@ export function formatMarkdown(text: any): string {
         html = '<p>' + html + '</p>';
     }
 
-    return html;
+    // Final safety net: strip any script/event-handler/javascript: that slipped
+    // through the regex pipeline (e.g. from LLM output or RAG source documents).
+    return DOMPurify.sanitize(html);
 }
