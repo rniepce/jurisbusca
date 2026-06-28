@@ -464,10 +464,16 @@ def restore_flow_version(flow_id: str, user_id: str, version_num: int) -> bool:
 
 def delete_flow(flow_id: str, user_id: str) -> bool:
     with get_db() as conn:
-        conn.execute(
+        cur = conn.execute(
             "DELETE FROM agent_flows WHERE id = ? AND user_id = ?",
             (flow_id, user_id)
         )
+        # Only cascade to child tables if the flow was actually owned by the
+        # caller. Otherwise an attacker passing someone else's flow_id would
+        # wipe that flow's version history while the live flow survives.
+        if cur.rowcount == 0:
+            conn.commit()
+            return False
         conn.execute(
             "DELETE FROM flow_shares WHERE flow_id = ? AND shared_by_user_id = ?",
             (flow_id, user_id)
@@ -642,9 +648,15 @@ def delete_flow_run(run_id: str, user_id: str) -> bool:
             "DELETE FROM flow_runs WHERE id = ? AND user_id = ?",
             (run_id, user_id),
         )
+        # Only delete this run's events if the run was owned by the caller —
+        # the previous unconditional delete let any user erase another user's
+        # flow_run_events just by knowing the run_id.
+        if cur.rowcount == 0:
+            conn.commit()
+            return False
         conn.execute("DELETE FROM flow_run_events WHERE run_id = ?", (run_id,))
         conn.commit()
-        return cur.rowcount > 0
+        return True
 
 
 # ── Arena (comparação A/B cega entre modelos) ────────────────────────────────

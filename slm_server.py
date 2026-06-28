@@ -17,6 +17,7 @@ Endpoints:
 import os
 import time
 import json
+import hmac
 import argparse
 import traceback
 from typing import Optional
@@ -57,8 +58,19 @@ app.add_middleware(
 SLM_KEY = os.environ.get("SLM_SERVER_KEY", "")
 
 def _check_auth(x_slm_key: Optional[str] = None):
-    """Valida autenticação se SLM_KEY estiver configurada."""
-    if SLM_KEY and x_slm_key != SLM_KEY:
+    """Valida a chave compartilhada. Falha FECHADO.
+
+    Este servidor é exposto à internet via tunnel e processa autos sigilosos,
+    então uma chave ausente NÃO pode significar "sem autenticação": se
+    SLM_SERVER_KEY não estiver configurada, recusamos tudo. A comparação é
+    constant-time para não vazar a chave por timing.
+    """
+    if not SLM_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Servidor sem autenticação configurada (defina SLM_SERVER_KEY).",
+        )
+    if not hmac.compare_digest(x_slm_key or "", SLM_KEY):
         raise HTTPException(status_code=401, detail="Chave SLM inválida")
 
 # ── Orchestrator (lazy init) ──────────────────────────────────────────────────

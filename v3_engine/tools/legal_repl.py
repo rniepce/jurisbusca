@@ -1,6 +1,59 @@
 import re
 import math
 import datetime
+import ast
+
+# ─── AST SANDBOX ───────────────────────────────────────────────────────────────
+# A string blocklist over code passed to exec() is cosmetic: the classic sandbox
+# escape — ().__class__.__base__.__subclasses__()[...].__init__.__globals__[...] —
+# uses no blocked keyword and works even with a restricted __builtins__, because
+# attribute traversal does not depend on builtins. The real gate is structural:
+# parse the code and reject any construct that could break out.
+
+# Allowlisted AST node types. Anything not listed is rejected.
+_ALLOWED_NODES = frozenset({
+    ast.Module, ast.Expr, ast.Assign, ast.AugAssign, ast.AnnAssign,
+    ast.For, ast.While, ast.If, ast.Break, ast.Continue, ast.Pass,
+    ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.comprehension,
+    ast.Call, ast.keyword, ast.Name, ast.Load, ast.Store,
+    ast.Constant, ast.FormattedValue, ast.JoinedStr,
+    ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare, ast.IfExp,
+    ast.List, ast.Tuple, ast.Dict, ast.Set,
+    ast.Subscript, ast.Slice, ast.Starred,
+    # Attribute access is allowed ONLY for non-underscore attrs (checked below);
+    # this is what lets re.findall / text.split work while blocking __class__ etc.
+    ast.Attribute,
+    # operators
+    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow,
+    ast.LShift, ast.RShift, ast.BitOr, ast.BitXor, ast.BitAnd, ast.MatMult,
+    ast.And, ast.Or, ast.Not, ast.Invert, ast.UAdd, ast.USub,
+    ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
+    ast.Is, ast.IsNot, ast.In, ast.NotIn,
+})
+
+
+def _validate_ast_safe(code: str):
+    """Returns None if the code is structurally safe, else a violation string.
+
+    Forbids: imports, def/class/lambda, with/try/raise, global/nonlocal, and —
+    crucially — any identifier or attribute beginning with '_' (closes dunder
+    traversal). Only the helper functions and re/math/datetime remain reachable.
+    """
+    try:
+        tree = ast.parse(code, mode="exec")
+    except SyntaxError as e:
+        return f"SYNTAX_ERROR: {e}"
+
+    for node in ast.walk(tree):
+        if type(node) not in _ALLOWED_NODES:
+            return f"SECURITY_VIOLATION: construct '{type(node).__name__}' is not allowed."
+        # Block dunder / private traversal (the actual escape vector).
+        if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+            return f"SECURITY_VIOLATION: attribute access to '{node.attr}' is not allowed."
+        if isinstance(node, ast.Name) and node.id.startswith("_"):
+            return f"SECURITY_VIOLATION: identifier '{node.id}' is not allowed."
+    return None
+
 
 class LegalREPL:
     """
@@ -154,49 +207,40 @@ class LegalREPL:
 
     def run_code(self, code: str):
         """
-        Executes the provided Python code in the safe context.
-        Uses word-boundary checks to avoid false positives 
-        (e.g. 'processos' was incorrectly blocked because it contains 'os').
+        Executes read-only Python in a structurally-restricted context.
+
+        Security model (defense in depth):
+          1. AST allowlist (`_validate_ast_safe`): rejects imports, def/class,
+             and any '_'-prefixed name/attribute — closing dunder-traversal
+             sandbox escapes that a string blocklist cannot.
+          2. Restricted __builtins__: only pure, side-effect-free helpers.
+          3. Restricted globals: only the legal-search helpers + re/math/datetime.
         """
-        # Security: Block dangerous imports using word boundaries
-        import re as _re
-        dangerous_patterns = [
-            r'\bimport\s+os\b',
-            r'\bfrom\s+os\b',
-            r'\bimport\s+sys\b',
-            r'\bfrom\s+sys\b',
-            r'\bimport\s+subprocess\b',
-            r'\bfrom\s+subprocess\b',
-            r'\bopen\s*\(',
-            r'\b__import__\s*\(',
-            r'\beval\s*\(',
-            r'\bexec\s*\(',
-            r'\bimport\s+shutil\b',
-            r'\bimport\s+pathlib\b',
-        ]
-        
-        for pattern in dangerous_patterns:
-            if _re.search(pattern, code):
-                return f"SECURITY_VIOLATION: Blocked pattern '{pattern}'. File system access is prohibited."
-            
+        violation = _validate_ast_safe(code)
+        if violation:
+            return violation
+
         try:
             import io
             from contextlib import redirect_stdout
-            
+
             _safe_builtins = {
                 "len": len, "range": range, "enumerate": enumerate, "zip": zip,
                 "sorted": sorted, "list": list, "dict": dict, "set": set, "tuple": tuple,
                 "str": str, "int": int, "float": float, "bool": bool,
                 "sum": sum, "max": max, "min": min, "abs": abs, "round": round,
                 "print": print, "map": map, "filter": filter, "any": any, "all": all,
-                "isinstance": isinstance, "type": type,
+                "isinstance": isinstance,
             }
+            # self.context already exposes text + the safe helpers; inject only
+            # the restricted builtins. No __import__ is provided.
+            exec_globals = {"__builtins__": _safe_builtins}
             f = io.StringIO()
             with redirect_stdout(f):
-                exec(code, {"__builtins__": _safe_builtins}, self.context)
-            
+                exec(compile(code, "<legal_repl>", "exec"), exec_globals, self.context)
+
             output = f.getvalue()
             return output if output else "CODE_EXECUTED_NO_OUTPUT"
-            
+
         except Exception as e:
             return f"RUNTIME_ERROR: {str(e)}"
