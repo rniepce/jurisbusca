@@ -679,9 +679,11 @@ def get_llm(model_name: str = "gpt-5.3-chat", temperature: float = 0.2, api_key:
     # GPT-5.3 is a reasoning model — configure reasoning_effort and output budget
     reasoning_models = {"gpt-5.3-chat"}
     if deployment in reasoning_models:
-        # Enable full reasoning power
+        # O deployment Azure atual só aceita 'medium' (versões novas do modelo
+        # restringiram o parâmetro; 'high' passou a retornar 400 unsupported_value).
+        # Override via GPT53_REASONING_EFFORT se o deployment voltar a aceitar mais.
         if 'reasoning_effort' not in kwargs:
-            kwargs['reasoning_effort'] = 'high'
+            kwargs['reasoning_effort'] = os.getenv("GPT53_REASONING_EFFORT", "medium")
         print(f"🧠 Reasoning model: {deployment} | effort={kwargs['reasoning_effort']}")
     # Toda a família GPT-5.x recebe um orçamento de saída para evitar truncamento
     if deployment.startswith("gpt-5") and 'max_completion_tokens' not in kwargs:

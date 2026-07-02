@@ -32,7 +32,7 @@ import backend as be
 logger = logging.getLogger(__name__)
 
 # ── Tuning knobs ───────────────────────────────────────────────────────────
-DEFAULT_MODEL = "gpt-5.3-chat"           # auto-activates reasoning_effort=high in backend.get_llm
+DEFAULT_MODEL = "gpt-5.3-chat"           # reasoning_effort vem do default em backend.get_llm (GPT53_REASONING_EFFORT)
 TOP_K = 12                                # chunks retrieved per investigation question
 MAX_QUESTIONS = 22
 PLANNER_EXCERPT_CHARS = 18000             # how much of the text we show the planner
